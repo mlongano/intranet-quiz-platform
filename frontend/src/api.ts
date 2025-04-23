@@ -50,6 +50,7 @@ export interface DetailedAnswer {
   correct_answer: any; // Could be string, string[], object
   weight: number;
   points_awarded: number;
+  raw_points: number;
   raw_student_answer: any;
   raw_correct_answer: any;
 }

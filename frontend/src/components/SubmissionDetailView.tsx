@@ -47,7 +47,7 @@ function SubmissionDetailView({
       // queryClient.invalidateQueries({ queryKey: ['submissionDetails', studentSubmission?.student, studentSubmission?.quiz_id] });
 
       // Optional: Close the detail view automatically after save
-      // setTimeout(onClose, 1500); // Close after 1.5 seconds
+      setTimeout(onClose, 1500); // Close after 1.5 seconds
     },
     onError: (err: any) => {
       console.error("Failed to save overrides:", err);
@@ -187,7 +187,9 @@ function SubmissionDetailView({
               </div>
 
               {/* Points and Override Input */}
-              <div className="ml-4 mt-2 flex items-center gap-3 text-sm">
+              <div
+                className={`ml-4 mt-2 flex items-center gap-3 text-sm ${ans.points_awarded !== ans.raw_points && "text-red-500"}`}
+              >
                 <span className="font-medium">
                   Points Awarded:{" "}
                   <span className="font-bold">{ans.points_awarded}</span>
@@ -206,7 +208,7 @@ function SubmissionDetailView({
                   max={questionWeight} // Maximum score is the question's weight
                   step="0.1" // Or "1" if only whole points
                   className="w-24 border border-gray-300 p-1 text-sm rounded shadow-sm focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
-                  placeholder={ans.points_awarded.toString()}
+                  placeholder={ans.raw_points.toString()}
                   value={overrides[ans.question_id] ?? ""}
                   // Pass max weight to handler for clamping
                   onChange={(e) =>
