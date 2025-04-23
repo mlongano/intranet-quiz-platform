@@ -1,5 +1,5 @@
-// frontend/src/main.tsx (Example structure)
-import "./index.css";
+// frontend/src/main.tsx
+import "./main.css";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
