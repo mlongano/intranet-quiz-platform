@@ -1,48 +1,30 @@
 [
   {
-    "student": "alice@example.com",
-    "quiz_id": "3518349360fd",
+    "student": "bob@example.com",
+    "quiz_id": "51e2774c1137",
     "answers": [
       {
         "question_id": 2,
         "question_text": "Select the prime numbers:",
         "student_answer": [
-          "'5' (Index: 2)",
-          "'2' (Index: 0)"
+          "'9' (Index: 3)",
+          "'5' (Index: 2)"
         ],
         "correct_answer": [
           "'2' (Index: 0)",
           "'5' (Index: 2)"
         ],
         "weight": 2,
-        "points_awarded": 1.0,
+        "points_awarded": 0.0,
+        "raw_points": 0.0,
         "raw_student_answer": [
-          2,
-          3
+          0,
+          1
         ],
         "raw_correct_answer": [
           0,
           2
         ]
-      },
-      {
-        "question_id": "q8",
-        "question_text": "Name three noble gases.",
-        "student_answer": "helium",
-        "correct_answer": {
-          "keywords": [
-            "helium",
-            "neon",
-            "argon",
-            "krypton",
-            "xenon",
-            "radon"
-          ]
-        },
-        "weight": 4,
-        "points_awarded": 2.0,
-        "raw_student_answer": "helium",
-        "raw_correct_answer": null
       },
       {
         "question_id": "q7",
@@ -54,6 +36,7 @@
         ],
         "weight": 2,
         "points_awarded": 2.0,
+        "raw_points": 2.0,
         "raw_student_answer": "o2",
         "raw_correct_answer": null
       },
@@ -64,13 +47,34 @@
         "correct_answer": "'Paris' (Index: 0)",
         "weight": 1,
         "points_awarded": 1,
-        "raw_student_answer": 2,
+        "raw_points": 1,
+        "raw_student_answer": 0,
         "raw_correct_answer": 0
+      },
+      {
+        "question_id": "q8",
+        "question_text": "Name three noble gases.",
+        "student_answer": "helio",
+        "correct_answer": {
+          "keywords": [
+            "helium",
+            "neon",
+            "argon",
+            "krypton",
+            "xenon",
+            "radon"
+          ]
+        },
+        "weight": 4,
+        "points_awarded": 1.0,
+        "raw_points": 0.0,
+        "raw_student_answer": "helio",
+        "raw_correct_answer": null
       }
     ],
-    "raw_points": 6.0,
+    "raw_points": 4.0,
     "max_points": 9.0,
-    "percent": 66.67,
-    "timestamp": "2025-04-22T23:58:08"
+    "percent": 44.44,
+    "timestamp": "2025-04-23T09:39:28"
   }
 ]

@@ -1,0 +1,307 @@
+# utils.py
+import commentjson as json
+from werkzeug.exceptions import NotFound, BadRequest, Conflict, InternalServerError
+from pathlib import Path
+import os, re, unicodedata
+from dotenv import load_dotenv
+
+# --- Load Environment Variables ---
+load_dotenv()
+
+# --- Constants (Consider moving to a config.py if they grow) ---
+QUEST_FILE = 'questions.jsonc'
+SCORE_FILE = 'scores.jsonc'
+STUDENTS_FILE = 'students.jsonc'
+QUIZ_FOLDER = 'quizzes'
+
+# --- Load Admin Password from Environment Variable ---
+ADMIN_PW = os.getenv('ADMIN_PW') # <-- Get password from environment
+if not ADMIN_PW:
+    print("Error: ADMIN_PW environment variable not set.")
+    print("Please create a .env file in the project root with ADMIN_PW='your_password'")
+    # Decide how to handle this: exit or raise an exception
+    raise EnvironmentError("ADMIN_PW environment variable is required but not set.")
+    #import sys; sys.exit(1)
+
+# Ensure QUIZ_FOLDER exists
+os.makedirs(QUIZ_FOLDER, exist_ok=True)
+
+# --- Load initial student data ---
+try:
+    with open(STUDENTS_FILE, encoding='utf-8') as f:
+        VALID_STUDENTS = {s.lower() for s in json.load(f)}
+    if not VALID_STUDENTS:
+        print(f"Warning: No valid students found in {STUDENTS_FILE}. Quiz start may fail.")
+except FileNotFoundError:
+    print(f"Error: {STUDENTS_FILE} not found. Quiz start will likely fail.")
+    VALID_STUDENTS = set()
+except ValueError as e:
+    print(f"Error loading {STUDENTS_FILE}: {e}. Quiz start may fail.")
+    VALID_STUDENTS = set()
+except Exception as e:
+    print(f"Unexpected error loading {STUDENTS_FILE}: {e}. Quiz start may fail.")
+    VALID_STUDENTS = set()
+
+
+# --- Utilities ---
+SAFE = re.compile(r'[^A-Za-z0-9_.-]')
+def safe_id(raw: str) -> str:
+    """Creates a filesystem-safe ID from a raw string."""
+    return SAFE.sub('_', raw)
+
+def load_scores():
+    """Loads scores from the scores file."""
+    if not os.path.exists(SCORE_FILE):
+        return []
+    try:
+        with open(SCORE_FILE, encoding='utf-8') as f:
+            return json.load(f)
+    except ValueError:
+        print(f"Warning: Could not decode {SCORE_FILE}. Returning empty list.")
+        return []
+    except Exception as e:
+        print(f"Error reading {SCORE_FILE}: {e}. Returning empty list.")
+        return []
+
+def save_scores(data):
+    """Saves scores to the scores file."""
+    try:
+        with open(SCORE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"Error saving scores to {SCORE_FILE}: {e}") # Log error
+
+def load_questions():
+    """Loads the master question bank."""
+    try:
+        with open(QUEST_FILE, encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+         raise InternalServerError(description=f"Master question file '{QUEST_FILE}' not found.")
+    except ValueError:
+         raise InternalServerError(description=f"Could not decode master question file '{QUEST_FILE}'. Check syntax.")
+    except Exception as e:
+         raise InternalServerError(description=f"Error loading question bank '{QUEST_FILE}': {e}")
+
+# --- Grading Logic ---
+def normalise(txt: str) -> str:
+    """Normalizes text for comparison (lowercase, NFKD, strip whitespace)."""
+    if not isinstance(txt, str):
+        return ""
+    txt = unicodedata.normalize('NFKD', txt).lower()
+    txt = re.sub(r'\s+', ' ', txt, flags=re.MULTILINE).strip()
+    return txt
+
+def score_open(user_ans: str, q: dict) -> float:
+    """Scores an open-ended question."""
+    ua = normalise(user_ans)
+    if 'acceptable' in q:
+        for a in q['acceptable']:
+            if ua == normalise(a):
+                return 1.0
+    if 'keywords' in q:
+        kw   = [normalise(k) for k in q['keywords']]
+        hits = sum(1 for k in kw if k in ua)
+        if 'min_keywords' in q:
+            return 1.0 if hits >= q['min_keywords'] else 0.0
+        elif kw:
+            return hits / len(kw)
+    return 0.0
+
+def grade(answers: list, plan: dict, qbank: dict) -> dict:
+    """Calculates score based on answers, the specific quiz plan, and the master question bank."""
+    total = 0.0
+    maximum = 0.0
+    per_question_scores = []
+    qbank_map = {q['id']: q for q in qbank}
+
+    for i, step in enumerate(plan.get('plan', [])):
+        q_id = step.get('id')
+        question_score = 0.0 # Score for this specific question
+
+        if not q_id or q_id not in qbank_map:
+            print(f"Warning: Question ID '{q_id}' from plan step {i} not found in question bank.")
+            per_question_scores.append(question_score) # Append 0 score for missing question
+            continue # Skip processing this step
+
+        q = qbank_map[q_id]
+        user_ans = answers[i] if i < len(answers) else None
+
+        w = q.get('weight', 1)
+        maximum += w
+
+        # Check for manually overridden points first (from admin review)
+        # Note: This assumes 'points_awarded' might be present in the question detail 'q' itself
+        # if it was previously reviewed and saved back into the master bank (less ideal).
+        # A better approach might be to check an 'override' field directly from the submission data
+        # *if* this function were processing a full submission record rather than just raw answers.
+        # For this refactor, we assume overrides are handled *after* initial grading via /api/review.
+
+        q_type = q.get('type')
+        if q_type == 'open':
+            open_score_fraction = score_open(user_ans or '', q)
+            question_score = w * open_score_fraction
+        elif q_type == 'single':
+            original_correct_index = q.get('correct')
+            shuffled_options = step.get('option_order', [])
+            if original_correct_index is not None and isinstance(shuffled_options, list):
+                try:
+                    current_correct_index = shuffled_options.index(original_correct_index)
+                    if user_ans == current_correct_index:
+                        question_score = w # Award full weight
+                except ValueError:
+                    print(f"Warning: Correct answer index {original_correct_index} not found in shuffled options for q {q_id}")
+        elif q_type == 'multiple':
+            original_correct_indices = q.get('correct', [])
+            shuffled_options = step.get('option_order', [])
+            if isinstance(original_correct_indices, list) and isinstance(shuffled_options, list):
+                original_indices_selected = []
+                if isinstance(user_ans, list):
+                    for ans_index in user_ans:
+                        if isinstance(ans_index, int) and 0 <= ans_index < len(shuffled_options):
+                            original_indices_selected.append(shuffled_options[ans_index])
+                if sorted(original_indices_selected) == sorted(original_correct_indices):
+                    question_score = w # Award full weight
+
+        total += question_score
+        per_question_scores.append(round(question_score, 2)) # Store rounded score for this question
+
+    return {
+        'raw_points': round(total, 2),
+        'max_points': maximum,
+        'percent': round(total / maximum * 100, 2) if maximum else 0,
+        'scores_per_question': per_question_scores # Include the list of scores
+    }
+
+# --- Helper Functions for api_submit and others ---
+
+def load_quiz_plan_by_student(student_id: str) -> dict:
+    """Finds, reads, and parses the quiz plan file using the safe student_id."""
+    safe_student = safe_id(student_id)
+    plan_path = Path(QUIZ_FOLDER) / f'{safe_student}.json'
+
+    if not plan_path.exists():
+        raise NotFound(description=f"Quiz plan file not found for student '{student_id}'")
+
+    try:
+        return json.loads(plan_path.read_text('utf-8'))
+    except ValueError:
+        raise InternalServerError(description=f"Could not decode plan file '{plan_path.name}'.")
+    except Exception as e:
+        raise InternalServerError(description=f"Error reading plan file '{plan_path.name}': {e}")
+
+def validate_submission_data(data: dict) -> tuple[str, str, list]:
+    """Validates input data for submission."""
+    quiz_id = data.get('quiz_id', '')
+    student_id = data.get('student_id', '').strip().lower()
+    answers = data.get('answers')
+
+    if not quiz_id:
+         raise BadRequest(description='Missing quiz_id')
+    if not student_id:
+         raise BadRequest(description='Missing student_id')
+    if not isinstance(answers, list) or len(answers) == 0:
+        raise BadRequest(description='Invalid or missing answers')
+
+    # Optionally re-validate student_id against VALID_STUDENTS here if needed
+    # if student_id not in VALID_STUDENTS:
+    #     raise BadRequest(description='Invalid student_id submitted')
+
+    return quiz_id, student_id, answers
+
+def check_duplicate_submission(student_id: str, scores: list):
+    """Checks if a student has already submitted."""
+    if any(r.get('student') == student_id for r in scores):
+        raise Conflict(description='Already submitted') # 409 Conflict
+
+def delete_plan_file_by_student(student_id: str):
+    """Deletes the plan file named after the safe student_id."""
+    path_to_delete = Path(QUIZ_FOLDER) / f'{safe_id(student_id)}.json'
+    if path_to_delete.exists():
+        try:
+            path_to_delete.unlink()
+        except OSError as e:
+            print(f"Warning: Could not delete plan file {path_to_delete}: {e}")
+
+def find_plan_by_quiz_id(quiz_id, folder_path):
+    """Helper to find the plan file and student_id by quiz_id inside it."""
+    for p in folder_path.glob('*.json'):
+        try:
+            if not p.is_file(): continue
+            print(f"Checking file: {p.name}") # Log which file is checked
+            with p.open(encoding='utf-8') as f:
+                meta = json.load(f)
+            if meta.get('quiz_id') == quiz_id:
+                found_student_id = meta.get('student')
+                print(f"Found matching plan for student {found_student_id} in file {p.name}")
+                return meta, found_student_id, p
+        except ValueError:
+            print(f"Warning: Could not decode JSON in {p.name} during resume search.")
+            continue
+        except OSError as e:
+            print(f"Warning: OS error reading {p.name} during resume search: {e}")
+            continue
+        except Exception as e:
+            print(f"Warning: Unexpected error processing {p.name} during resume search: {e}")
+            continue
+    return None, None, None
+
+def format_detailed_answers(plan, qbank_map, answers, scores_list):
+    """Formats answers for detailed storage."""
+    detailed_answers = []
+    plan_steps = plan.get('plan', [])
+
+    for i, step in enumerate(plan_steps):
+        q_id = step.get('id')
+        question_detail = qbank_map.get(q_id)
+        student_answer_raw = answers[i] if i < len(answers) else None
+        formatted_student_answer = student_answer_raw
+        formatted_correct_answer = "[N/A]"
+        question_text = "[Question not found]"
+        points = scores_list[i] if i < len(scores_list) else 0
+        question_weight = 0
+        correct_answer_raw = None
+
+        if question_detail:
+            question_text = question_detail.get('text', '[Text missing]')
+            question_weight = question_detail.get('weight', 1)
+            q_type = question_detail.get('type')
+            original_options = question_detail.get('options', [])
+            shuffled_option_order = step.get('option_order', [])
+            correct_answer_raw = question_detail.get('correct')
+
+            # Format student answer
+            if q_type == 'single' and isinstance(student_answer_raw, int) and 0 <= student_answer_raw < len(shuffled_option_order):
+                 original_index = shuffled_option_order[student_answer_raw]
+                 formatted_student_answer = f"'{original_options[original_index]}' (Index: {original_index})" if 0 <= original_index < len(original_options) else f"[Invalid Shuffled Index: {student_answer_raw}]"
+            elif q_type == 'multiple' and isinstance(student_answer_raw, list):
+                 original_indices = [shuffled_option_order[idx] for idx in student_answer_raw if isinstance(idx, int) and 0 <= idx < len(shuffled_option_order)]
+                 formatted_student_answer = [f"'{original_options[orig_idx]}' (Index: {orig_idx})" for orig_idx in original_indices if 0 <= orig_idx < len(original_options)]
+
+            # Format correct answer
+            if q_type == 'single' and isinstance(correct_answer_raw, int) and 0 <= correct_answer_raw < len(original_options):
+               formatted_correct_answer = f"'{original_options[correct_answer_raw]}' (Index: {correct_answer_raw})"
+            elif q_type == 'multiple' and isinstance(correct_answer_raw, list):
+                formatted_correct_answer = [f"'{original_options[idx]}' (Index: {idx})" for idx in correct_answer_raw if 0 <= idx < len(original_options)]
+            elif q_type == 'open':
+                if 'acceptable' in question_detail:
+                    formatted_correct_answer = question_detail['acceptable']
+                elif 'keywords' in question_detail:
+                    formatted_correct_answer = {"keywords": question_detail['keywords']}
+                else:
+                    formatted_correct_answer = "[Manual Grading Required]"
+            else:
+                formatted_correct_answer = "[Invalid Question Type]"
+
+        detailed_answers.append({
+            "question_id": q_id,
+            "question_text": question_text,
+            "student_answer": formatted_student_answer,
+            "correct_answer": formatted_correct_answer,
+            "weight": question_weight,
+            "points_awarded": points,
+            "raw_points": points,
+            "raw_student_answer": student_answer_raw,
+            "raw_correct_answer": correct_answer_raw if question_detail else None,
+        })
+    return detailed_answers
