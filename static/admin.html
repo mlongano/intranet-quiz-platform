@@ -1,0 +1,33 @@
+<!DOCTYPE html><html><head>
+<meta charset="utf-8"><title>Quiz Admin</title></head><body>
+<h1>Results</h1>
+<button id="load">Load scores</button>
+<table border="1" cellpadding="6">
+    <thead>
+      <tr><th>Quiz‑ID</th><th>Student</th><th>Score</th><th>Timestamp</th></tr>
+    </thead>
+    <tbody id="tbl"></tbody>
+</table>
+<script>
+document.getElementById('load').onclick = async ()=>{
+  const pw = prompt('Admin password:');
+  const res = await fetch('/api/scores', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:   JSON.stringify({ pw: pw })
+  });
+
+
+  if(!res.ok) return alert('Wrong password');
+  const data = await res.json();
+  document.getElementById('tbl').innerHTML =
+    data.map(r=>`
+      <tr>
+         <td>${r.quiz_id}</td>
+         <td>${r.student}</td>
+         <td>${r.score}/${r.total}</td>
+         <td>${r.timestamp}</td>
+      </tr>`).join('');
+};
+</script>
+</body></html>
