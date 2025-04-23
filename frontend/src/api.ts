@@ -1,0 +1,186 @@
+// frontend/src/api.ts (New file)
+
+// Define expected shapes of API responses/requests (improves type safety)
+interface StartQuizPayload {
+  name: string;
+}
+
+interface StartQuizResponse {
+  quiz_id: string;
+  student: string;
+  questions: Question[]; // Define Question type below
+}
+
+interface SubmitPayload {
+  quiz_id: string;
+  student_id: string; // Match backend expectation
+  answers: any[]; // Define Answer type more specifically if possible
+}
+
+interface SubmitResponse {
+  raw_points: number;
+  max_points: number;
+  percent: number;
+}
+
+type ResumeResponse = StartQuizResponse; // Resume returns same shape as start
+
+export interface Option {
+  // Assuming options are just strings based on main.js
+  // Adjust if options have IDs or other properties
+  text: string;
+}
+
+export interface Question {
+  qid: string;
+  type: "single" | "multiple" | "open";
+  weight: number;
+  text: string;
+  options: string[]; // Array of option texts
+}
+
+// Define Answer type based on how you store them (number, number[], string)
+export type Answer = number | number[] | string | null;
+
+// Define Score type based on scores.jsonc structure + detailed answers
+export interface DetailedAnswer {
+  question_id: string | number;
+  question_text: string;
+  student_answer: any; // Could be string, number[], string[]
+  correct_answer: any; // Could be string, string[], object
+  weight: number;
+  points_awarded: number;
+  raw_student_answer: any;
+  raw_correct_answer: any;
+}
+
+export interface ScoreEntry {
+  student: string;
+  quiz_id: string;
+  answers: DetailedAnswer[]; // Use the detailed structure
+  raw_points: number;
+  max_points: number;
+  percent: number;
+  timestamp: string;
+}
+// --- API Functions ---
+
+const API_BASE = "/api"; // Or configure as needed
+
+async function handleResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    let errorMsg = `Request failed: ${response.status} ${response.statusText}`;
+    try {
+      const serverError = await response.json(); // Assume error responses are JSON
+      errorMsg =
+        serverError.error ||
+        serverError.description ||
+        JSON.stringify(serverError);
+    } catch {
+      // If response is not JSON, maybe use response.text() as fallback
+      try {
+        const textError = await response.text();
+        if (textError) errorMsg = textError;
+      } catch {
+        /* ignore */
+      }
+    }
+    throw new Error(errorMsg);
+  }
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw new Error("Failed to parse server response.");
+  }
+}
+
+export async function startQuiz(
+  payload: StartQuizPayload,
+): Promise<StartQuizResponse> {
+  const response = await fetch(`${API_BASE}/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  // Special handling for 409 Conflict needed here, as it's not strictly an error
+  // in the sense of failing the operation, but indicates existing state.
+  if (response.status === 409) {
+    const data = await response.json();
+    // Re-throw with specific info for the component to handle
+    const err = new Error(
+      data.error || "Quiz already started/completed.",
+    ) as any;
+    err.quizId = data.quiz_id; // Attach quizId if available for resume
+    err.isConflict = true;
+    throw err;
+  }
+  return handleResponse<StartQuizResponse>(response);
+}
+
+export async function resumeQuiz(quizId: string): Promise<ResumeResponse> {
+  const response = await fetch(`${API_BASE}/resume/${quizId}`);
+  return handleResponse<ResumeResponse>(response);
+}
+
+export async function submitQuiz(
+  payload: SubmitPayload,
+): Promise<SubmitResponse> {
+  const response = await fetch(`${API_BASE}/submit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<SubmitResponse>(response);
+}
+
+export async function fetchScores(password: string): Promise<ScoreEntry[]> {
+  const response = await fetch(`${API_BASE}/scores`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pw: password }), // Send password as expected by backend
+  });
+  // Assuming handleResponse throws on non-ok status
+  return handleResponse<ScoreEntry[]>(response);
+}
+
+// Function to fetch details for review - REQUIRES NEW BACKEND ENDPOINT
+// Example: GET /api/review/student_email@example.com
+// Requires password, maybe via header
+export async function fetchSubmissionDetails(
+  studentId: string,
+  password: string,
+): Promise<ScoreEntry> {
+  // Assuming it returns one detailed entry
+  // Adjust URL and method based on your backend implementation
+  const safeStudentId = encodeURIComponent(studentId); // URL encode student ID
+  const response = await fetch(`${API_BASE}/review/${safeStudentId}`, {
+    method: "GET", // Or POST if preferred
+    headers: {
+      "Content-Type": "application/json",
+      "X-Admin-Pass": password, // Example: Send password in a header
+    },
+  });
+  return handleResponse<ScoreEntry>(response);
+}
+
+// Function to save overrides - REQUIRES NEW BACKEND ENDPOINT
+// Example: POST /api/review
+export interface OverridePayload {
+  student_id: string;
+  quiz_id: string; // To identify the specific submission
+  overrides: { question_id: string | number; points: number }[]; // List of questions to override points for
+  password: string;
+}
+export async function saveScoreOverrides(
+  payload: OverridePayload,
+): Promise<{ success: boolean }> {
+  // Example response
+  const response = await fetch(`${API_BASE}/review`, {
+    // Or appropriate endpoint
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    // Send necessary data, including password for verification
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<{ success: boolean }>(response);
+}
