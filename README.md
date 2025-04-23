@@ -2,6 +2,7 @@
 
 ## Directory layout
 
+```sh
 lan_quiz/ # project root directory
 │
 ├─ app.py
@@ -15,4 +16,6 @@ lan_quiz/ # project root directory
 ├─ admin.html # admin dashboard
 ├─ main.js
 └─ style.css # (optional) simple styling
-quizzes/ is created automatically; each student that starts a quiz gets a file like d6fa1b12.json describing only the randomized order of that quiz.
+```
+
+quizzes/ is created automatically; each student that starts a quiz gets a file like student_id.json describing only the randomized order of that quiz.
