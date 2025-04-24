@@ -1,5 +1,5 @@
 // frontend/src/components/QuestionDisplay.tsx (New file - basic structure)
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { Question, Answer } from "../api"; // Import types
 
 interface Props {
@@ -27,8 +27,35 @@ function QuestionDisplay({ question, currentAnswer, onAnswerChange }: Props) {
     }
   };
 
+  const quizContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const quizElement = quizContainerRef.current;
+    console.log("Try to prevent selection and context menu");
+
+    const preventSelection = (event: Event) => {
+      event.preventDefault();
+    };
+
+    const preventContextMenu = (event: Event) => {
+      event.preventDefault();
+    };
+
+    if (quizElement) {
+      quizElement.addEventListener("selectstart", preventSelection);
+      quizElement.addEventListener("contextmenu", preventContextMenu);
+    }
+
+    // Cleanup listener on component unmount
+    return () => {
+      if (quizElement) {
+        quizElement.removeEventListener("selectstart", preventSelection);
+        quizElement.removeEventListener("contextmenu", preventContextMenu);
+      }
+    };
+  }, []); // Empty dependency array ensures this runs once on mount
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" ref={quizContainerRef}>
       <p className="text-lg font-medium mb-4">{question.text}</p>
 
       {question.type === "open" && (

@@ -1,5 +1,5 @@
 // frontend/src/pages/QuizPage.tsx (with Tailwind)
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { resumeQuiz, submitQuiz, Question, Answer } from "../api";
@@ -142,6 +142,32 @@ function QuizPage() {
     }
   }, [answers, currentQuestionIndex, isStateRestored, persistState]);
 
+  useEffect(() => {
+    const quizElement = quizContainerRef.current;
+    console.log("Try to prevent selection and context menu");
+
+    const preventSelection = (event: Event) => {
+      event.preventDefault();
+    };
+
+    const preventContextMenu = (event: Event) => {
+      event.preventDefault();
+    };
+
+    if (quizElement) {
+      quizElement.addEventListener("selectstart", preventSelection);
+      quizElement.addEventListener("contextmenu", preventContextMenu);
+    }
+
+    // Cleanup listener on component unmount
+    return () => {
+      if (quizElement) {
+        quizElement.removeEventListener("selectstart", preventSelection);
+        quizElement.removeEventListener("contextmenu", preventContextMenu);
+      }
+    };
+  }, []); // Empty dependency array ensures this runs once on mount
+
   const currentQuestion: Question | undefined = useMemo(() => {
     return quizData?.questions?.[currentQuestionIndex];
   }, [quizData, currentQuestionIndex]);
@@ -156,6 +182,7 @@ function QuizPage() {
       return (answer as number[]).length > 0;
     return true;
   }, [answers, currentQuestionIndex, currentQuestion]);
+  const quizContainerRef = useRef<HTMLDivElement>(null);
 
   const submitMutation = useMutation({
     // ... (same mutation logic as before) ...
@@ -223,7 +250,11 @@ function QuizPage() {
     return <ErrorDisplay message="Error: Quiz data missing or invalid." />;
 
   return (
-    <div className="container mx-auto p-4 max-w-3xl">
+    <div
+      ref={quizContainerRef}
+      id="quiz-container"
+      className="container mx-auto p-4 max-w-3xl"
+    >
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-semibold">Quiz: {quizData.student}</h2>
         <span className="text-sm text-gray-600">
@@ -234,7 +265,7 @@ function QuizPage() {
       {/* Display local errors (e.g., from submit) */}
       <ErrorDisplay message={localError} />
 
-      <div className="bg-white p-6 rounded shadow-md border border-gray-200">
+      <div className="bg-white p-6 rounded shadow-md border border-gray-200 select-none">
         {/* Assume QuestionDisplay component handles rendering */}
         <QuestionDisplay
           question={currentQuestion}
