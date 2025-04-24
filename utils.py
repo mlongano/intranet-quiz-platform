@@ -4,6 +4,7 @@ from werkzeug.exceptions import NotFound, BadRequest, Conflict, InternalServerEr
 from pathlib import Path
 import os, re, unicodedata
 from dotenv import load_dotenv
+import shutil
 
 # --- Load Environment Variables ---
 load_dotenv()
@@ -82,6 +83,56 @@ def load_questions():
          raise InternalServerError(description=f"Could not decode master question file '{QUEST_FILE}'. Check syntax.")
     except Exception as e:
          raise InternalServerError(description=f"Error loading question bank '{QUEST_FILE}': {e}")
+
+def save_questions(data):
+    """Saves questions to the questions file with backup."""
+    backup_file = f"{QUEST_FILE}.bak"
+    # --- Backup ---
+    if os.path.exists(QUEST_FILE):
+        try:
+            shutil.copy2(QUEST_FILE, backup_file) # copy2 preserves metadata
+            print(f"Created backup: {backup_file}")
+        except Exception as e:
+            # Log the backup error but proceed with saving if possible
+            print(f"Warning: Could not create backup file {backup_file}: {e}")
+
+    # --- Save ---
+    try:
+        # Add basic validation: ensure data is a list
+        if not isinstance(data, list):
+             raise ValueError("Invalid data format: Top-level structure must be a list.")
+
+        with open(QUEST_FILE, 'w', encoding='utf-8') as f:
+            # Use commentjson if comments need preserving, else standard json
+            # json.dump(data, f, indent=2) # For standard JSON
+            json.dump(data, f, indent=2) # For commentjson
+    except (ValueError, TypeError) as e: # Catch data format errors or JSON serialization errors
+        # Attempt to restore from backup if saving failed
+        if os.path.exists(backup_file):
+            try:
+                shutil.copy2(backup_file, QUEST_FILE)
+                print(f"Error saving questions. Restored from backup: {backup_file}")
+            except Exception as restore_e:
+                 print(f"CRITICAL: Failed to save questions AND failed to restore backup: {restore_e}")
+        raise BadRequest(description=f"Invalid question data provided: {e}") # 400 Bad Request for data issues
+    except IOError as e: # Catch file writing errors
+        # Attempt to restore from backup
+        if os.path.exists(backup_file):
+            try:
+                shutil.copy2(backup_file, QUEST_FILE)
+                print(f"Error saving questions. Restored from backup: {backup_file}")
+            except Exception as restore_e:
+                 print(f"CRITICAL: Failed to save questions AND failed to restore backup: {restore_e}")
+        raise InternalServerError(description=f"I/O error saving questions to {QUEST_FILE}: {e}") # 500 for system errors
+    except Exception as e: # Catch other unexpected errors
+        # Attempt to restore from backup
+        if os.path.exists(backup_file):
+             try:
+                 shutil.copy2(backup_file, QUEST_FILE)
+                 print(f"Error saving questions. Restored from backup: {backup_file}")
+             except Exception as restore_e:
+                 print(f"CRITICAL: Failed to save questions AND failed to restore backup: {restore_e}")
+        raise InternalServerError(description=f"Unexpected error saving questions: {e}")
 
 # --- Grading Logic ---
 def normalise(txt: str) -> str:

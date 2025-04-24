@@ -7,7 +7,9 @@ import datetime
 from utils import (
     ADMIN_PW,
     load_scores,
-    save_scores
+    save_scores,
+    save_questions,
+    load_questions
 )
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api')
@@ -106,3 +108,45 @@ def api_save_review():
         print(f"No effective overrides applied for student '{student_id}', quiz '{quiz_id}'.")
 
     return jsonify({"success": True, "message": f"{updated_count} overrides applied."})
+
+@admin_bp.route('/admin/questions', methods=['GET', 'PUT']) # Or PUT instead of POST
+def manage_questions():
+    # Authentication (reuse or adapt from /api/scores or /api/review)
+    auth_pw = None
+    data = None  # Ensure data is always defined
+    if request.method == 'GET':
+         # For GET, maybe expect password as query param or header?
+         auth_pw = request.args.get('pw') # Example: using query param
+    elif request.method == 'PUT':
+         data = request.get_json(silent=True) or {}
+         auth_pw = data.get('pw') # TODO: not secure
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403) # Forbidden
+        #raise Unauthorized(description="Admin authentication failed.")
+
+    if request.method == 'GET':
+        try:
+            questions = load_questions()
+            return jsonify(questions)
+        except Exception:
+            abort(404)
+            # Handle potential errors from load_questions (e.g., file not found)
+            # raise InternalServerError(description=f"Failed to load questions: {e}")
+
+    if request.method == 'PUT':
+         # Assuming 'questions' is the key holding the list in the request body
+         new_questions_data = data.get('questions') if data is not None else None
+         if not isinstance(new_questions_data, list):
+             raise BadRequest(description="Invalid data format: 'questions' must be a list.")
+         # **Add more validation here if needed** (e.g., check structure of each question)
+         try:
+             save_questions(new_questions_data)
+             return jsonify({"success": True, "message": "Questions updated successfully."})
+         except Exception:
+             abort(500)
+             # Handle potential errors from save_questions
+             #raise InternalServerError(description=f"Failed to save questions: {e}")
+
+    # Fallback for unsupported methods
+    abort(405)
