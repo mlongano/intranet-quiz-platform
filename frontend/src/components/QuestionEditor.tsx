@@ -3,10 +3,11 @@
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchAdminQuestions, updateAdminQuestions, Question } from "../api"; // Adjust path if needed
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 const QuestionEditor: React.FC = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   // Attempt to get password from navigation state (insecure, lost on refresh)
   const adminPassword = location.state?.adminPassword;
   // Local state for the editable JSON string and password
@@ -177,6 +178,19 @@ const QuestionEditor: React.FC = () => {
 
   return (
     <div className="container mx-auto p-4">
+      <div className="flex justify-start items-center mb-2">
+        {/* Reduced bottom margin */}
+        <button
+          onClick={() => {
+            navigate("/admin/dashboard", {
+              state: { adminPassword: adminPassword },
+            });
+          }}
+          className="px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Go to admin dashboard
+        </button>
+      </div>
       <h2 className="text-2xl font-bold mb-4">Question Editor</h2>
 
       {/* Error/Success Messages */}
