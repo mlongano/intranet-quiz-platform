@@ -206,10 +206,12 @@ function SubmissionDetailView({
                   type="number"
                   min="0" // Minimum score is 0
                   max={questionWeight} // Maximum score is the question's weight
-                  step="0.1" // Or "1" if only whole points
+                  step="0.5" // Or "1" if only whole points
                   className="w-24 border border-gray-300 p-1 text-sm rounded shadow-sm focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
                   placeholder={ans.raw_points.toString()}
-                  value={overrides[ans.question_id] ?? ""}
+                  value={
+                    overrides[ans.question_id] ?? ans.raw_points.toString()
+                  }
                   // Pass max weight to handler for clamping
                   onChange={(e) =>
                     handleOverrideChange(
