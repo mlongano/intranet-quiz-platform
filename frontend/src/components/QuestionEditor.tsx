@@ -243,8 +243,8 @@ const QuestionEditor: React.FC = () => {
             id="commonWeight"
             value={commonWeight}
             onChange={(e) => setCommonWeight(e.target.value)}
-            min="0"
-            step="0.1"
+            min="1"
+            step="1"
             className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-24 sm:text-sm border-gray-300 rounded-md p-1"
             disabled={isProcessing}
           />
