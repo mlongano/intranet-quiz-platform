@@ -20,7 +20,12 @@ def api_scores():
     # Consider using werkzeug.security.check_password_hash for real password checking
     if data.get('pw') != ADMIN_PW:
         abort(403) # Forbidden
-    return jsonify(load_scores())
+    scores = []
+    try:
+        scores = load_scores()
+    except FileNotFoundError:
+        abort(404) # Not Found
+    return jsonify(scores)
 
 @admin_bp.route('/review', methods=['POST'])
 def api_save_review():
@@ -43,7 +48,15 @@ def api_save_review():
         raise BadRequest(description="Invalid 'overrides' format, expected a list.")
 
     # 3. Load Scores
-    scores = load_scores()
+    scores = []
+
+    try:
+        scores = load_scores()
+    except Exception as e:
+        # Catch potential errors during score loading (though load_scores handles some)
+        print(f"Error in /api/scores loading scores: {e}")
+        raise InternalServerError(description="Failed to load scores.")
+
     target_submission_index = -1
     target_submission = None
 
@@ -109,23 +122,23 @@ def api_save_review():
 
     return jsonify({"success": True, "message": f"{updated_count} overrides applied."})
 
-@admin_bp.route('/admin/questions', methods=['GET', 'PUT']) # Or PUT instead of POST
+@admin_bp.route('/admin/questions', methods=['POST', 'PUT']) # Or PUT instead of POST
 def manage_questions():
     # Authentication (reuse or adapt from /api/scores or /api/review)
     auth_pw = None
-    data = None  # Ensure data is always defined
-    if request.method == 'GET':
-         # For GET, maybe expect password as query param or header?
-         auth_pw = request.args.get('pw') # Example: using query param
+    data = request.get_json(silent=True) or {}
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        auth_pw = data.get('pw') # TODO: not secure
     elif request.method == 'PUT':
-         data = request.get_json(silent=True) or {}
-         auth_pw = data.get('pw') # TODO: not secure
+        # Get password from custom header X-Admin-Password
+        auth_pw = request.headers.get('X-Admin-Pass')
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403) # Forbidden
         #raise Unauthorized(description="Admin authentication failed.")
 
-    if request.method == 'GET':
+    if request.method == 'POST':
         try:
             questions = load_questions()
             return jsonify(questions)
