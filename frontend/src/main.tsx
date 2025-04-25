@@ -15,6 +15,8 @@ import ErrorPage from "./pages/ErrorPage"; // A general error boundary/page
 import AdminLayout from "./layouts/AdminLayout";
 import AdminLoginPage from "./pages/AdminLoginPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
+import QuestionEditor from "./components/QuestionEditor";
+import AdminRootPage from "./pages/AdminRootPage";
 
 // Create a client
 const queryClient = new QueryClient();
@@ -47,9 +49,15 @@ const router = createBrowserRouter([
     errorElement: <ErrorPage />,
     children: [
       { index: true, element: <AdminLoginPage /> }, // Login page at /admin
+      { path: "root", element: <AdminRootPage /> }, // Dashboard at /admin/dashboard
       { path: "dashboard", element: <AdminDashboardPage /> }, // Dashboard at /admin/dashboard
       // Add route for detail view later:
       // { path: 'review/:studentId', element: <SubmissionDetailView /> },
+      //   { // Add the new route for the question editor
+      {
+        path: "questions",
+        element: <QuestionEditor />,
+      },
     ],
   },
 ]);

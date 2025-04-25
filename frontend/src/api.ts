@@ -185,3 +185,58 @@ export async function saveScoreOverrides(
   });
   return handleResponse<{ success: boolean }>(response);
 }
+
+// Define the shape of the response for updating questions
+export interface UpdateQuestionsResponse {
+  success: boolean;
+  message: string;
+}
+
+// --- New Admin Functions ---
+
+/**
+ * Fetches the full list of questions from the admin endpoint.
+ * Requires admin password.
+ */
+export async function fetchAdminQuestions(
+  password: string,
+): Promise<Question[]> {
+  // Send password via header (more secure than query param)
+  const response = await fetch(`${API_BASE}/admin/questions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ pw: password }), // Send password as expected by backend
+    // Or use query param if backend expects that for GET:
+    // const response = await fetch(`${API_BASE}/admin/questions?pw=${encodeURIComponent(password)}`);
+  });
+  // handleResponse will throw for non-ok status (like 401 Unauthorized)
+  return handleResponse<Question[]>(response);
+}
+
+/**
+ * Updates the questions file on the server.
+ * Requires admin password and the full list of questions.
+ */
+export async function updateAdminQuestions(
+  questions: Question[],
+  password: string,
+): Promise<UpdateQuestionsResponse> {
+  console.log(`Updating questions... with password ${password}`);
+  const response = await fetch(`${API_BASE}/admin/questions`, {
+    method: "PUT", // Or 'PUT' if you implemented that on the backend
+    headers: {
+      "Content-Type": "application/json",
+      "X-Admin-Pass": password, // Send password in a custom header
+    },
+    body: JSON.stringify({
+      // The backend expects an object with a 'questions' key and optionally 'password'
+      // Adjust if your backend POST implementation expects the password elsewhere
+      questions: questions,
+      // password: password // Alternatively, send password inside the main body if header isn't used
+    }),
+  });
+  // handleResponse will throw for non-ok status (like 400 Bad Request, 401 Unauthorized, 500 Internal Server Error)
+  return handleResponse<UpdateQuestionsResponse>(response);
+}
