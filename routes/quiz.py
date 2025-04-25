@@ -11,6 +11,7 @@ import random
 from utils import (
     VALID_STUDENTS,
     QUIZ_FOLDER,
+    IMAGES_FOLDER,
     load_scores,
     save_scores,
     load_questions,
@@ -25,6 +26,18 @@ from utils import (
 )
 
 quiz_bp = Blueprint('quiz', __name__, url_prefix='/api')
+
+# --- Helper to format image path for client ---
+def format_image_url(image_path):
+    """Prepends the base image route if the path is valid."""
+    if image_path and isinstance(image_path, str):
+        # Simple check to avoid adding prefix multiple times or to absolute URLs
+        if not image_path.startswith(f"/{IMAGES_FOLDER}/") and not image_path.startswith("http"):
+             # Remove leading slash if present to avoid //
+            clean_path = image_path.lstrip('/')
+            return f"/{IMAGES_FOLDER}/{clean_path}"
+    return None # Return None if no valid path
+
 
 @quiz_bp.route('/start', methods=['POST'])
 def api_start():
@@ -65,29 +78,39 @@ def api_start():
             q_options = q.get('options', [])
             option_order = list(range(len(q_options)))
             random.shuffle(option_order)
-            options_for_client = [q_options[i] for i in option_order]
+            # --- Process options (string or object) ---
+            for i in option_order:
+                original_option = q_options[i]
+                if isinstance(original_option, dict):
+                    # Option is an object: format image path, keep text
+                    options_for_client.append({
+                        "text": original_option.get("text", ""),
+                        "image": format_image_url(original_option.get("image"))
+                    })
+                else:
+                    # Option is a simple string
+                    options_for_client.append(str(original_option)) # Send as string
         quiz_plan_steps.append({"id": q['id'], "option_order": option_order})
         stripped_questions.append({
-            "qid": q['id'], "type": q['type'], "weight": q.get('weight', 1),
-            "text": q['text'], "options": options_for_client
+            "qid": q['id'],
+            "type": q['type'],
+            "weight": q.get('weight', 1),
+            "text": q['text'],
+            "question_image": format_image_url(q.get('question_image')), # <-- Add formatted question image URL
+            "options": options_for_client # <-- Send processed options
         })
 
     quiz_id = uuid.uuid4().hex[:12]
     output_plan_path = Path(QUIZ_FOLDER) / f'{safe_id(student)}.json'
-    meta = {
-        "quiz_id": quiz_id,
-        "student": student,
-        "created": datetime.datetime.utcnow().isoformat(timespec='seconds'),
-        "plan": quiz_plan_steps
-    }
+    meta = { "quiz_id": quiz_id, "student": student, "created": datetime.datetime.utcnow().isoformat(timespec='seconds'), "plan": quiz_plan_steps }
     try:
-        with open(output_plan_path, 'w', encoding='utf-8') as f:
-            json.dump(meta, f, indent=2)
+        with open(output_plan_path, 'w', encoding='utf-8') as f: json.dump(meta, f, indent=2)
     except Exception as e:
         print(f"Error saving quiz plan for student {student}: {e}")
         raise InternalServerError(description=f"Could not save quiz plan file: {e}")
 
     return jsonify({"quiz_id": quiz_id, "student": student, "questions": stripped_questions})
+
 
 
 @quiz_bp.route('/submit', methods=['POST'])
