@@ -31,12 +31,20 @@ export interface Option {
   text: string;
 }
 
+// --- NEW: Type for complex options ---
+export interface OptionObject {
+  text: string;
+  image?: string; // Optional image path (URL)
+}
+
+// --- UPDATED: Question Type ---
 export interface Question {
   qid: string;
   type: "single" | "multiple" | "open";
   weight: number;
   text: string;
-  options: string[]; // Array of option texts
+  question_image?: string; // Optional question image path (URL)
+  options: Array<string | OptionObject>; // Options can be strings or objects
 }
 
 // Define Answer type based on how you store them (number, number[], string)
@@ -46,7 +54,10 @@ export type Answer = number | number[] | string | null;
 export interface DetailedAnswer {
   question_id: string | number;
   question_text: string;
+  question_image?: string; // <-- Add question image here too
   student_answer: any; // Could be string, number[], string[]
+  option_student_image?: string | string[] | null; // Optional student image path (URL)
+  option_correct_image?: string | string[] | null; // Optional student image path (URL)
   correct_answer: any; // Could be string, string[], object
   weight: number;
   points_awarded: number;
@@ -72,13 +83,12 @@ async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let errorMsg = `Request failed: ${response.status} ${response.statusText}`;
     try {
-      const serverError = await response.json(); // Assume error responses are JSON
+      const serverError = await response.json();
       errorMsg =
         serverError.error ||
         serverError.description ||
         JSON.stringify(serverError);
     } catch {
-      // If response is not JSON, maybe use response.text() as fallback
       try {
         const textError = await response.text();
         if (textError) errorMsg = textError;
@@ -86,12 +96,24 @@ async function handleResponse<T>(response: Response): Promise<T> {
         /* ignore */
       }
     }
-    throw new Error(errorMsg);
+    const error = new Error(errorMsg) as any;
+    if (response.status === 409) {
+      try {
+        const data = JSON.parse(await response.text()); // Re-parse if needed
+        error.quizId = data.quiz_id;
+        error.isConflict = true;
+      } catch {
+        /* ignore if parsing fails again */
+      }
+    }
+    throw error;
   }
   try {
     return (await response.json()) as T;
-  } catch {
-    throw new Error("Failed to parse server response.");
+  } catch (e) {
+    throw new Error(
+      `Failed to parse server response: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
 }
 
