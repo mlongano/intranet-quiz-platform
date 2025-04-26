@@ -15,7 +15,7 @@ import ErrorPage from "./pages/ErrorPage"; // A general error boundary/page
 import AdminLayout from "./layouts/AdminLayout";
 import AdminLoginPage from "./pages/AdminLoginPage";
 import AdminScoresPage from "./pages/AdminScoresPage";
-import QuestionEditor from "./components/QuestionEditor";
+import AdminQuestionEditorPage from "./pages/AdminQuestionEditorPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 
 // Create a client
@@ -56,7 +56,7 @@ const router = createBrowserRouter([
       //   { // Add the new route for the question editor
       {
         path: "questions",
-        element: <QuestionEditor />,
+        element: <AdminQuestionEditorPage />,
       },
     ],
   },
