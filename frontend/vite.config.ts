@@ -10,6 +10,13 @@ export default defineConfig({
     port: 5173, // Default Vite port
     proxy: {
       // Proxy /api requests to your Flask backend
+      "/images": {
+        target: "http://localhost:5001", // Your Flask backend URL
+        changeOrigin: true, // Recommended for virtual hosted sites
+        secure: false, // Optional: Set to false if backend uses self-signed certs (not recommended for prod)
+        // Optional: You might not need rewrite if your Flask routes start with /api
+        // rewrite: (path) => path.replace(/^\/api/, '/api')
+      },
       "/api": {
         target: "http://localhost:5001", // Your Flask backend URL
         changeOrigin: true, // Recommended for virtual hosted sites
