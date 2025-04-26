@@ -1,5 +1,5 @@
 // frontend/src/components/QuestionDisplay.tsx (New file - basic structure)
-import React, { useEffect, useRef } from "react";
+import React from "react";
 import { Question, Answer, OptionObject } from "../api"; // Import types
 
 interface Props {
@@ -39,41 +39,13 @@ function QuestionDisplay({ question, currentAnswer, onAnswerChange }: Props) {
     }
   };
 
-  const quizContainerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const quizElement = quizContainerRef.current;
-    console.log("Try to prevent selection and context menu");
-
-    const preventSelection = (event: Event) => {
-      event.preventDefault();
-    };
-
-    const preventContextMenu = (event: Event) => {
-      event.preventDefault();
-    };
-
-    if (quizElement) {
-      quizElement.addEventListener("selectstart", preventSelection);
-      quizElement.addEventListener("contextmenu", preventContextMenu);
-    }
-
-    // Cleanup listener on component unmount
-    return () => {
-      if (quizElement) {
-        quizElement.removeEventListener("selectstart", preventSelection);
-        quizElement.removeEventListener("contextmenu", preventContextMenu);
-      }
-    };
-  }, []); // Empty dependency array ensures this runs once on mount
-
   return (
-    <div className="space-y-4" ref={quizContainerRef}>
+    <div className="space-y-4">
       {/* --- NEW: Display question image --- */}
       {question.question_image && (
         <img
           src={question.question_image}
-          alt={`Question ${question.qid} image`}
+          alt={`Question ${question.id} image`}
           className="question-image my-4 mx-auto block max-w-full h-auto max-h-60 rounded" // Add styling class
         />
       )}
@@ -99,7 +71,7 @@ function QuestionDisplay({ question, currentAnswer, onAnswerChange }: Props) {
             >
               <input
                 type={question.type === "single" ? "radio" : "checkbox"}
-                name={`q_${question.qid}`} // Use unique name for radio group
+                name={`q_${question.id}`} // Use unique name for radio group
                 value={index}
                 checked={
                   question.type === "single"
