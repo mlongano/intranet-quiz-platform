@@ -39,7 +39,7 @@ export interface OptionObject {
 
 // --- UPDATED: Question Type ---
 export interface Question {
-  qid: string;
+  id: string;
   type: "single" | "multiple" | "open";
   weight: number;
   text: string;
@@ -75,6 +75,16 @@ export interface ScoreEntry {
   percent: number;
   timestamp: string;
 }
+
+export interface QuestionBankFilesResponse {
+  files: string[]; // List of available quiz filenames in the bank
+}
+
+export interface BankOperationResponse {
+  success: boolean;
+  message: string; // Message from the backend (e.g., filename on save)
+}
+
 // --- API Functions ---
 
 const API_BASE = "/api"; // Or configure as needed
@@ -261,4 +271,76 @@ export async function updateAdminQuestions(
   });
   // handleResponse will throw for non-ok status (like 400 Bad Request, 401 Unauthorized, 500 Internal Server Error)
   return handleResponse<UpdateQuestionsResponse>(response);
+}
+
+/**
+ * Fetches the list of available quiz files in the question_bank folder.
+ * Requires admin password.
+ */
+export async function fetchQuestionBankFiles(
+  password: string,
+): Promise<QuestionBankFilesResponse> {
+  const response = await fetch(`${API_BASE}/admin/bank/files`, {
+    method: "POST", // Based on backend implementation
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ pw: password }), // Send password
+  });
+  return handleResponse<QuestionBankFilesResponse>(response);
+}
+
+/**
+ * Loads a specified quiz file from the question_bank into the active QUEST_FILE.
+ * Requires admin password and the filename to load.
+ */
+export async function loadQuizFromBank(
+  filename: string,
+  password: string,
+): Promise<BankOperationResponse> {
+  const response = await fetch(`${API_BASE}/admin/bank/load`, {
+    method: "POST", // Based on backend implementation
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ filename: filename, pw: password }), // Send filename and password
+  });
+  return handleResponse<BankOperationResponse>(response);
+}
+
+/**
+ * Saves the current active QUEST_FILE to the question_bank with a date prefix and specified suffix.
+ * Requires admin password and the filename suffix.
+ */
+export async function saveQuizToBank(
+  filename_suffix: string,
+  password: string,
+): Promise<BankOperationResponse> {
+  const response = await fetch(`${API_BASE}/admin/bank/save`, {
+    method: "POST", // Based on backend implementation
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ filename_suffix: filename_suffix, pw: password }), // Send suffix and password
+  });
+  return handleResponse<BankOperationResponse>(response);
+}
+
+/**
+ * Fetches the content (questions) of a specific file in the question_bank for preview.
+ * Requires admin password and the filename to preview.
+ */
+export async function fetchPreviewBankFile(
+  filename: string,
+  password: string,
+): Promise<Question[]> {
+  // Expecting an array of Question objects
+  const response = await fetch(`${API_BASE}/admin/bank/preview`, {
+    method: "POST", // Based on backend
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ filename: filename, pw: password }), // Send filename and password
+  });
+  return handleResponse<Question[]>(response);
 }

@@ -17,6 +17,7 @@ import AdminLoginPage from "./pages/AdminLoginPage";
 import AdminScoresPage from "./pages/AdminScoresPage";
 import AdminQuestionEditorPage from "./pages/AdminQuestionEditorPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
+import AdminBankManagerPage from "./pages/AdminBankManagerPage"; // Assuming this file is in ./pages
 
 // Create a client
 const queryClient = new QueryClient();
@@ -57,6 +58,10 @@ const router = createBrowserRouter([
       {
         path: "questions",
         element: <AdminQuestionEditorPage />,
+      },
+      {
+        path: "bank", // This will make the route /admin/bank
+        element: <AdminBankManagerPage />, // The component to manage bank files
       },
     ],
   },
