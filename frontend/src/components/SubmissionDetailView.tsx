@@ -122,6 +122,33 @@ function SubmissionDetailView({
   // Determine if there are any pending changes
   const hasPendingOverrides = Object.keys(overrides).length > 0;
 
+  function displayOptionImages(images: any, answers: any) {
+    // Implement logic to display option images
+    return (
+      <div>
+        {Array.isArray(images)
+          ? images.map(
+              (image, index) =>
+                image && (
+                  <img
+                    key={index}
+                    src={image}
+                    alt={`${answers[index]}`}
+                    className="w-40 max-w-10 mx-auto my-2"
+                  />
+                ),
+            )
+          : images && (
+              <img
+                src={images}
+                alt={`${answers}`}
+                className="w-40 max-w-10 mx-auto my-2"
+              />
+            )}
+      </div>
+    );
+  }
+
   return (
     // Container for the detail view with styling
     <div className="mt-8 p-6 border border-gray-300 rounded-lg shadow-lg bg-white space-y-4 relative">
@@ -165,25 +192,49 @@ function SubmissionDetailView({
                   (ID: {ans.question_id})
                 </span>
               </p>
+              {ans.question_image && (
+                <img
+                  src={ans.question_image}
+                  alt={`Question ${index + 1} Image`}
+                  className="w-40 max-w-sm mx-auto my-2"
+                />
+              )}
 
               {/* Student Answer */}
-              <div className="ml-4 mb-2 text-sm">
+              <div className="flex justify-start items-center gap-2 ml-4 mb-2 text-sm">
                 <span className="font-medium text-gray-600">
                   Student Answer:{" "}
                 </span>
                 <pre className="inline-block font-mono bg-gray-100 p-1 rounded text-xs whitespace-pre-wrap break-words">
                   {JSON.stringify(ans.student_answer, null, 2)}
                 </pre>
+                {displayOptionImages(
+                  ans.option_student_image,
+                  ans.student_answer,
+                )}
+                {ans.points_awarded === ans.weight && (
+                  <span className="font-bold text-xl text-green-700">✓</span>
+                )}
+                {ans.points_awarded > 0 && ans.points_awarded < ans.weight && (
+                  <span className="font-bold text-xl text-yellow-400">⚠</span>
+                )}
+                {ans.points_awarded === 0 && (
+                  <span className="font-bold text-xl text-red-700">❌</span>
+                )}
               </div>
 
               {/* Correct Answer */}
-              <div className="ml-4 mb-2 text-sm">
+              <div className="flex justify-start items-center gap-2 ml-4 mb-2 text-sm">
                 <span className="font-medium text-green-700">
                   Correct Answer:{" "}
                 </span>
                 <pre className="inline-block font-mono bg-green-50 p-1 rounded text-xs whitespace-pre-wrap break-words">
                   {JSON.stringify(ans.correct_answer, null, 2)}
                 </pre>
+                {displayOptionImages(
+                  ans.option_correct_image,
+                  ans.correct_answer,
+                )}
               </div>
 
               {/* Points and Override Input */}

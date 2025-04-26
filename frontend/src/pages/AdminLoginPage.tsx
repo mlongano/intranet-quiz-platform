@@ -28,7 +28,7 @@ function AdminLoginPage() {
     console.log(
       "Navigating to dashboard, passing password in state (insecure for refresh)",
     );
-    navigate("/admin/root", { state: { adminPassword: password } });
+    navigate("/admin/dashboard", { state: { adminPassword: password } });
 
     // ---- OR ----
     // If using a state management library (like Zustand):

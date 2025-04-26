@@ -1,6 +1,6 @@
 // frontend/src/components/QuestionDisplay.tsx (New file - basic structure)
 import React, { useEffect, useRef } from "react";
-import { Question, Answer } from "../api"; // Import types
+import { Question, Answer, OptionObject } from "../api"; // Import types
 
 interface Props {
   question: Question;
@@ -9,6 +9,18 @@ interface Props {
 }
 
 function QuestionDisplay({ question, currentAnswer, onAnswerChange }: Props) {
+  // --- NEW: Helper to get text from option ---
+  const getOptionText = (option: string | OptionObject): string => {
+    return typeof option === "string" ? option : option.text;
+  };
+
+  // --- NEW: Helper to get image path from option ---
+  const getOptionImage = (
+    option: string | OptionObject,
+  ): string | undefined => {
+    return typeof option === "string" ? undefined : option.image;
+  };
+
   const handleOpenChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onAnswerChange(e.target.value);
   };
@@ -54,8 +66,18 @@ function QuestionDisplay({ question, currentAnswer, onAnswerChange }: Props) {
       }
     };
   }, []); // Empty dependency array ensures this runs once on mount
+
   return (
     <div className="space-y-4" ref={quizContainerRef}>
+      {/* --- NEW: Display question image --- */}
+      {question.question_image && (
+        <img
+          src={question.question_image}
+          alt={`Question ${question.qid} image`}
+          className="question-image my-4 mx-auto block max-w-full h-auto max-h-60 rounded" // Add styling class
+        />
+      )}
+
       <p className="text-lg font-medium mb-4">{question.text}</p>
 
       {question.type === "open" && (
@@ -70,7 +92,7 @@ function QuestionDisplay({ question, currentAnswer, onAnswerChange }: Props) {
 
       {(question.type === "single" || question.type === "multiple") && (
         <div className="space-y-2">
-          {question.options.map((optionText, index) => (
+          {question.options.map((option, index) => (
             <label
               key={index}
               className="flex items-center p-3 border rounded hover:bg-gray-50 cursor-pointer"
@@ -91,7 +113,18 @@ function QuestionDisplay({ question, currentAnswer, onAnswerChange }: Props) {
                     : "h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
                 }
               />
-              <span className="ml-3 text-gray-800">{optionText}</span>
+              {/* Display option text */}
+              <span className="ml-3 text-gray-800">
+                {getOptionText(option)}
+              </span>
+              {/* NEW: Display option image */}
+              {getOptionImage(option) && (
+                <img
+                  src={getOptionImage(option)}
+                  alt={`Option ${index + 1}`}
+                  className="option-image ml-2 h-10 w-auto object-contain" // Add styling class
+                />
+              )}
             </label>
           ))}
         </div>

@@ -11,6 +11,7 @@ import random
 from utils import (
     VALID_STUDENTS,
     QUIZ_FOLDER,
+    format_image_url,
     load_scores,
     save_scores,
     load_questions,
@@ -26,8 +27,61 @@ from utils import (
 
 quiz_bp = Blueprint('quiz', __name__, url_prefix='/api')
 
+def build_quiz_plan(qbank):
+    """Init the quiz_id and the quiz paln"""
+    quiz_plan_steps = []
+    for q in qbank:
+        option_order = []
+        if q['type'] != 'open':
+            q_options = q.get('options', [])
+            option_order = list(range(len(q_options)))
+            random.shuffle(option_order)
+            # --- Process options (string or object) ---
+        quiz_plan_steps.append({"id": q['id'], "option_order": option_order})
+
+    quiz_id = uuid.uuid4().hex[:12]
+    return quiz_id, quiz_plan_steps
+
+def build_questions(qbank):
+    """Builds a list of questions from the given question bank."""
+    quiz_plan_steps = []
+    stripped_questions = []
+    for q in qbank:
+        option_order = []
+        options_for_client = []
+        if q['type'] != 'open':
+            q_options = q.get('options', [])
+            option_order = list(range(len(q_options)))
+            random.shuffle(option_order)
+            # --- Process options (string or object) ---
+            for i in option_order:
+                original_option = q_options[i]
+                if isinstance(original_option, dict):
+                    # Option is an object: format image path, keep text
+                    options_for_client.append({
+                        "text": original_option.get("text", ""),
+                        "image": format_image_url(original_option.get("image"))
+                    })
+                else:
+                    # Option is a simple string
+                    options_for_client.append(str(original_option)) # Send as string
+        print(f"Options: {options_for_client}")
+        quiz_plan_steps.append({"id": q['id'], "option_order": option_order})
+        stripped_questions.append({
+            "qid": q['id'],
+            "type": q['type'],
+            "weight": q.get('weight', 1),
+            "text": q['text'],
+            "question_image": format_image_url(q.get('question_image')), # <-- Add formatted question image URL
+            "options": options_for_client # <-- Send processed options
+        })
+
+    quiz_id = uuid.uuid4().hex[:12]
+    return quiz_id, stripped_questions, quiz_plan_steps
+
 @quiz_bp.route('/start', methods=['POST'])
 def api_start():
+    print('Starting quiz...')
     data = request.get_json(force=True, silent=True) or {}
     student = data.get('name', '').strip()[:60].lower()
     if not student:
@@ -55,40 +109,15 @@ def api_start():
     # --- Create new quiz ---
     qbank = load_questions() # Can raise InternalServerError
     random.shuffle(qbank)
-    quiz_plan_steps = []
-    stripped_questions = []
+    quiz_id, quiz_plan_steps = build_quiz_plan(qbank)
 
-    for q in qbank:
-        option_order = []
-        options_for_client = []
-        if q['type'] != 'open':
-            q_options = q.get('options', [])
-            option_order = list(range(len(q_options)))
-            random.shuffle(option_order)
-            options_for_client = [q_options[i] for i in option_order]
-        quiz_plan_steps.append({"id": q['id'], "option_order": option_order})
-        stripped_questions.append({
-            "qid": q['id'], "type": q['type'], "weight": q.get('weight', 1),
-            "text": q['text'], "options": options_for_client
-        })
-
-    quiz_id = uuid.uuid4().hex[:12]
     output_plan_path = Path(QUIZ_FOLDER) / f'{safe_id(student)}.json'
-    meta = {
-        "quiz_id": quiz_id,
-        "student": student,
-        "created": datetime.datetime.utcnow().isoformat(timespec='seconds'),
-        "plan": quiz_plan_steps
-    }
+    meta = { "quiz_id": quiz_id, "student": student, "created": datetime.datetime.utcnow().isoformat(timespec='seconds'), "plan": quiz_plan_steps }
     try:
-        with open(output_plan_path, 'w', encoding='utf-8') as f:
-            json.dump(meta, f, indent=2)
+        with open(output_plan_path, 'w', encoding='utf-8') as f: json.dump(meta, f, indent=2)
     except Exception as e:
-        print(f"Error saving quiz plan for student {student}: {e}")
         raise InternalServerError(description=f"Could not save quiz plan file: {e}")
-
-    return jsonify({"quiz_id": quiz_id, "student": student, "questions": stripped_questions})
-
+    return jsonify({"quiz_id": quiz_id})
 
 @quiz_bp.route('/submit', methods=['POST'])
 def api_submit():
@@ -125,7 +154,6 @@ def api_submit():
          'percent': calc_results['percent'],
     })
 
-
 @quiz_bp.route('/resume/<quiz_id>')
 def api_resume(quiz_id):
     """Resumes a quiz by finding the plan file containing the quiz_id."""
@@ -155,11 +183,30 @@ def api_resume(quiz_id):
         q = qbank_map[q_id]
         q_options = q.get('options', [])
         step_option_order = step.get('option_order', [])
-        opts = [q_options[i] for i in step_option_order if q['type'] != 'open' and 0 <= i < len(q_options)]
+
+        options_for_client = []
+        if q['type'] != 'open':
+            q_options = q.get('options', [])
+            # --- Process options (string or object) ---
+            for i in step_option_order:
+                original_option = q_options[i]
+                if isinstance(original_option, dict):
+                    # Option is an object: format image path, keep text
+                    options_for_client.append({
+                        "text": original_option.get("text", ""),
+                        "image": format_image_url(original_option.get("image"))
+                    })
+                else:
+                    # Option is a simple string
+                    options_for_client.append(str(original_option)) # Send as string
 
         stripped.append({
-            "qid": q['id'], "type": q['type'], "weight": q.get('weight', 1),
-            "text": q['text'], "options": opts
+            "qid": q['id'],
+            "type": q['type'],
+            "weight": q.get('weight', 1),
+            "text": q['text'],
+            "question_image": format_image_url(q.get('question_image')), # <-- Add formatted question image URL
+            "options": options_for_client # <-- Send processed options
         })
 
     return jsonify({
