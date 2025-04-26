@@ -51,6 +51,18 @@ def safe_id(raw: str) -> str:
     """Creates a filesystem-safe ID from a raw string."""
     return SAFE.sub('_', raw)
 
+# --- Helper to format image path for client ---
+def format_image_url(image_path):
+    """Prepends the base image route if the path is valid."""
+    if image_path and isinstance(image_path, str):
+        # Simple check to avoid adding prefix multiple times or to absolute URLs
+        if not image_path.startswith(f"/{IMAGES_FOLDER}/") and not image_path.startswith("http"):
+             # Remove leading slash if present to avoid //
+            clean_path = image_path.lstrip('/')
+            return f"/{IMAGES_FOLDER}/{clean_path}"
+    return None # Return None if no valid path
+
+
 def load_scores():
     """Loads scores from the scores file."""
     if not os.path.exists(SCORE_FILE):
@@ -75,6 +87,8 @@ def save_scores(data):
 
 def load_questions():
     """Loads the master question bank."""
+    print('loading questions')
+    print(f'File {QUEST_FILE}')
     try:
         with open(QUEST_FILE, encoding='utf-8') as f:
             return json.load(f)
@@ -308,7 +322,9 @@ def format_detailed_answers(plan, qbank_map, answers, scores_list):
         question_detail = qbank_map.get(q_id)
         student_answer_raw = answers[i] if i < len(answers) else None
         formatted_student_answer = student_answer_raw
+        option_student_image = None
         formatted_correct_answer = "[N/A]"
+        option_correct_image = None
         question_text = "[Question not found]"
         question_image_path = None # <-- NEW: Store question image path
         points = scores_list[i] if i < len(scores_list) else 0
@@ -319,6 +335,7 @@ def format_detailed_answers(plan, qbank_map, answers, scores_list):
 
         if question_detail:
             question_text = question_detail.get('text', '[Text missing]')
+            question_image_path = format_image_url(question_detail.get('question_image', None))
             question_weight = question_detail.get('weight', 1)
             q_type = question_detail.get('type')
             original_options = question_detail.get('options', [])
@@ -329,23 +346,33 @@ def format_detailed_answers(plan, qbank_map, answers, scores_list):
             def get_option_text(option):
                 return option.get('text', '') if isinstance(option, dict) else str(option)
 
+            def get_option_image(option):
+                return option.get('image', None) if isinstance(option, dict) else None
+
             # Format student answer
             if q_type == 'single' and isinstance(student_answer_raw, int) and 0 <= student_answer_raw < len(shuffled_option_order):
                  original_index = shuffled_option_order[student_answer_raw]
                  if 0 <= original_index < len(original_options):
                      option_text = get_option_text(original_options[original_index])
+                     option_student_image = format_image_url(get_option_image(original_options[original_index]))
                      formatted_student_answer = f"'{option_text}' (Index: {original_index})"
+
+
                  else: formatted_student_answer = f"[Invalid Shuffled Index: {student_answer_raw}]"
             elif q_type == 'multiple' and isinstance(student_answer_raw, list):
                  original_indices = [shuffled_option_order[idx] for idx in student_answer_raw if isinstance(idx, int) and 0 <= idx < len(shuffled_option_order)]
                  formatted_student_answer = [f"'{get_option_text(original_options[orig_idx])}' (Index: {orig_idx})" for orig_idx in original_indices if 0 <= orig_idx < len(original_options)]
+                 option_student_image = [format_image_url(get_option_image(original_options[orig_idx])) for orig_idx in original_indices if 0 <= orig_idx < len(original_options)]
 
             # Format correct answer
             if q_type == 'single' and isinstance(correct_answer_raw, int) and 0 <= correct_answer_raw < len(original_options):
                option_text = get_option_text(original_options[correct_answer_raw])
+               option_correct_image = get_option_image(original_options[correct_answer_raw])
                formatted_correct_answer = f"'{option_text}' (Index: {correct_answer_raw})"
+
             elif q_type == 'multiple' and isinstance(correct_answer_raw, list):
                 formatted_correct_answer = [f"'{get_option_text(original_options[idx])}' (Index: {idx})" for idx in correct_answer_raw if 0 <= idx < len(original_options)]
+                option_correct_image = [format_image_url(get_option_image(original_options[idx])) for idx in correct_answer_raw if 0 <= idx < len(original_options)]
             elif q_type == 'open':
                 if 'acceptable' in question_detail: formatted_correct_answer = question_detail['acceptable']
                 elif 'keywords' in question_detail: formatted_correct_answer = {"keywords": question_detail['keywords']}
@@ -357,6 +384,8 @@ def format_detailed_answers(plan, qbank_map, answers, scores_list):
             "question_text": question_text,
             "question_image": question_image_path,
             "student_answer": formatted_student_answer,
+            "option_student_image": option_student_image ,
+            "option_correct_image": option_correct_image,
             "correct_answer": formatted_correct_answer,
             "weight": question_weight,
             "points_awarded": points,
