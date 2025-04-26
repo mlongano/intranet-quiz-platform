@@ -8,8 +8,12 @@ from utils import (
     ADMIN_PW,
     load_scores,
     save_scores,
+    load_questions,
     save_questions,
-    load_questions
+    list_question_bank_files, # New function
+    load_quiz_from_bank,      # New function
+    save_quiz_to_bank,
+    format_image_url    # New function
 )
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api')
@@ -163,3 +167,84 @@ def manage_questions():
 
     # Fallback for unsupported methods
     abort(405)
+
+# --- NEW Admin Endpoints for Question Bank Management ---
+
+@admin_bp.route('/admin/bank/files', methods=['POST'])
+def api_list_bank_files():
+    """Lists available quiz files (jsonc) in the question_bank folder."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403) # Forbidden
+
+    try:
+        available_files = list_question_bank_files()
+        return jsonify({"files": available_files})
+    except Exception as e:
+        print(f"Error listing bank files: {e}")
+        abort(500, description="Internal server error listing bank files.")
+
+@admin_bp.route('/admin/bank/load', methods=['POST'])
+def api_load_from_bank():
+    """Loads a specified quiz file from the question_bank into QUEST_FILE."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    filename = data.get('filename')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403) # Forbidden
+    if not filename:
+        abort(400, description="Missing filename in request body.")
+
+    try:
+        load_quiz_from_bank(filename)
+        return jsonify({"success": True, "message": f"Successfully loaded '{filename}' into active quiz."})
+    except (NotFound, BadRequest, InternalServerError) as e:
+         abort(e.code, description=e.description) if e.code else abort(500, description="Internal server error loading quiz from bank.")
+    except Exception as e:
+        print(f"Error loading from bank: {e}")
+        abort(500, description="Internal server error loading quiz from bank.")
+
+@admin_bp.route('/admin/bank/save', methods=['POST'])
+def api_save_to_bank():
+    """Saves the current QUEST_FILE to the question_bank with a date prefix and suffix."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    filename_suffix = data.get('filename_suffix') # Expect a suffix from the client
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403) # Forbidden
+    if not filename_suffix:
+        abort(400, description="Missing filename_suffix in request body.")
+
+    try:
+        save_quiz_to_bank(filename_suffix)
+        return jsonify({"success": True, "message": "Successfully saved active quiz to bank."}) # Message will contain the generated filename
+    except (BadRequest, InternalServerError) as e:  # Removed Conflict, which is undefined
+         abort(e.code, description=e.description) if e.code else abort(500, description="Internal server error saving quiz to bank.")
+    except Exception as e:
+        print(f"Error saving to bank: {e}")
+        abort(500, description="Internal server error saving quiz to bank.")
+
+@admin_bp.route('/admin/bank/preview', methods=['POST'])
+def api_preview_bank_file():
+    """Reads and returns the JSON content of a specified file in the question_bank for preview."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    filename = data.get('filename')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403) # Forbidden
+    if not filename:
+        abort(400, description="Missing filename in request body.")
+
+    try:
+        # Use the updated load_questions function to read the file from the bank
+        file_content = load_questions(filename=filename)
+        return jsonify(file_content)
+    except (NotFound, BadRequest, InternalServerError) as e:
+         abort(e.code, description=e.description) if e.code else abort(500, description="Internal server error previewing bank file.")
+    except Exception as e:
+        print(f"Error previewing bank file '{filename}': {e}")
+        abort(500, description="Internal server error previewing bank file.")

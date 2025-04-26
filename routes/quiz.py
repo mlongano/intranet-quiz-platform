@@ -68,7 +68,7 @@ def build_questions(qbank):
         print(f"Options: {options_for_client}")
         quiz_plan_steps.append({"id": q['id'], "option_order": option_order})
         stripped_questions.append({
-            "qid": q['id'],
+            "id": q['id'],
             "type": q['type'],
             "weight": q.get('weight', 1),
             "text": q['text'],
@@ -173,6 +173,8 @@ def api_resume(quiz_id):
         raise InternalServerError(description=f"Plan file for quiz '{quiz_id}' is missing student identifier.")
 
     qbank = load_questions() # Can raise InternalServerError
+
+    print("Question bank:", qbank)
     qbank_map = {q['id']: q for q in qbank}
     stripped = []
     for step in plan.get('plan', []):
@@ -194,18 +196,18 @@ def api_resume(quiz_id):
                     # Option is an object: format image path, keep text
                     options_for_client.append({
                         "text": original_option.get("text", ""),
-                        "image": format_image_url(original_option.get("image"))
+                        "image": original_option.get("image")
                     })
                 else:
                     # Option is a simple string
                     options_for_client.append(str(original_option)) # Send as string
 
         stripped.append({
-            "qid": q['id'],
+            "id": q['id'],
             "type": q['type'],
             "weight": q.get('weight', 1),
             "text": q['text'],
-            "question_image": format_image_url(q.get('question_image')), # <-- Add formatted question image URL
+            "question_image": q.get('question_image'),
             "options": options_for_client # <-- Send processed options
         })
 
