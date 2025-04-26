@@ -15,6 +15,7 @@ SCORE_FILE = 'scores.jsonc'
 STUDENTS_FILE = 'students.jsonc'
 QUIZ_FOLDER = 'quizzes'
 IMAGES_FOLDER = 'images'
+QUESTION_BANK_FOLDER = 'question_bank' # New constant for the question bank directory
 
 # --- Load Admin Password from Environment Variable ---
 ADMIN_PW = os.getenv('ADMIN_PW') # <-- Get password from environment
@@ -25,8 +26,9 @@ if not ADMIN_PW:
     raise EnvironmentError("ADMIN_PW environment variable is required but not set.")
     #import sys; sys.exit(1)
 
-# Ensure QUIZ_FOLDER exists
-os.makedirs(QUIZ_FOLDER, exist_ok=True)
+
+os.makedirs(QUIZ_FOLDER, exist_ok=True) # Ensure QUIZ_FOLDER exists
+os.makedirs(QUESTION_BANK_FOLDER, exist_ok=True) # Ensure question_bank folder exists
 
 # --- Load initial student data ---
 try:
@@ -85,10 +87,118 @@ def save_scores(data):
     except Exception as e:
         print(f"Error saving scores to {SCORE_FILE}: {e}") # Log error
 
-def load_questions():
-    """Loads the master question bank."""
-    print('loading questions')
-    print(f'File {QUEST_FILE}')
+def list_question_bank_files():
+    """Lists available quiz files (jsonc) in the question_bank folder."""
+    quiz_files = []
+    bank_path = Path(QUESTION_BANK_FOLDER)
+    if not bank_path.is_dir():
+        return []
+    for item in bank_path.iterdir():
+        if item.is_file() and item.suffix.lower() == '.jsonc':
+            quiz_files.append(item.name)
+    return sorted(quiz_files) # Return sorted list of filenames
+
+def load_quiz_from_bank(filename: str):
+    """Overwrites QUEST_FILE with the content of the specified file from the question_bank."""
+    source_path = Path(QUESTION_BANK_FOLDER) / filename
+    target_path = Path(QUEST_FILE)
+
+    if not source_path.exists() or not source_path.is_file():
+         raise NotFound(description=f"Quiz file '{filename}' not found in '{QUESTION_BANK_FOLDER}'.")
+
+    # Optional: Basic validation of the source file content before copying
+    try:
+        with source_path.open(encoding='utf-8') as f:
+            json.load(f) # Just load to check if it's valid JSON
+    except ValueError:
+        raise BadRequest(description=f"File '{filename}' is not a valid JSONC format.")
+    except Exception as e:
+        raise InternalServerError(description=f"Error reading source file '{filename}': {e}")
+
+    try:
+        # Create a backup of the current QUEST_FILE before overwriting
+        if target_path.exists():
+            backup_file = f"{target_path}.bak"
+            shutil.copy2(target_path, backup_file)
+            print(f"Backed up current {QUEST_FILE} to {backup_file}")
+
+        shutil.copy2(source_path, target_path)
+        print(f"Copied '{filename}' from '{QUESTION_BANK_FOLDER}' to '{QUEST_FILE}'.")
+    except Exception as e:
+        print(f"Error loading quiz from bank: {e}")
+        raise InternalServerError(description=f"Error copying file from bank: {e}")
+
+
+def save_quiz_to_bank(filename_suffix: str):
+    """Saves the current QUEST_FILE to the question_bank with a date prefix."""
+    import datetime  # Fix: Ensure datetime is imported
+    source_path = Path(QUEST_FILE)
+    if not source_path.exists() or not source_path.is_file():
+        raise InternalServerError(description=f"Current quiz file '{QUEST_FILE}' not found.")
+
+    if not filename_suffix:
+         raise BadRequest(description="Filename suffix is required for saving.")
+
+    # Generate date-prefixed filename
+    date_prefix = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    safe_suffix = safe_id(filename_suffix) # Ensure suffix is safe
+    target_filename = f"{date_prefix}_{safe_suffix}.jsonc"
+    target_path = Path(QUESTION_BANK_FOLDER) / target_filename
+
+    if target_path.exists():
+        raise Conflict(description=f"File '{target_filename}' already exists in '{QUESTION_BANK_FOLDER}'.")
+
+    # Optional: Basic validation of the source file content before saving
+    try:
+        with source_path.open(encoding='utf-8') as f:
+            json.load(f) # Just load to check if it's valid JSON
+    except ValueError:
+        raise InternalServerError(description=f"Current file '{QUEST_FILE}' is not a valid JSONC format.")
+    except Exception as e:
+        raise InternalServerError(description=f"Error reading current file '{QUEST_FILE}': {e}")
+
+
+    try:
+        shutil.copy2(source_path, target_path)
+        print(f"Saved '{QUEST_FILE}' to '{target_path}'.")
+    except Exception as e:
+        print(f"Error saving quiz to bank: {e}")
+        raise InternalServerError(description=f"Error copying file to bank: {e}")
+
+
+def load_questions(filename: str = QUEST_FILE):
+    """Reads and returns the JSON content of a specified file."""
+    if filename != QUEST_FILE:
+        file_path = Path(QUESTION_BANK_FOLDER) / filename
+    else:
+        file_path = Path(QUEST_FILE)
+
+    if not file_path.exists() or not file_path.is_file():
+         raise NotFound(description=f"Quiz file '{filename}' not found in '{QUESTION_BANK_FOLDER}'.")
+
+    try:
+        with file_path.open(encoding='utf-8') as f:
+            questions = json.load(f)
+            for question in questions:
+                question_image = question.get('question_image', None)
+                if question_image:
+                    question['question_image'] = format_image_url(question_image)
+                if question.get('type', None) == 'multiple' or question.get('type', None) == 'single':
+                    for opt in question.get('options', []):
+                        if type(opt) == dict:
+                            opt['image'] = format_image_url(opt.get('image', None))
+            return questions
+    except FileNotFoundError:
+        raise InternalServerError(description=f"Master question file '{file_path}' not found.")
+    except ValueError:
+        raise BadRequest(description=f"File '{file_path}' is not a valid JSONC format.")
+    except Exception as e:
+        print(f"Error reading bank file '{file_path}': {e}")
+        raise InternalServerError(description=f"Error reading bank file '{file_path}': {e}")
+
+def load_questions1():
+    """Loads the master question bank (QUEST_FILE)."""
+    print(f'Loading questions from: {QUEST_FILE}')
     try:
         with open(QUEST_FILE, encoding='utf-8') as f:
             return json.load(f)
@@ -100,7 +210,7 @@ def load_questions():
          raise InternalServerError(description=f"Error loading question bank '{QUEST_FILE}': {e}")
 
 def save_questions(data):
-    """Saves questions to the questions file with backup."""
+    """Saves questions to the master question bank (QUEST_FILE) with backup."""
     backup_file = f"{QUEST_FILE}.bak"
     # --- Backup ---
     if os.path.exists(QUEST_FILE):
@@ -335,7 +445,7 @@ def format_detailed_answers(plan, qbank_map, answers, scores_list):
 
         if question_detail:
             question_text = question_detail.get('text', '[Text missing]')
-            question_image_path = format_image_url(question_detail.get('question_image', None))
+            question_image_path = question_detail.get('question_image', None)
             question_weight = question_detail.get('weight', 1)
             q_type = question_detail.get('type')
             original_options = question_detail.get('options', [])
@@ -354,7 +464,7 @@ def format_detailed_answers(plan, qbank_map, answers, scores_list):
                  original_index = shuffled_option_order[student_answer_raw]
                  if 0 <= original_index < len(original_options):
                      option_text = get_option_text(original_options[original_index])
-                     option_student_image = format_image_url(get_option_image(original_options[original_index]))
+                     option_student_image = get_option_image(original_options[original_index])
                      formatted_student_answer = f"'{option_text}' (Index: {original_index})"
 
 
@@ -362,7 +472,7 @@ def format_detailed_answers(plan, qbank_map, answers, scores_list):
             elif q_type == 'multiple' and isinstance(student_answer_raw, list):
                  original_indices = [shuffled_option_order[idx] for idx in student_answer_raw if isinstance(idx, int) and 0 <= idx < len(shuffled_option_order)]
                  formatted_student_answer = [f"'{get_option_text(original_options[orig_idx])}' (Index: {orig_idx})" for orig_idx in original_indices if 0 <= orig_idx < len(original_options)]
-                 option_student_image = [format_image_url(get_option_image(original_options[orig_idx])) for orig_idx in original_indices if 0 <= orig_idx < len(original_options)]
+                 option_student_image = [get_option_image(original_options[orig_idx]) for orig_idx in original_indices if 0 <= orig_idx < len(original_options)]
 
             # Format correct answer
             if q_type == 'single' and isinstance(correct_answer_raw, int) and 0 <= correct_answer_raw < len(original_options):
@@ -372,7 +482,7 @@ def format_detailed_answers(plan, qbank_map, answers, scores_list):
 
             elif q_type == 'multiple' and isinstance(correct_answer_raw, list):
                 formatted_correct_answer = [f"'{get_option_text(original_options[idx])}' (Index: {idx})" for idx in correct_answer_raw if 0 <= idx < len(original_options)]
-                option_correct_image = [format_image_url(get_option_image(original_options[idx])) for idx in correct_answer_raw if 0 <= idx < len(original_options)]
+                option_correct_image = [get_option_image(original_options[idx]) for idx in correct_answer_raw if 0 <= idx < len(original_options)]
             elif q_type == 'open':
                 if 'acceptable' in question_detail: formatted_correct_answer = question_detail['acceptable']
                 elif 'keywords' in question_detail: formatted_correct_answer = {"keywords": question_detail['keywords']}
