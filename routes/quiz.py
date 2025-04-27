@@ -65,7 +65,6 @@ def build_questions(qbank):
                 else:
                     # Option is a simple string
                     options_for_client.append(str(original_option)) # Send as string
-        print(f"Options: {options_for_client}")
         quiz_plan_steps.append({"id": q['id'], "option_order": option_order})
         stripped_questions.append({
             "id": q['id'],
@@ -174,7 +173,6 @@ def api_resume(quiz_id):
 
     qbank = load_questions() # Can raise InternalServerError
 
-    print("Question bank:", qbank)
     qbank_map = {q['id']: q for q in qbank}
     stripped = []
     for step in plan.get('plan', []):
