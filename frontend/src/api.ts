@@ -85,6 +85,11 @@ export interface BankOperationResponse {
   message: string; // Message from the backend (e.g., filename on save)
 }
 
+// --- NEW: Response shapes for scores bank management ---
+export interface ScoresBankFilesResponse {
+  files: string[]; // List of available scores filenames in the bank
+}
+
 // --- API Functions ---
 
 const API_BASE = "/api"; // Or configure as needed
@@ -343,4 +348,78 @@ export async function fetchPreviewBankFile(
     body: JSON.stringify({ filename: filename, pw: password }), // Send filename and password
   });
   return handleResponse<Question[]>(response);
+}
+
+// --- NEW Admin Functions for Scores Bank Management ---
+
+/**
+ * Fetches the list of available scores files in the scores_bank folder.
+ * Requires admin password.
+ */
+export async function fetchScoresBankFiles(
+  password: string,
+): Promise<ScoresBankFilesResponse> {
+  const response = await fetch(`${API_BASE}/admin/scores-bank/files`, {
+    method: "POST", // Based on backend
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ pw: password }), // Send password
+  });
+  return handleResponse<ScoresBankFilesResponse>(response);
+}
+
+/**
+ * Loads a specified scores file from the scores_bank into the active SCORE_FILE.
+ * Requires admin password and the filename to load.
+ */
+export async function loadScoresFromBank(
+  filename: string,
+  password: string,
+): Promise<BankOperationResponse> {
+  const response = await fetch(`${API_BASE}/admin/scores-bank/load`, {
+    method: "POST", // Based on backend
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ filename: filename, pw: password }), // Send filename and password
+  });
+  return handleResponse<BankOperationResponse>(response);
+}
+
+/**
+ * Saves the current active SCORE_FILE to the scores_bank with a date prefix and specified suffix.
+ * Requires admin password and the filename suffix.
+ */
+export async function saveScoresToBank(
+  filename_suffix: string,
+  password: string,
+): Promise<BankOperationResponse> {
+  const response = await fetch(`${API_BASE}/admin/scores-bank/save`, {
+    method: "POST", // Based on backend
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ filename_suffix: filename_suffix, pw: password }), // Send suffix and password
+  });
+  return handleResponse<BankOperationResponse>(response);
+}
+
+/**
+ * Fetches the content (scores) of a specific file in the scores_bank for preview.
+ * Requires admin password and the filename to preview.
+ */
+export async function fetchPreviewScoresBankFile(
+  filename: string,
+  password: string,
+): Promise<ScoreEntry[]> {
+  // Expecting an array of ScoreEntry objects
+  const response = await fetch(`${API_BASE}/admin/scores-bank/preview`, {
+    method: "POST", // Based on backend
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ filename: filename, pw: password }), // Send filename and password
+  });
+  return handleResponse<ScoreEntry[]>(response);
 }
