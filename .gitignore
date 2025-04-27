@@ -16,3 +16,4 @@ frontend/pnpm-workspace.yaml
 questions.jsonc
 question_bank/
 *.bak
+students.jsonc
