@@ -6,8 +6,15 @@ import datetime
 # Import necessary functions and data from utils
 from utils import (
     ADMIN_PW,
-    load_scores,
+    load_scores, # NOW HANDLES LOADING FROM BANK IF FILENAME IS PROVIDED
+    save_scores, # Saves to SCORE_FILE
+    list_scores_bank_files, # NEW import
+    load_scores_from_bank,  # NEW import
+
     save_scores,
+    list_scores_bank_files, # NEW import
+    load_scores_from_bank,  # NEW import
+    save_scores_to_bank,    # NEW import
     load_questions,
     save_questions,
     list_question_bank_files, # New function
@@ -248,3 +255,86 @@ def api_preview_bank_file():
     except Exception as e:
         print(f"Error previewing bank file '{filename}': {e}")
         abort(500, description="Internal server error previewing bank file.")
+
+
+# --- NEW Admin Endpoints for Scores Bank Management ---
+
+@admin_bp.route('/admin/scores-bank/files', methods=['POST'])
+def api_list_scores_bank_files():
+    """Lists available scores files (jsonc) in the scores_bank folder."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403)
+
+    try:
+        available_files = list_scores_bank_files()
+        return jsonify({"files": available_files})
+    except Exception as e:
+        print(f"Error listing scores bank files: {e}")
+        abort(500, description="Internal server error listing scores bank files.")
+
+@admin_bp.route('/admin/scores-bank/load', methods=['POST'])
+def api_load_scores_from_bank():
+    """Loads a specified scores file from the scores_bank into SCORE_FILE."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    filename = data.get('filename')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403)
+    if not filename:
+        abort(400, description="Missing filename in request body.")
+
+    try:
+        load_scores_from_bank(filename)
+        return jsonify({"success": True, "message": f"Successfully loaded scores from '{filename}'."})
+    except (NotFound, BadRequest, InternalServerError) as e:
+         abort(e.code, description=e.description) if e.code else abort(500, description="Internal server error loading scores from bank.")
+    except Exception as e:
+        print(f"Error loading scores from bank: {e}")
+        abort(500, description="Internal server error loading scores from bank.")
+
+@admin_bp.route('/admin/scores-bank/save', methods=['POST'])
+def api_save_scores_to_bank():
+    """Saves the current SCORE_FILE to the scores_bank with a date prefix and suffix."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    filename_suffix = data.get('filename_suffix')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403)
+    if not filename_suffix:
+        abort(400, description="Missing filename_suffix in request body.")
+
+    try:
+        save_scores_to_bank(filename_suffix)
+        return jsonify({"success": True, "message": "Successfully saved scores to bank."})
+    except (BadRequest, InternalServerError) as e:
+         abort(e.code if hasattr(e, 'code') and e.code is not None else 500, description=getattr(e, 'description', "Internal server error saving scores to bank."))
+    except Exception as e:
+        print(f"Error saving scores to bank: {e}")
+        abort(500, description="Internal server error saving scores to bank.")
+
+@admin_bp.route('/admin/scores-bank/preview', methods=['POST'])
+def api_preview_scores_bank_file():
+    """Reads and returns the JSON content of a specified file in the scores_bank for preview."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    filename = data.get('filename')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403)
+    if not filename:
+        abort(400, description="Missing filename in request body.")
+
+    try:
+        # Use the updated load_scores function to read the file from the bank
+        file_content = load_scores(filename=filename)
+        # Note: Previewing scores data might require different frontend rendering than questions
+        return jsonify(file_content)
+    except (NotFound, BadRequest, InternalServerError) as e:
+         abort(e.code, description=e.description) if e.code and e.description else abort(500, description="Internal server error previewing scores bank file.")
+    except Exception as e:
+        print(f"Error previewing scores bank file '{filename}': {e}")
+        abort(500, description="Internal server error previewing scores bank file.")
