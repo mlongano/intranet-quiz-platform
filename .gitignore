@@ -13,3 +13,6 @@ wheels/
 quizzes/
 scores_bank/
 frontend/pnpm-workspace.yaml
+questions.jsonc
+question_bank/
+*.bak
