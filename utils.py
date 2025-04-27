@@ -16,6 +16,7 @@ STUDENTS_FILE = 'students.jsonc'
 QUIZ_FOLDER = 'quizzes'
 IMAGES_FOLDER = 'images'
 QUESTION_BANK_FOLDER = 'question_bank' # New constant for the question bank directory
+SCORES_BANK_FOLDER = 'scores_bank'     # NEW: Directory for scores bank files
 
 # --- Load Admin Password from Environment Variable ---
 ADMIN_PW = os.getenv('ADMIN_PW') # <-- Get password from environment
@@ -29,6 +30,7 @@ if not ADMIN_PW:
 
 os.makedirs(QUIZ_FOLDER, exist_ok=True) # Ensure QUIZ_FOLDER exists
 os.makedirs(QUESTION_BANK_FOLDER, exist_ok=True) # Ensure question_bank folder exists
+os.makedirs(SCORES_BANK_FOLDER, exist_ok=True) # NEW: Ensure scores_bank folder exists
 
 # --- Load initial student data ---
 try:
@@ -65,19 +67,31 @@ def format_image_url(image_path):
     return None # Return None if no valid path
 
 
-def load_scores():
-    """Loads scores from the scores file."""
-    if not os.path.exists(SCORE_FILE):
+def load_scores(filename: str = SCORE_FILE):
+    """Loads scores from the scores file or a specified file."""
+    if filename != SCORE_FILE:
+         file_path = Path(SCORES_BANK_FOLDER) / filename # Load from scores_bank
+    else:
+         file_path = Path(SCORE_FILE) # Load the active scores file
+    print(f"Loading scores from {file_path}")
+    if not file_path.exists() or not file_path.is_file():
         return []
+
     try:
-        with open(SCORE_FILE, encoding='utf-8') as f:
+        with file_path.open(encoding='utf-8') as f:
             return json.load(f)
+    except FileNotFoundError:
+        # This specific error for the main SCORE_FILE might be handled differently
+        if filename == SCORE_FILE:
+            print(f"Warning: {SCORE_FILE} not found. Returning empty list.")
+            return [] # Return empty list if the main scores file doesn't exist
+        else:
+            raise NotFound(description=f"Scores file '{filename}' not found in '{SCORES_BANK_FOLDER}'.")
     except ValueError:
-        print(f"Warning: Could not decode {SCORE_FILE}. Returning empty list.")
-        return []
+        raise BadRequest(description=f"File '{file_path}' is not a valid JSONC format.")
     except Exception as e:
-        print(f"Error reading {SCORE_FILE}: {e}. Returning empty list.")
-        return []
+        print(f"Error reading scores file '{file_path}': {e}")
+        raise InternalServerError(description=f"Error reading scores file '{file_path}': {e}")
 
 def save_scores(data):
     """Saves scores to the scores file."""
@@ -86,6 +100,85 @@ def save_scores(data):
             json.dump(data, f, indent=2)
     except Exception as e:
         print(f"Error saving scores to {SCORE_FILE}: {e}") # Log error
+
+def list_scores_bank_files():
+    """Lists available scores files (jsonc) in the scores_bank folder."""
+    scores_files = []
+    bank_path = Path(SCORES_BANK_FOLDER)
+    if not bank_path.is_dir():
+        return []
+    for item in bank_path.iterdir():
+        if item.is_file() and item.suffix.lower() == '.jsonc':
+            scores_files.append(item.name)
+    return sorted(scores_files)
+
+def load_scores_from_bank(filename: str):
+    """Overwrites SCORE_FILE with the content of the specified file from the scores_bank."""
+    source_path = Path(SCORES_BANK_FOLDER) / filename
+    target_path = Path(SCORE_FILE)
+
+    if not source_path.exists() or not source_path.is_file():
+         raise NotFound(description=f"Scores file '{filename}' not found in '{SCORES_BANK_FOLDER}'.")
+
+    try:
+        with source_path.open(encoding='utf-8') as f:
+            json.load(f) # Just load to check if it's valid JSON
+    except ValueError:
+        raise BadRequest(description=f"File '{filename}' is not a valid JSONC format.")
+    except Exception as e:
+        raise InternalServerError(description=f"Error reading source file '{filename}': {e}")
+
+    try:
+        # Create a backup of the current SCORE_FILE before overwriting
+        if target_path.exists():
+            backup_file = f"{target_path}.bak"
+            shutil.copy2(target_path, backup_file)
+            print(f"Backed up current {SCORE_FILE} to {backup_file}")
+
+        shutil.copy2(source_path, target_path)
+        print(f"Copied '{filename}' from '{SCORES_BANK_FOLDER}' to '{SCORE_FILE}'.")
+    except Exception as e:
+        print(f"Error loading scores from bank: {e}")
+        raise InternalServerError(description=f"Error copying file from bank: {e}")
+
+
+def save_scores_to_bank(filename_suffix: str):
+    """Saves the current SCORE_FILE to the scores_bank with a date prefix."""
+    import datetime  # Fix: Ensure datetime is imported
+    source_path = Path(SCORE_FILE)
+    if not source_path.exists() or not source_path.is_file():
+        # If the main scores file doesn't exist, maybe we shouldn't save an empty one?
+        # Or save an empty list? Let's raise an error for now for clarity.
+        raise InternalServerError(description=f"Current scores file '{SCORE_FILE}' not found. Cannot save empty/non-existent file.")
+
+    if not filename_suffix:
+         raise BadRequest(description="Filename suffix is required for saving.")
+
+    date_prefix = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    safe_suffix = safe_id(filename_suffix)
+    target_filename = f"{date_prefix}_{safe_suffix}.jsonc"
+    target_path = Path(SCORES_BANK_FOLDER) / target_filename
+
+    if target_path.exists():
+        raise Conflict(description=f"File '{target_filename}' already exists in '{SCORES_BANK_FOLDER}'.")
+
+    try:
+        with source_path.open(encoding='utf-8') as f:
+            json.load(f) # Just load to check if it's valid JSON
+    except ValueError:
+        raise InternalServerError(description=f"Current file '{SCORE_FILE}' is not a valid JSONC format.")
+    except Exception as e:
+        raise InternalServerError(description=f"Error reading current file '{SCORE_FILE}': {e}")
+
+
+    try:
+        shutil.copy2(source_path, target_path)
+        print(f"Saved '{SCORE_FILE}' to '{target_path}'.")
+    except Exception as e:
+        print(f"Error saving scores to bank: {e}")
+        raise InternalServerError(description=f"Error copying file to bank: {e}")
+
+
 
 def list_question_bank_files():
     """Lists available quiz files (jsonc) in the question_bank folder."""
@@ -172,7 +265,7 @@ def load_questions(filename: str = QUEST_FILE):
         file_path = Path(QUESTION_BANK_FOLDER) / filename
     else:
         file_path = Path(QUEST_FILE)
-
+    print(f"Loading questions from '{file_path}'...")
     if not file_path.exists() or not file_path.is_file():
          raise NotFound(description=f"Quiz file '{filename}' not found in '{QUESTION_BANK_FOLDER}'.")
 
@@ -328,16 +421,32 @@ def grade(answers: list, plan: dict, qbank: dict) -> dict:
                 except ValueError:
                     print(f"Warning: Correct answer index {original_correct_index} not found in shuffled options for q {q_id}")
         elif q_type == 'multiple':
-            original_correct_indices = q.get('correct', [])
-            shuffled_options = step.get('option_order', [])
-            if isinstance(original_correct_indices, list) and isinstance(shuffled_options, list):
-                original_indices_selected = []
-                if isinstance(user_ans, list):
-                    for ans_index in user_ans:
-                        if isinstance(ans_index, int) and 0 <= ans_index < len(shuffled_options):
-                            original_indices_selected.append(shuffled_options[ans_index])
-                if sorted(original_indices_selected) == sorted(original_correct_indices):
-                    question_score = w # Award full weight
+            original_correct_indices = q.get('correct', []) # Get correct indices from question bank
+            shuffled_options = step.get('option_order', []) # Get the shuffled order for this quiz instance
+            user_selected_indices = [] # Store the original indices the user selected
+
+            if isinstance(user_ans, list): # Ensure user answer is a list for multiple choice
+                for ans_index in user_ans:
+                    # Convert the shuffled option index back to the original index
+                    if isinstance(ans_index, int) and 0 <= ans_index < len(shuffled_options):
+                            user_selected_indices.append(shuffled_options[ans_index])
+
+            num_of_answers = len(step.get('option_order', []))
+            num_correct_answers_total = len(original_correct_indices)
+            num_user_correct_answers = len([idx for idx in user_selected_indices if idx in original_correct_indices])
+            num_user_wrong_answers = len([idx for idx in user_selected_indices if idx not in original_correct_indices])
+
+            # Implement the new scoring formula
+            if num_correct_answers_total > 0:
+                points_per_option = w / num_correct_answers_total if num_correct_answers_total > 0 else w # edge case with no correct answers
+                points_per_wrong_option = w / (num_of_answers - num_correct_answers_total) if num_of_answers - num_correct_answers_total > 0 else w # edge case with no wrong answers
+                num_user_correct_answers = max(1, num_user_correct_answers) # edge case with no correct answers
+                calculated_score = (num_user_correct_answers * points_per_option) - (num_user_wrong_answers * points_per_wrong_option)
+                # Set score to zero if it's negative
+                question_score = max(0.0, calculated_score)
+            else:
+                # Handle case with no correct answers defined (e.g., award 0)
+                question_score = 0.0
 
         total += question_score
         per_question_scores.append(round(question_score, 2)) # Store rounded score for this question
