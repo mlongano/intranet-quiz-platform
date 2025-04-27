@@ -1,6 +1,8 @@
 // frontend/src/components/QuestionEditorPage.tsx (React Query Version)
 
 import React, { useState, useEffect, useCallback } from "react";
+import { parse, ParseError } from "jsonc-parser"; // Import parse from jsonc-parser
+
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchAdminQuestions, updateAdminQuestions, Question } from "../api"; // Adjust path if needed
 import { useLocation, useNavigate } from "react-router-dom";
@@ -110,7 +112,23 @@ const QuestionEditor: React.FC = () => {
 
     let parsedQuestions: Question[];
     try {
-      parsedQuestions = JSON.parse(questionsJson);
+      //parsedQuestions = JSON.parse(questionsJson);
+      // Use parse from jsonc-parser
+      const errors: ParseError[] = [];
+      parsedQuestions = parse(questionsJson, errors, {
+        allowTrailingComma: true,
+        disallowComments: false,
+      }); // <--- Modified line
+      if (errors.length > 0) {
+        console.log("JSON parsing errors:", errors);
+        setUserMessage({
+          type: "error",
+          text: `Invalid JSON format: ${JSON.stringify(errors, null, 2)}`,
+        });
+        return;
+      }
+      console.log("Parsing JSONC errors:", errors); // <--- Added line
+
       if (!Array.isArray(parsedQuestions)) {
         throw new Error("Invalid format: Questions data must be an array.");
       }
