@@ -1,5 +1,5 @@
 // frontend/src/pages/QuizPage.tsx (with Tailwind)
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { resumeQuiz, submitQuiz, Question, Answer } from "../api";
@@ -43,32 +43,10 @@ function QuizPage() {
   const [answers, setAnswers] = useState<Record<number, Answer>>({});
   const [localError, setLocalError] = useState<string | null>(null);
   const [isStateRestored, setIsStateRestored] = useState(false); // Flag to prevent re-restoring
-  const quizContainerRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const quizElement = quizContainerRef.current;
-    console.log("Try to prevent selection and context menu");
 
-    const preventSelection = (event: Event) => {
-      event.preventDefault();
-    };
-
-    const preventContextMenu = (event: Event) => {
-      event.preventDefault();
-    };
-
-    if (quizElement) {
-      quizElement.addEventListener("selectstart", preventSelection);
-      quizElement.addEventListener("contextmenu", preventContextMenu);
-    }
-
-    // Cleanup listener on component unmount
-    return () => {
-      if (quizElement) {
-        quizElement.removeEventListener("selectstart", preventSelection);
-        quizElement.removeEventListener("contextmenu", preventContextMenu);
-      }
-    };
-  }, []); // Empty dependency array ensures this runs once on mount
+  const preventContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+  };
 
   console.log("Try to prevent selection and context menu");
 
@@ -170,32 +148,6 @@ function QuizPage() {
     }
   }, [answers, currentQuestionIndex, isStateRestored, persistState]);
 
-  useEffect(() => {
-    const quizElement = quizContainerRef.current;
-    console.log("Try to prevent selection and context menu");
-
-    const preventSelection = (event: Event) => {
-      event.preventDefault();
-    };
-
-    const preventContextMenu = (event: Event) => {
-      event.preventDefault();
-    };
-
-    if (quizElement) {
-      quizElement.addEventListener("selectstart", preventSelection);
-      quizElement.addEventListener("contextmenu", preventContextMenu);
-    }
-
-    // Cleanup listener on component unmount
-    return () => {
-      if (quizElement) {
-        quizElement.removeEventListener("selectstart", preventSelection);
-        quizElement.removeEventListener("contextmenu", preventContextMenu);
-      }
-    };
-  }, []); // Empty dependency array ensures this runs once on mount
-
   const currentQuestion: Question | undefined = useMemo(() => {
     return quizData?.questions?.[currentQuestionIndex];
   }, [quizData, currentQuestionIndex]);
@@ -279,44 +231,45 @@ function QuizPage() {
   console.log("Quiz data:", quizData);
   console.log("Current question:", currentQuestion);
   return (
-    <div
-      ref={quizContainerRef}
-      id="quiz-container"
-      className="container mx-auto p-4 max-w-3xl quiz-no-select"
-    >
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold">Quiz: {quizData.student}</h2>
-        <span className="text-sm text-gray-600">
-          Question {currentQuestionIndex + 1} / {totalQuestions}
-        </span>
-      </div>
+    <main onContextMenu={preventContextMenu} className="w-dvw h-dvh">
+      <div
+        id="quiz-container"
+        className="container mx-auto p-4 max-w-3xl quiz-no-select"
+      >
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold">Quiz: {quizData.student}</h2>
+          <span className="text-sm text-gray-600">
+            Question {currentQuestionIndex + 1} / {totalQuestions}
+          </span>
+        </div>
 
-      {/* Display local errors (e.g., from submit) */}
-      <ErrorDisplay message={localError} />
+        {/* Display local errors (e.g., from submit) */}
+        <ErrorDisplay message={localError} />
 
-      <div className="bg-white p-6 rounded shadow-md border border-gray-200 select-none">
-        {/* Assume QuestionDisplay component handles rendering */}
-        <QuestionDisplay
-          question={currentQuestion}
-          currentAnswer={answers[currentQuestionIndex]}
-          onAnswerChange={handleAnswerChange}
-        />
-      </div>
+        <div className="bg-white p-6 rounded shadow-md border border-gray-200 select-none">
+          {/* Assume QuestionDisplay component handles rendering */}
+          <QuestionDisplay
+            question={currentQuestion}
+            currentAnswer={answers[currentQuestionIndex]}
+            onAnswerChange={handleAnswerChange}
+          />
+        </div>
 
-      <div className="mt-6 flex justify-end">
-        <button
-          onClick={handleNext}
-          disabled={!isCurrentAnswered || submitMutation.isPending}
-          className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {submitMutation.isPending
-            ? "Submitting..."
-            : isLastQuestion
-              ? "Finish & Submit"
-              : "Next"}
-        </button>
+        <div className="mt-6 flex justify-end">
+          <button
+            onClick={handleNext}
+            disabled={!isCurrentAnswered || submitMutation.isPending}
+            className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submitMutation.isPending
+              ? "Submitting..."
+              : isLastQuestion
+                ? "Finish & Submit"
+                : "Next"}
+          </button>
+        </div>
       </div>
-    </div>
+    </main>
   );
 }
 
