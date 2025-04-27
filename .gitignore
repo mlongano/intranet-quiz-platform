@@ -10,3 +10,6 @@ wheels/
 .venv
 
 .env
+quizzes/
+scores_bank/
+frontend/pnpm-workspace.yaml
