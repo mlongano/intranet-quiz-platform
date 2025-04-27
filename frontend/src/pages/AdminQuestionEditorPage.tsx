@@ -1,6 +1,6 @@
-// frontend/src/components/QuestionEditor.tsx (React Query Version)
+// frontend/src/components/QuestionEditorPage.tsx (React Query Version)
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchAdminQuestions, updateAdminQuestions, Question } from "../api"; // Adjust path if needed
 import { useLocation, useNavigate } from "react-router-dom";
@@ -12,6 +12,7 @@ const QuestionEditor: React.FC = () => {
   const adminPassword = location.state?.adminPassword;
   // Local state for the editable JSON string and password
   const [questionsJson, setQuestionsJson] = useState<string>("");
+  const [lengthOfQuestions, setLengthOfQuestions] = useState<number>(0);
   const [commonWeight, setCommonWeight] = useState<string>("1");
   // Local state for user feedback messages not directly tied to query status
   const [userMessage, setUserMessage] = useState<{
@@ -52,7 +53,13 @@ const QuestionEditor: React.FC = () => {
   useEffect(() => {
     if (questionsData) {
       setQuestionsJson(JSON.stringify(questionsData, null, 2));
-      setUserMessage(null); // Clear message on successful load/update
+      //setUserMessage(null); // Clear message on successful load/update
+      setUserMessage({
+        type: "success",
+        text: "Questions loaded successfully",
+      });
+      setTimeout(() => setUserMessage(null), 2000);
+      setLengthOfQuestions(questionsData.length);
     } else if (!isLoadingQuestions && adminPassword) {
       // Handle case where data is null/undefined after loading finishes (e.g., if API returns empty successfully)
       setQuestionsJson("[]"); // Set to empty array string
@@ -85,6 +92,7 @@ const QuestionEditor: React.FC = () => {
         type: "success",
         text: data.message || "Questions saved successfully!",
       });
+      setTimeout(() => setUserMessage(null), 2000);
       // Optionally clear local JSON or rely on refetch to update it
     },
     onError: (err) => {
@@ -94,7 +102,7 @@ const QuestionEditor: React.FC = () => {
   });
 
   // --- Event Handlers ---
-  const handleSaveChanges = () => {
+  const handleSaveChanges = useCallback(() => {
     if (!questionsJson.trim()) {
       setUserMessage({ type: "error", text: "Cannot save empty content." });
       return;
@@ -116,8 +124,28 @@ const QuestionEditor: React.FC = () => {
     }
 
     setUserMessage(null); // Clear previous messages before saving
+    setLengthOfQuestions(parsedQuestions.length);
     saveQuestionsMutation(parsedQuestions); // Trigger the mutation
-  };
+  }, [questionsJson, saveQuestionsMutation]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Check for Ctrl+S (Windows/Linux) or Cmd+S (macOS)
+      if ((event.ctrlKey || event.metaKey) && event.key === "s") {
+        event.preventDefault(); // Prevent the browser's save dialog
+        console.log("Save shortcut pressed!"); // For debugging
+        handleSaveChanges();
+      }
+    };
+
+    // Add the event listener when the component mounts
+    window.addEventListener("keydown", handleKeyDown);
+
+    // Remove the event listener when the component unmounts
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [handleSaveChanges]); // Include any dependencies like the save function
 
   const handleSetAllWeights = () => {
     const weightValue = parseFloat(commonWeight);
@@ -149,6 +177,7 @@ const QuestionEditor: React.FC = () => {
         type: "success",
         text: `All question weights set to ${weightValue}. Remember to save.`,
       });
+      setTimeout(() => setUserMessage(null), 3000);
     } catch (parseError: any) {
       setUserMessage({
         type: "error",
@@ -233,12 +262,14 @@ const QuestionEditor: React.FC = () => {
           {isFetchingQuestions ? "Refreshing..." : "Refresh Questions"}
         </button>
         <button
+          title="⌘s or <ctrl-s> to save"
           onClick={handleSaveChanges}
           disabled={isProcessing || !adminPassword} // Disable if loading or saving
           className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
         >
           {isSaving ? "Saving..." : "Save Changes"}
         </button>
+        <p>Total Questions: {lengthOfQuestions}</p>
       </div>
 
       {/* Batch Weight Setting */}
