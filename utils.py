@@ -302,17 +302,24 @@ def load_questions1():
     except Exception as e:
          raise InternalServerError(description=f"Error loading question bank '{QUEST_FILE}': {e}")
 
+def copy_file(source, destination, messages={'success': 'file copied', 'error': 'Warning: Could not create the file copy:'}):
+    if os.path.exists(source):
+        try:
+            shutil.copy2(source, destination)
+            print(f"{messages['success']}")
+        except Exception as e:
+            print(f"{messages['error']}{e}")
+
 def save_questions(data):
     """Saves questions to the master question bank (QUEST_FILE) with backup."""
-    backup_file = f"{QUEST_FILE}.bak"
+    backup_file_path = f"{QUEST_FILE}.bak"
     # --- Backup ---
-    if os.path.exists(QUEST_FILE):
-        try:
-            shutil.copy2(QUEST_FILE, backup_file) # copy2 preserves metadata
-            print(f"Created backup: {backup_file}")
-        except Exception as e:
-            # Log the backup error but proceed with saving if possible
-            print(f"Warning: Could not create backup file {backup_file}: {e}")
+    copy_file(
+        source=QUEST_FILE,
+        destination=backup_file_path,
+        messages={
+            'success': f'Backup created of {QUEST_FILE} in {backup_file_path}',
+            'error': f'Warning: Could not create backup file of {QUEST_FILE} in {backup_file_path}:'})
 
     # --- Save ---
     try:
@@ -326,28 +333,28 @@ def save_questions(data):
             json.dump(data, f, indent=2) # For commentjson
     except (ValueError, TypeError) as e: # Catch data format errors or JSON serialization errors
         # Attempt to restore from backup if saving failed
-        if os.path.exists(backup_file):
-            try:
-                shutil.copy2(backup_file, QUEST_FILE)
-                print(f"Error saving questions. Restored from backup: {backup_file}")
-            except Exception as restore_e:
-                 print(f"CRITICAL: Failed to save questions AND failed to restore backup: {restore_e}")
+        copy_file(
+            source=backup_file_path,
+            destination= QUEST_FILE,
+            messages={
+                'success': f"Error saving questions. Restored from backup: {backup_file_path}",
+                'error': f"CRITICAL: Failed to save questions AND failed to restore {QUEST_FILE} from backup {backup_file_path}:"})
         raise BadRequest(description=f"Invalid question data provided: {e}") # 400 Bad Request for data issues
     except IOError as e: # Catch file writing errors
         # Attempt to restore from backup
-        if os.path.exists(backup_file):
+        if os.path.exists(backup_file_path):
             try:
-                shutil.copy2(backup_file, QUEST_FILE)
-                print(f"Error saving questions. Restored from backup: {backup_file}")
+                shutil.copy2(backup_file_path, QUEST_FILE)
+                print(f"Error saving questions. Restored from backup: {copy_file}")
             except Exception as restore_e:
                  print(f"CRITICAL: Failed to save questions AND failed to restore backup: {restore_e}")
         raise InternalServerError(description=f"I/O error saving questions to {QUEST_FILE}: {e}") # 500 for system errors
     except Exception as e: # Catch other unexpected errors
         # Attempt to restore from backup
-        if os.path.exists(backup_file):
+        if os.path.exists(backup_file_path):
              try:
-                 shutil.copy2(backup_file, QUEST_FILE)
-                 print(f"Error saving questions. Restored from backup: {backup_file}")
+                 shutil.copy2(backup_file_path, QUEST_FILE)
+                 print(f"Error saving questions. Restored from backup: {copy_file}")
              except Exception as restore_e:
                  print(f"CRITICAL: Failed to save questions AND failed to restore backup: {restore_e}")
         raise InternalServerError(description=f"Unexpected error saving questions: {e}")
