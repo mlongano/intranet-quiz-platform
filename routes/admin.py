@@ -10,17 +10,12 @@ from utils import (
     save_scores, # Saves to SCORE_FILE
     list_scores_bank_files, # NEW import
     load_scores_from_bank,  # NEW import
-
-    save_scores,
-    list_scores_bank_files, # NEW import
-    load_scores_from_bank,  # NEW import
     save_scores_to_bank,    # NEW import
     load_questions,
     save_questions,
     list_question_bank_files, # New function
     load_quiz_from_bank,      # New function
     save_quiz_to_bank,
-    format_image_url    # New function
 )
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api')
@@ -38,27 +33,7 @@ def api_scores():
         abort(404) # Not Found
     return jsonify(scores)
 
-@admin_bp.route('/review', methods=['POST'])
-def api_save_review():
-    """Receives score overrides from admin and updates the scores file."""
-    data = request.get_json(silent=True) or {}
-
-    # 1. Authentication
-    password = data.get('password')
-    if not password or password != ADMIN_PW:
-        raise Unauthorized(description="Admin authentication failed.")
-
-    # 2. Validate Input Payload
-    student_id = data.get('student_id')
-    quiz_id = data.get('quiz_id') # Use quiz_id to pinpoint the exact submission
-    overrides = data.get('overrides') # Expected: list of {'question_id': ..., 'points': ...}
-
-    if not student_id or not quiz_id:
-        raise BadRequest(description="Missing student_id or quiz_id.")
-    if not isinstance(overrides, list):
-        raise BadRequest(description="Invalid 'overrides' format, expected a list.")
-
-    # 3. Load Scores
+def load_target_scores(student_id, quiz_id):
     scores = []
 
     try:
@@ -80,7 +55,9 @@ def api_save_review():
     if target_submission is None:
         raise NotFound(description=f"Submission not found for student '{student_id}' with quiz_id '{quiz_id}'.")
 
-    # 4. Apply Overrides
+    return scores, target_submission, target_submission_index
+
+def apply_overrides(target_submission, overrides, student_id):
     if 'answers' not in target_submission or not isinstance(target_submission['answers'], list):
         raise InternalServerError(description="Target submission record is missing or has invalid 'answers'.")
 
@@ -114,6 +91,33 @@ def api_save_review():
                 updated_count += 1
         else:
             print(f"Warning: Question ID '{q_id_to_override}' not found in submission for student '{student_id}'.")
+    return target_submission, updated_count
+
+@admin_bp.route('/review', methods=['POST'])
+def api_save_review():
+    """Receives score overrides from admin and updates the scores file."""
+    data = request.get_json(silent=True) or {}
+
+    # 1. Authentication
+    password = data.get('password')
+    if not password or password != ADMIN_PW:
+        raise Unauthorized(description="Admin authentication failed.")
+
+    # 2. Validate Input Payload
+    student_id = data.get('student_id')
+    quiz_id = data.get('quiz_id') # Use quiz_id to pinpoint the exact submission
+    overrides = data.get('overrides') # Expected: list of {'question_id': ..., 'points': ...}
+
+    if not student_id or not quiz_id:
+        raise BadRequest(description="Missing student_id or quiz_id.")
+    if not isinstance(overrides, list):
+        raise BadRequest(description="Invalid 'overrides' format, expected a list.")
+
+    # 3. Load Scores
+    scores, target_submission, target_submission_index = load_target_scores(student_id, quiz_id)
+
+    # 4. Apply Overrides
+    target_submission, updated_count = apply_overrides(target_submission, overrides, student_id)
 
     # 5. Recalculate Totals if changes were made
     if updated_count > 0:
