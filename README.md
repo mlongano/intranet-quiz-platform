@@ -91,7 +91,7 @@ create a `questions.jsonc` file to store the questions
     "text": "Capital of France?",
     "options": ["Paris", "Rome", "Madrid", "Berlin"],
     "correct": 0,
-    "weight": 1
+    "weight": 1,
   },
   {
     "id": 2,
@@ -101,24 +101,24 @@ create a `questions.jsonc` file to store the questions
     "options": [
       {
         "text": "2",
-        "image": "test/option1a.jpeg"
+        "image": "test/option1a.jpeg",
       },
       {
         "text": "4",
-        "image": "test/option1b.jpeg"
+        "image": "test/option1b.jpeg",
       },
       {
         "text": "5",
-        "image": "test/option1c.jpeg"
+        "image": "test/option1c.jpeg",
       },
       {
         "text": "9",
-        "image": "test/option1d.jpeg"
-      }
+        "image": "test/option1d.jpeg",
+      },
     ],
 
     "correct": [0, 2],
-    "weight": 2
+    "weight": 2,
   },
   {
     "id": "q7",
@@ -127,7 +127,7 @@ create a `questions.jsonc` file to store the questions
     "question_image": "test/question2.jpeg",
     "options": [],
     "weight": 2,
-    "acceptable": ["oxygen", "o2"]
+    "acceptable": ["oxygen", "o2"],
   },
   {
     "id": "q8",
@@ -136,8 +136,8 @@ create a `questions.jsonc` file to store the questions
     "options": [],
     "weight": 4,
     "keywords": ["helium", "neon", "argon", "krypton", "xenon", "radon"],
-    "min_keywords": 3 // get full points when ≥ 3 found
-  }
+    "min_keywords": 3, // get full points when ≥ 3 found
+  },
 ]
 ```
 
@@ -170,3 +170,5 @@ now the frontend is served by the `server.py`
 - [ ] access the admin endpoint only from localhost
 - [ ] check if the resume is from the same pc
 - [ ] handle the comments in the jsoncfiles
+- [ ] Markdown support
+- [ ] personalize the quiz for some student that has special needs
