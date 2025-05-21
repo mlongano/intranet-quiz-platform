@@ -43,6 +43,9 @@ powershell.exe -ExecutionPolicy Bypass -Command '
 [System.Net.WebRequest]::DefaultWebProxy = New-Object System.Net.WebProxy
 Invoke-RestMethod "https://astral.sh/uv/install.ps1" | Invoke-Expression
 '
+
+$NewPath = "$($env:USERPROFILE)\.local\bin;$($env:Path)"
+[Environment]::SetEnvironmentVariable("Path", $NewPath, [System.EnvironmentVariableTarget]::User)
 ```
 
 optionally install pnpm
