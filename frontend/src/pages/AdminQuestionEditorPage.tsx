@@ -1,11 +1,12 @@
 // frontend/src/components/QuestionEditorPage.tsx (React Query Version)
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { parse, ParseError } from "jsonc-parser"; // Import parse from jsonc-parser
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchAdminQuestions, updateAdminQuestions, Question } from "../api"; // Adjust path if needed
 import { useLocation, useNavigate } from "react-router-dom";
+import QuestionDisplay from "../components/QuestionDisplay";
 
 const QuestionEditor: React.FC = () => {
   const location = useLocation();
@@ -16,6 +17,7 @@ const QuestionEditor: React.FC = () => {
   const [questionsJson, setQuestionsJson] = useState<string>("");
   const [lengthOfQuestions, setLengthOfQuestions] = useState<number>(0);
   const [commonWeight, setCommonWeight] = useState<string>("1");
+  const [showPreview, setShowPreview] = useState<boolean>(false);
   // Local state for user feedback messages not directly tied to query status
   const [userMessage, setUserMessage] = useState<{
     type: "success" | "error";
@@ -204,6 +206,43 @@ const QuestionEditor: React.FC = () => {
     }
   };
 
+  // --- Preview Helpers ---
+  type FullQuestion = Question & { correct?: number | number[] };
+
+  const previewParsed = useMemo(() => {
+    try {
+      const errors: ParseError[] = [];
+      const parsed = parse(questionsJson || "[]", errors, {
+        allowTrailingComma: true,
+        disallowComments: false,
+      }) as FullQuestion[];
+      if (errors.length > 0) {
+        return {
+          error: `Cannot preview: Invalid JSONC (${errors.length} issue${errors.length > 1 ? "s" : ""}).`,
+          qs: null as FullQuestion[] | null,
+        };
+      }
+      if (!Array.isArray(parsed)) {
+        return { error: "Cannot preview: Top-level is not an array.", qs: null };
+      }
+      return { error: null as string | null, qs: parsed };
+    } catch (e: any) {
+      return { error: `Cannot preview: ${e?.message || String(e)}`, qs: null as FullQuestion[] | null };
+    }
+  }, [questionsJson]);
+
+  const getHighlightIndices = (q: FullQuestion): number[] => {
+    if (q.type === "single") {
+      const c = (q as FullQuestion).correct as number | undefined;
+      return typeof c === "number" && c >= 0 ? [c] : [];
+    }
+    if (q.type === "multiple") {
+      const arr = (q as FullQuestion).correct as number[] | undefined;
+      return Array.isArray(arr) ? arr.filter((n) => Number.isInteger(n) && n >= 0) : [];
+    }
+    return [];
+  };
+
   // --- Combined Loading State ---
   // Consider loading if initially fetching OR saving
   const isProcessing = isLoadingQuestions || isSaving || isFetchingQuestions;
@@ -287,6 +326,13 @@ const QuestionEditor: React.FC = () => {
         >
           {isSaving ? "Saving..." : "Save Changes"}
         </button>
+        <button
+          onClick={() => setShowPreview((v) => !v)}
+          disabled={isLoadingQuestions}
+          className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
+        >
+          {showPreview ? "Hide Preview" : "Preview All Questions"}
+        </button>
         <p>Total Questions: {lengthOfQuestions}</p>
       </div>
 
@@ -337,6 +383,43 @@ const QuestionEditor: React.FC = () => {
         className="w-full p-2 border rounded font-mono text-sm bg-gray-50 disabled:opacity-70"
         spellCheck="false"
       />
+
+      {/* Preview Area */}
+      {showPreview && (
+        <div className="mt-6 p-4 border rounded bg-white">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xl font-semibold">Preview (answers highlighted)</h3>
+            <span className="text-sm text-gray-500">Green = correct answer</span>
+          </div>
+          {previewParsed.error ? (
+            <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-3 py-2 rounded mb-3">
+              {previewParsed.error}
+            </div>
+          ) : null}
+          {(() => {
+            const qs = previewParsed.qs;
+            if (!qs) return null;
+            if (qs.length === 0)
+              return <div className="text-gray-600">No questions to preview.</div>;
+            return (
+              <div className="space-y-6">
+                {qs.map((q, idx) => (
+                  <div key={q.id ?? idx} className="p-4 border rounded">
+                    <div className="mb-2 text-sm text-gray-600">ID: {String(q.id)}</div>
+                    <QuestionDisplay
+                      question={q as Question}
+                      currentAnswer={null}
+                      onAnswerChange={() => { }}
+                      readOnly
+                      highlightIndices={getHighlightIndices(q)}
+                    />
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* Optional persistent processing indicator */}
       {isProcessing && <div className="mt-2 text-blue-600">Processing...</div>}
