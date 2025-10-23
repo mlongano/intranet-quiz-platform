@@ -1,5 +1,8 @@
 // frontend/src/pages/AdminBankManagerPage.tsx
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeSanitize from "rehype-sanitize";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom"; // Import useLocation for password
 import {
@@ -255,7 +258,7 @@ function AdminBankManagerPage() {
                       disabled={isLoading || !adminPassword}
                     >
                       {loadFileMutation.isPending &&
-                      loadFileMutation.variables === filename
+                        loadFileMutation.variables === filename
                         ? "Loading..."
                         : "Load"}
                     </button>
@@ -283,9 +286,17 @@ function AdminBankManagerPage() {
                             <p>
                               <strong>Weight:</strong> {q.weight}
                             </p>
-                            <p>
-                              <strong>Text:</strong> {q.text}
-                            </p>
+                            <div>
+                              <strong>Text:</strong>
+                              <div className="mt-1 text-gray-900">
+                                <ReactMarkdown
+                                  remarkPlugins={[remarkGfm]}
+                                  rehypePlugins={[rehypeSanitize]}
+                                >
+                                  {q.text || ""}
+                                </ReactMarkdown>
+                              </div>
+                            </div>
                             {/* Displaying options and correct answers for preview might require more detailed rendering logic based on your Question type */}
                             {q.options && q.options.length > 0 && (
                               <div>
@@ -294,7 +305,12 @@ function AdminBankManagerPage() {
                                   {q.options.map((opt, optIndex) => (
                                     <li key={optIndex} className="ml-4">
                                       {/* Handle options being string or OptionObject */}
-                                      {typeof opt === "string" ? opt : opt.text}
+                                      <ReactMarkdown
+                                        remarkPlugins={[remarkGfm]}
+                                        rehypePlugins={[rehypeSanitize]}
+                                      >
+                                        {typeof opt === "string" ? opt : opt.text || ""}
+                                      </ReactMarkdown>
                                       {/* Add image preview if applicable, needs styling */}
                                       {typeof opt !== "string" && opt.image && (
                                         <img

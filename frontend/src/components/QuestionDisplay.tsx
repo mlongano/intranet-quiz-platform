@@ -1,14 +1,47 @@
 // frontend/src/components/QuestionDisplay.tsx (New file - basic structure)
 import React from "react";
+import ReactMarkdown from "react-markdown";
+import type { Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeSanitize from "rehype-sanitize";
 import { Question, Answer, OptionObject } from "../api"; // Import types
 
 interface Props {
   question: Question;
   currentAnswer: Answer;
   onAnswerChange: (answer: Answer) => void;
+  readOnly?: boolean; // If true, disable inputs and don't change answers
+  highlightIndices?: number[]; // Indices to visually highlight (e.g., correct answers)
 }
 
-function QuestionDisplay({ question, currentAnswer, onAnswerChange }: Props) {
+function QuestionDisplay({
+  question,
+  currentAnswer,
+  onAnswerChange,
+  readOnly = false,
+  highlightIndices = [],
+}: Props) {
+  // Custom markdown component sizes for options
+  const optionMarkdownComponents: Components = {
+    h1: (props: any) => (
+      <h3
+        {...props}
+        className={`text-base font-semibold ${props.className || ""}`}
+      />
+    ),
+    h2: (props: any) => (
+      <h4
+        {...props}
+        className={`text-base font-semibold ${props.className || ""}`}
+      />
+    ),
+    h3: (props: any) => (
+      <h5
+        {...props}
+        className={`text-base font-semibold ${props.className || ""}`}
+      />
+    ),
+  };
   // --- NEW: Helper to get text from option ---
   const getOptionText = (option: string | OptionObject): string => {
     return typeof option === "string" ? option : option.text;
@@ -22,10 +55,12 @@ function QuestionDisplay({ question, currentAnswer, onAnswerChange }: Props) {
   };
 
   const handleOpenChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (readOnly) return;
     onAnswerChange(e.target.value);
   };
 
   const handleOptionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (readOnly) return;
     const selectedIndex = Number(e.target.value);
     if (question.type === "single") {
       onAnswerChange(selectedIndex);
@@ -50,7 +85,12 @@ function QuestionDisplay({ question, currentAnswer, onAnswerChange }: Props) {
         />
       )}
 
-      <p className="text-lg font-medium mb-4">{question.text}</p>
+      {/* Render question text as Markdown */}
+      <div className="text-lg font-medium mb-4">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+          {question.text || ""}
+        </ReactMarkdown>
+      </div>
 
       {question.type === "open" && (
         <textarea
@@ -59,46 +99,62 @@ function QuestionDisplay({ question, currentAnswer, onAnswerChange }: Props) {
           rows={4}
           className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
           placeholder="Enter your answer..."
+          disabled={readOnly}
         />
       )}
 
       {(question.type === "single" || question.type === "multiple") && (
         <div className="space-y-2">
-          {question.options.map((option, index) => (
-            <label
-              key={index}
-              className="flex items-center p-3 border rounded hover:bg-gray-50 cursor-pointer"
-            >
-              <input
-                type={question.type === "single" ? "radio" : "checkbox"}
-                name={`q_${question.id}`} // Use unique name for radio group
-                value={index}
-                checked={
-                  question.type === "single"
-                    ? currentAnswer === index
-                    : ((currentAnswer as number[]) || []).includes(index)
-                }
-                onChange={handleOptionChange}
-                className={
-                  question.type === "single"
-                    ? "h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"
-                    : "h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                }
-              />
-              {/* Display option text */}
-              <span className="ml-3 text-gray-800">
-                {getOptionText(option)}
-              </span>
-              {/* NEW: Display option image */}
-              {getOptionImage(option) && (
-                <img
-                  src={getOptionImage(option)}
-                  alt={`Option ${index + 1}`}
-                  className="option-image ml-2 h-10 w-auto object-contain" // Add styling class
-                />
-              )}
-            </label>
-          ))}
+          {question.options.map((option, index) => {
+            const inputId = `q_${question.id}_${index}`;
+            const isHighlighted = highlightIndices.includes(index);
+            const isChecked =
+              readOnly
+                ? isHighlighted
+                : question.type === "single"
+                  ? currentAnswer === index
+                  : ((currentAnswer as number[]) || []).includes(index);
+            return (
+              <div
+                key={index}
+                className={`p-3 border rounded cursor-pointer ${isHighlighted ? "border-green-500 bg-green-50" : "hover:bg-gray-50"
+                  }`}
+              >
+                <div className="flex items-start">
+                  <input
+                    id={inputId}
+                    type={question.type === "single" ? "radio" : "checkbox"}
+                    name={`q_${question.id}`}
+                    value={index}
+                    checked={isChecked}
+                    onChange={handleOptionChange}
+                    className={
+                      question.type === "single"
+                        ? "mt-1 h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                        : "mt-1 h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                    }
+                    disabled={readOnly}
+                  />
+                  <label htmlFor={inputId} className="ml-3 flex-1 text-gray-800">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      rehypePlugins={[rehypeSanitize]}
+                      components={optionMarkdownComponents}
+                    >
+                      {getOptionText(option) || ""}
+                    </ReactMarkdown>
+                  </label>
+                  {getOptionImage(option) && (
+                    <img
+                      src={getOptionImage(option)}
+                      alt={`Option ${index + 1}`}
+                      className="option-image ml-2 h-10 w-auto object-contain"
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
