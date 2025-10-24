@@ -6,6 +6,8 @@ from pathlib import Path
 import datetime
 import uuid
 import random
+import tempfile
+import os
 
 # Import necessary functions and data from utils
 from utils import (
@@ -112,8 +114,18 @@ def api_start():
 
     output_plan_path = Path(QUIZ_FOLDER) / f'{safe_id(student)}.json'
     meta = { "quiz_id": quiz_id, "student": student, "created": datetime.datetime.utcnow().isoformat(timespec='seconds'), "plan": quiz_plan_steps }
+
+    # Write atomically to prevent partial writes during concurrent access
     try:
-        with open(output_plan_path, 'w', encoding='utf-8') as f: json.dump(meta, f, indent=2)
+        temp_fd, temp_path = tempfile.mkstemp(dir=QUIZ_FOLDER, suffix='.tmp')
+        try:
+            with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
+                json.dump(meta, f, indent=2)
+            os.replace(temp_path, str(output_plan_path))  # Atomic on POSIX
+        except Exception as e:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise e
     except Exception as e:
         raise InternalServerError(description=f"Could not save quiz plan file: {e}")
     return jsonify({"quiz_id": quiz_id})
