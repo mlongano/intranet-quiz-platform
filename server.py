@@ -1,7 +1,8 @@
 # app.py
 from flask import Flask, send_from_directory, abort
 import os
-from werkzeug.serving import run_simple
+import socket
+from waitress import serve
 
 
 # Import Blueprints
@@ -63,17 +64,70 @@ def serve_react_app(path):
 
 # --- Main Execution ---
 #
+def get_local_ip_addresses():
+    """Get all local IP addresses for the machine."""
+    addresses = []
+    try:
+        # Get hostname
+        hostname = socket.gethostname()
+        # Get all addresses associated with the hostname
+        for info in socket.getaddrinfo(hostname, None):
+            addr = info[4][0]
+            # Filter out IPv6 link-local and loopback
+            if ':' not in addr and addr not in addresses and not addr.startswith('127.'):
+                addresses.append(addr)
+    except Exception:
+        pass
+
+    # Always include localhost
+    if '127.0.0.1' not in addresses:
+        addresses.insert(0, '127.0.0.1')
+
+    return addresses
+
 def run_server():
-    APP.debug = True
-    # Use Waitress for production
+    port = 5001
+    print("=" * 60)
+    print("Starting Quiz Application Server (Production Mode)")
+    print("=" * 60)
     print("Serving application...")
     print(f"React app static folder: {STATIC_FOLDER}")
     print(f"Assets folder: {ASSETS_FOLDER}")
-    print(f"Images folder: {IMAGE_DIR}") # <-- Log image folder path
+    print(f"Images folder: {IMAGE_DIR}")
     print("API endpoints registered under /api")
-    run_simple('0.0.0.0', 5001, APP, use_reloader=True)
-    # For development using Flask's built-in server (less recommended for prod):
-    # APP.run(host='0.0.0.0', port=5001, debug=True) # Use debug=True for auto-reload
+    print("-" * 60)
+    print("Server configuration:")
+    print("  - WSGI Server: Waitress (production-ready)")
+    print("  - Host: 0.0.0.0 (accessible on LAN)")
+    print(f"  - Port: {port}")
+    print("  - Threads: 6 (handles 6 concurrent requests)")
+    print("  - File locking: Enabled (prevents race conditions)")
+    print("  - Question caching: Enabled (reduces disk I/O)")
+    print("=" * 60)
+    print("Server is running and ready to accept connections!")
+    print("\nAccess the application at:")
+
+    # Get and display all available addresses
+    addresses = get_local_ip_addresses()
+    for addr in addresses:
+        if addr == '127.0.0.1':
+            print(f"  • http://localhost:{port}  (local access)")
+        else:
+            print(f"  • http://{addr}:{port}  (LAN access)")
+
+    print("=" * 60)
+
+    # Use Waitress production server with threading
+    serve(
+        APP,
+        host='0.0.0.0',
+        port=port,
+        threads=6,  # Handle up to 6 concurrent requests
+        channel_timeout=60,  # Timeout for idle connections
+        cleanup_interval=30,  # Clean up old connections every 30s
+        recv_bytes=65536,  # Receive buffer size
+        send_bytes=65536,  # Send buffer size
+    )
 
 
 if __name__ == '__main__':
