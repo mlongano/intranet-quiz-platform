@@ -1,5 +1,8 @@
 // frontend/src/pages/AdminScoresBankPage.tsx
 import { useState, useMemo } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeSanitize from "rehype-sanitize";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -332,13 +335,96 @@ function AdminScoresBankPage() {
                 {previewingFile === filename &&
                   !isLoadingPreview &&
                   previewData && (
-                    <div className="bg-gray-100 p-3 rounded text-sm max-h-60 overflow-y-auto">
-                      <h3 className="font-semibold mb-2">Preview:</h3>
-                      {/* Basic rendering of scores for preview */}
+                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-300 max-h-[70vh] overflow-y-auto">
+                      <h3 className="font-semibold mb-4 text-lg">Preview: {filename}</h3>
+                      {/* Rendering scores in a formatted table */}
                       {previewData.length > 0 ? (
-                        <pre>{JSON.stringify(previewData, null, 2)}</pre> // Display raw JSON for scores preview
+                        <div className="space-y-6">
+                          {previewData.map((entry, idx) => (
+                            <div key={idx} className="bg-white p-4 rounded-lg border shadow-sm">
+                              {/* Student Header */}
+                              <div className="border-b pb-2 mb-3">
+                                <h4 className="text-lg font-semibold text-gray-800">
+                                  Student: {entry.student}
+                                </h4>
+                                <p className="text-sm text-gray-500">
+                                  Quiz ID: {entry.quiz_id}
+                                  {entry.quiz_title && <span className="ml-2">({entry.quiz_title})</span>}
+                                </p>
+                                <p className="text-sm text-gray-600 font-medium">
+                                  Score: {entry.raw_points} / {entry.max_points} ({entry.percent}%)
+                                </p>
+                                <p className="text-xs text-gray-400">
+                                  Submitted: {new Date(entry.timestamp + 'Z').toLocaleString()}
+                                </p>
+                              </div>
+
+                              {/* Answers List */}
+                              <div className="space-y-3">
+                                {entry.answers.map((ans, ansIdx) => (
+                                  <div key={ansIdx} className="p-3 bg-gray-50 rounded border">
+                                    {/* Question */}
+                                    <div className="font-semibold text-gray-800 mb-2">
+                                      <span className="mr-2">{ansIdx + 1}.</span>
+                                      <ReactMarkdown
+                                        remarkPlugins={[remarkGfm]}
+                                        rehypePlugins={[rehypeSanitize]}
+                                        className="inline"
+                                      >
+                                        {ans.question_text || ""}
+                                      </ReactMarkdown>
+                                      <span className="text-xs text-gray-400 ml-2">
+                                        (ID: {ans.question_id})
+                                      </span>
+                                    </div>
+
+                                    {ans.question_image && (
+                                      <img
+                                        src={ans.question_image}
+                                        alt={`Question ${ansIdx + 1}`}
+                                        className="w-40 max-w-sm mx-auto my-2 rounded"
+                                      />
+                                    )}
+
+                                    {/* Student Answer */}
+                                    <div className="ml-4 mb-2 text-sm flex items-start gap-2">
+                                      <span className="font-medium text-gray-600">Answer:</span>
+                                      <span className="font-mono bg-gray-100 px-2 py-1 rounded text-xs">
+                                        {JSON.stringify(ans.student_answer)}
+                                      </span>
+                                      {ans.points_awarded === ans.weight && (
+                                        <span className="text-green-700 font-bold text-lg">✓</span>
+                                      )}
+                                      {ans.points_awarded > 0 && ans.points_awarded < ans.weight && (
+                                        <span className="text-yellow-500 font-bold text-lg">⚠</span>
+                                      )}
+                                      {ans.points_awarded === 0 && (
+                                        <span className="text-red-700 font-bold text-lg">❌</span>
+                                      )}
+                                    </div>
+
+                                    {/* Correct Answer */}
+                                    <div className="ml-4 mb-2 text-sm flex items-start gap-2">
+                                      <span className="font-medium text-green-700">Correct:</span>
+                                      <span className="font-mono bg-green-50 px-2 py-1 rounded text-xs">
+                                        {JSON.stringify(ans.correct_answer)}
+                                      </span>
+                                    </div>
+
+                                    {/* Points */}
+                                    <div className="ml-4 text-sm text-gray-700">
+                                      <span className="font-medium">
+                                        Points: {ans.points_awarded} / {ans.weight}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       ) : (
-                        <p>No score entries found in this file.</p>
+                        <p className="text-gray-600">No score entries found in this file.</p>
                       )}
                     </div>
                   )}
