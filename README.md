@@ -1,4 +1,25 @@
-# Quizzes local lan web app
+# QuizParty
+
+## Overview
+
+A self-contained quiz application designed for secure, offline classroom assessments. This system runs entirely on a
+local area network (LAN) without requiring internet access, making it ideal for controlled testing environments in
+schools and educational institutions.
+
+**Key Features:**
+
+- **Offline Operation**: Fully functional without internet connectivity - perfect for exam scenarios
+- **No External Dependencies**: All data stored locally; no cloud services or external APIs required
+- **Multiple Question Types**: Supports single choice, multiple choice, and open-ended questions with optional images
+- **Automatic Grading**: Instant scoring for closed questions; keyword-based scoring for open responses
+- **Admin Dashboard**: Real-time monitoring, score management, and result distribution via email
+- **Fair Randomization**: Questions and answer options are shuffled once per student to prevent cheating while
+  maintaining consistency
+- **Data Integrity**: Automatic backups, file locking, and score recalculation capabilities
+
+**Typical Use Case:** A teacher sets up the server on a local machine, students connect via LAN (e.g., classroom WiFi
+or wired network), take their quizzes on their own devices, and results are instantly available to the instructor.
+Optional email functionality can be configured if internet access is available after the exam.
 
 ## Directory layout
 
@@ -21,7 +42,8 @@ lan_quiz/     # project root directory
 └── style.css   # (optional) simple styling
 ```
 
-quizzes/ is created automatically; each student that starts a quiz gets a file like student_id.json describing only the randomized order of that quiz.
+quizzes/ is created automatically; each student that starts a quiz gets a file like student_id.json
+describing only the randomized order of that quiz.
 
 ## Install instructions
 
@@ -307,7 +329,6 @@ If you need to update correct answers or question weights after students have su
 - [x] CSV export functionality
 - [x] Question bank management and archiving
 - [ ] Add a title to the quiz set in `questions.jsonc` and show it in the admin panel and ema
-- [ ] OAuth2 support for Gmail and Google Workspace accounts
 - [ ] Implement a timer for quizzes
 - [ ] Improve UI/UX design of the frontend
 - [ ] Improve error handling and user feedback throughout the app
@@ -318,3 +339,5 @@ If you need to update correct answers or question weights after students have su
 - [ ] Implement a feedback system for students
 - [ ] Add support for more question types (e.g., matching, fill-in-the-blank)
 - [ ] Use a database instead of JSONC files for better scalability
+- [ ] Manage student list from the admin panel
+- [ ]
