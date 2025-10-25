@@ -1,14 +1,18 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchScores, fetchStudents, fetchAdminQuestions, fetchQuestionBankFiles, fetchScoresBankFiles, listStudentsBankFiles } from "../api";
 
 export default function AdminRootPage() {
   const location = useLocation();
   const adminPassword = location.state?.adminPassword;
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [isValidating, setIsValidating] = useState(true);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState(30);
+  const [showPendingModal, setShowPendingModal] = useState(false);
+  const [showSubmittedModal, setShowSubmittedModal] = useState(false);
 
   // Validate password on mount
   useEffect(() => {
@@ -33,11 +37,29 @@ export default function AdminRootPage() {
   }, [adminPassword, navigate]);
 
   // Fetch dashboard statistics
-  const { data: scoresData } = useQuery({
+  const { data: scoresData, isFetching: isFetchingScores, dataUpdatedAt } = useQuery({
     queryKey: ["scores", adminPassword],
     queryFn: () => fetchScores(adminPassword),
     enabled: !!adminPassword && !isValidating,
+    refetchInterval: 30000, // Refetch every 30 seconds
+    refetchIntervalInBackground: false, // Don't refetch when tab is not visible
   });
+
+  // Countdown timer for next auto-update
+  useEffect(() => {
+    setCountdown(30); // Reset countdown when data updates
+  }, [dataUpdatedAt]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) return 30;
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   const { data: studentsData } = useQuery({
     queryKey: ["students", adminPassword],
@@ -95,15 +117,49 @@ export default function AdminRootPage() {
     navigate(path, { state: { adminPassword } });
   };
 
+  const handleRefreshScores = () => {
+    queryClient.invalidateQueries({ queryKey: ["scores", adminPassword] });
+    setCountdown(30); // Reset countdown on manual refresh
+  };
+
   // Calculate statistics
   const totalSubmissions = scoresData?.length || 0;
-  const totalStudents = studentsData ?
-    studentsData.reduce((sum, student) => {
-      if (typeof student === 'string') return sum + 1;
-      if ('emails' in student) return sum + student.emails.length;
-      if ('email' in student) return sum + 1;
-      return sum;
-    }, 0) : 0;
+
+  // Get all student emails from the studentsData
+  const allStudentEmails = studentsData ?
+    studentsData.reduce<string[]>((emails, student) => {
+      if (typeof student === 'string') {
+        emails.push(student.toLowerCase());
+      } else if ('emails' in student) {
+        emails.push(...student.emails.map(e => e.toLowerCase()));
+      } else if ('email' in student) {
+        emails.push(student.email.toLowerCase());
+      }
+      return emails;
+    }, []) : [];
+
+  const totalStudents = allStudentEmails.length;
+
+  // Get submitted student IDs
+  const submittedStudentIds = new Set(
+    scoresData?.map(score => score.student.toLowerCase()) || []
+  );
+
+  // Calculate pending submissions
+  const pendingSubmissions = allStudentEmails.filter(
+    email => !submittedStudentIds.has(email)
+  ).length;
+
+  // Get list of pending students
+  const pendingStudentEmails = allStudentEmails.filter(
+    email => !submittedStudentIds.has(email)
+  );
+
+  // Get list of submitted students
+  const submittedStudentEmails = allStudentEmails.filter(
+    email => submittedStudentIds.has(email)
+  );
+
   const totalQuestions = questionsData?.questions?.length || 0;
   const quizTitle = questionsData?.title || "No quiz loaded";
 
@@ -142,11 +198,49 @@ export default function AdminRootPage() {
           </div>
 
           <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-500">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-sm font-medium">Submissions</p>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="text-gray-500 text-sm font-medium">Submissions</p>
+                  {isFetchingScores && (
+                    <span className="text-gray-400 text-sm animate-pulse">
+                      Updating...
+                    </span>
+                  )}
+                </div>
                 <p className="text-2xl font-bold text-gray-800 mt-1">{totalSubmissions}</p>
-                <p className="text-gray-600 text-sm mt-2">Total quiz attempts</p>
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    onClick={() => setShowSubmittedModal(true)}
+                    className="text-gray-600 text-sm hover:text-gray-800 hover:underline cursor-pointer"
+                  >
+                    {totalSubmissions} submitted
+                  </button>
+                  {pendingSubmissions > 0 && (
+                    <>
+                      <span className="text-gray-400">•</span>
+                      <button
+                        onClick={() => setShowPendingModal(true)}
+                        className="text-orange-600 text-sm font-medium hover:text-orange-700 hover:underline cursor-pointer"
+                      >
+                        {pendingSubmissions} pending
+                      </button>
+                    </>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <p className="text-gray-400 text-xs">
+                    Auto-updates in {countdown}s
+                  </p>
+                  <button
+                    onClick={handleRefreshScores}
+                    disabled={isFetchingScores}
+                    className="text-gray-400 hover:text-gray-600 text-xs hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Refresh now"
+                  >
+                    🔄 Refresh now
+                  </button>
+                </div>
               </div>
               <div className="text-green-500 text-4xl">✅</div>
             </div>
@@ -252,6 +346,102 @@ export default function AdminRootPage() {
           </div>
         </div>
       </main>
+
+      {/* Pending Students Modal */}
+      {showPendingModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="bg-orange-500 text-white px-6 py-4 flex justify-between items-center">
+              <h2 className="text-xl font-bold">Pending Submissions ({pendingSubmissions})</h2>
+              <button
+                onClick={() => setShowPendingModal(false)}
+                className="text-white hover:text-orange-100 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1">
+              {pendingStudentEmails.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-gray-600 text-sm mb-4">
+                    The following students have not submitted their quiz yet:
+                  </p>
+                  <ul className="space-y-1">
+                    {pendingStudentEmails.map((email, index) => (
+                      <li
+                        key={index}
+                        className="px-4 py-2 bg-orange-50 border border-orange-200 rounded text-gray-800 hover:bg-orange-100 transition-colors"
+                      >
+                        {email}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-gray-600 text-center py-8">
+                  All students have submitted their quiz! 🎉
+                </p>
+              )}
+            </div>
+            <div className="bg-gray-50 px-6 py-4 flex justify-end border-t">
+              <button
+                onClick={() => setShowPendingModal(false)}
+                className="px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Submitted Students Modal */}
+      {showSubmittedModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="bg-green-500 text-white px-6 py-4 flex justify-between items-center">
+              <h2 className="text-xl font-bold">Submitted Students ({totalSubmissions})</h2>
+              <button
+                onClick={() => setShowSubmittedModal(false)}
+                className="text-white hover:text-green-100 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1">
+              {submittedStudentEmails.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-gray-600 text-sm mb-4">
+                    The following students have successfully submitted their quiz:
+                  </p>
+                  <ul className="space-y-1">
+                    {submittedStudentEmails.map((email, index) => (
+                      <li
+                        key={index}
+                        className="px-4 py-2 bg-green-50 border border-green-200 rounded text-gray-800 hover:bg-green-100 transition-colors"
+                      >
+                        {email}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-gray-600 text-center py-8">
+                  No submissions yet.
+                </p>
+              )}
+            </div>
+            <div className="bg-gray-50 px-6 py-4 flex justify-end border-t">
+              <button
+                onClick={() => setShowSubmittedModal(false)}
+                className="px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
