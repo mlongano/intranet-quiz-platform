@@ -278,7 +278,35 @@ export default function AdminRootPage() {
               <p className="text-2xl font-bold text-gray-800 mt-1">
                 {(questionBankFiles?.files?.length || 0) + (scoresBankFiles?.files?.length || 0) + (studentsBankFiles?.files?.length || 0)}
               </p>
-              <p className="text-gray-600 text-sm mt-2">Saved in banks</p>
+              <div className="text-gray-600 text-xs mt-2 space-y-1">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigateTo("/admin/bank");
+                  }}
+                  className="block hover:text-blue-600 hover:underline cursor-pointer"
+                >
+                  {questionBankFiles?.files?.length || 0} questions
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigateTo("/admin/scores-bank");
+                  }}
+                  className="block hover:text-green-600 hover:underline cursor-pointer"
+                >
+                  {scoresBankFiles?.files?.length || 0} scores
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigateTo("/admin/students-bank");
+                  }}
+                  className="block hover:text-purple-600 hover:underline cursor-pointer"
+                >
+                  {studentsBankFiles?.files?.length || 0} students
+                </button>
+              </div>
             </div>
             <div className="text-orange-500 text-4xl">🗄️</div>
           </button>
