@@ -587,8 +587,13 @@ def api_send_single_result_email():
 
     student_email = data.get('student_email')
     quiz_id = data.get('quiz_id')
+    subject = data.get('subject')  # Optional custom subject
+    include_details = data.get('include_details', True)  # Default to True
 
     print(f"Attempting to send email to: {student_email} for quiz: {quiz_id}")
+    if subject:
+        print(f"Custom subject: {subject}")
+    print(f"Include details: {include_details}")
 
     if not student_email or not quiz_id:
         print("Missing required parameters")
@@ -610,9 +615,9 @@ def api_send_single_result_email():
             print(f"No submission found for {student_email} with quiz_id {quiz_id}")
             abort(404, description=f"No submission found for {student_email} with quiz_id {quiz_id}")
 
-        # Send email
+        # Send email with optional custom subject and include_details
         print(f"Calling send_quiz_result_email for {student_email}")
-        success, message = send_quiz_result_email(student_email, submission)
+        success, message = send_quiz_result_email(student_email, submission, subject, include_details)
 
         if success:
             print(f"Email sent successfully: {message}")
@@ -632,6 +637,8 @@ def api_send_all_results_email():
     """Send quiz result emails to all students."""
     data = request.get_json(silent=True) or {}
     auth_pw = data.get('pw')
+    subject = data.get('subject')  # Optional custom subject
+    include_details = data.get('include_details', True)  # Default to True
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
@@ -655,8 +662,8 @@ def api_send_all_results_email():
                 "errors": []
             })
 
-        # Send emails
-        results = send_bulk_quiz_results(valid_submissions)
+        # Send emails with optional custom subject and include_details
+        results = send_bulk_quiz_results(valid_submissions, subject, include_details)
 
         return jsonify({
             "success": True,

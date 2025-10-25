@@ -24,12 +24,14 @@ def is_valid_email(email: str) -> bool:
     return bool(re.match(pattern, email))
 
 
-def format_quiz_results_html(submission: dict) -> str:
+def format_quiz_results_html(submission: dict, include_details: bool = True, subject: str = "Risultati del Quiz") -> str:
     """
     Format quiz submission data as HTML email content.
 
     Args:
         submission: Score entry dict with student, quiz_id, answers, raw_points, etc.
+        include_details: Whether to include detailed question-by-question results. Default: True
+        subject: Email subject to use as the header title. Default: "Risultati del Quiz"
 
     Returns:
         HTML string for email body
@@ -67,74 +69,80 @@ def format_quiz_results_html(submission: dict) -> str:
     </head>
     <body>
         <div class="header">
-            <h1>Quiz Results</h1>
+            <h1>{subject}</h1>
         </div>
 
         <div class="summary">
-            <h2>Summary</h2>
-            <p><strong>Student:</strong> {student}</p>
-            <p><strong>Quiz ID:</strong> {quiz_id}</p>
-            <p><strong>Submission Date:</strong> {formatted_time}</p>
-            <p><strong>Score:</strong> {raw_points} / {max_points} ({percent}%)</p>
+            <h2>Riepilogo</h2>
+            <p><strong>Studente:</strong> {student}</p>
+            <p><strong>ID Quiz:</strong> {quiz_id}</p>
+            <p><strong>Data di Consegna:</strong> {formatted_time}</p>
+            <p><strong>Punteggio:</strong> {raw_points} / {max_points} ({percent}%)</p>
         </div>
 
-        <h2>Detailed Results</h2>
+        <h2>Risultati Dettagliati</h2>
     """
 
-    # Add each question
-    for idx, answer in enumerate(answers, 1):
-        q_text = answer.get('question_text', 'Question')
-        student_ans = answer.get('student_answer', 'No answer')
-        correct_ans = answer.get('correct_answer', 'N/A')
-        points = answer.get('points_awarded', 0)
-        weight = answer.get('weight', 1)
+    # Add detailed results only if include_details is True
+    if include_details:
+        # Add each question
+        for idx, answer in enumerate(answers, 1):
+            q_text = answer.get('question_text', 'Question')
+            student_ans = answer.get('student_answer', 'No answer')
+            correct_ans = answer.get('correct_answer', 'N/A')
+            points = answer.get('points_awarded', 0)
+            weight = answer.get('weight', 1)
 
-        # Determine if answer is correct, incorrect, or partial
-        if points == 0:
-            status_class = 'incorrect'
-            status_text = '✗ Incorrect'
-        elif points >= weight:
-            status_class = 'correct'
-            status_text = '✓ Correct'
-        else:
-            status_class = 'partial'
-            status_text = '◐ Partial'
+            # Determine if answer is correct, incorrect, or partial
+            if points == 0:
+                status_class = 'incorrect'
+                status_text = '✗ Errato'
+            elif points >= weight:
+                status_class = 'correct'
+                status_text = '✓ Corretto'
+            else:
+                status_class = 'partial'
+                status_text = '◐ Parziale'
 
-        # Format answers (handle lists for multiple choice)
-        if isinstance(student_ans, list):
-            student_ans_str = '<ul>' + ''.join(f'<li>{ans}</li>' for ans in student_ans) + '</ul>'
-        else:
-            student_ans_str = str(student_ans)
+            # Format answers (handle lists for multiple choice)
+            if isinstance(student_ans, list):
+                student_ans_str = '<ul>' + ''.join(f'<li>{ans}</li>' for ans in student_ans) + '</ul>'
+            else:
+                student_ans_str = str(student_ans)
 
-        if isinstance(correct_ans, list):
-            correct_ans_str = '<ul>' + ''.join(f'<li>{ans}</li>' for ans in correct_ans) + '</ul>'
-        else:
-            correct_ans_str = str(correct_ans)
+            if isinstance(correct_ans, list):
+                correct_ans_str = '<ul>' + ''.join(f'<li>{ans}</li>' for ans in correct_ans) + '</ul>'
+            else:
+                correct_ans_str = str(correct_ans)
 
-        html += f"""
+            html += f"""
         <div class="question">
-            <h3>Question {idx}</h3>
+            <h3>Domanda {idx}</h3>
             <p><strong>{q_text}</strong></p>
 
             <div class="answer">
-                <p><strong>Your Answer:</strong></p>
+                <p><strong>La Tua Risposta:</strong></p>
                 {student_ans_str}
             </div>
 
             <div class="answer">
-                <p><strong>Correct Answer:</strong></p>
+                <p><strong>Risposta Corretta:</strong></p>
                 {correct_ans_str}
             </div>
 
             <p class="{status_class}">
-                {status_text} - Score: {points}/{weight} points
+                {status_text} - Punteggio: {points}/{weight} punti
             </p>
         </div>
+            """
+    else:
+        html += """
+        <p><em>I risultati dettagliati domanda per domanda non sono stati inclusi in questa email.</em></p>
         """
 
     html += """
         <div class="footer">
-            <p>This is an automated message. Please do not reply to this email.</p>
+            <p>Questo è un messaggio automatico. Si prega di non rispondere a questa email.</p>
         </div>
     </body>
     </html>
@@ -143,18 +151,21 @@ def format_quiz_results_html(submission: dict) -> str:
     return html
 
 
-def send_quiz_result_email(student_email: str, submission: dict) -> tuple[bool, str]:
+def send_quiz_result_email(student_email: str, submission: dict, custom_subject: Optional[str] = None, include_details: bool = True) -> tuple[bool, str]:
     """
     Send quiz results to student via email.
 
     Args:
         student_email: Student's email address
         submission: Score entry dict with quiz results
+        custom_subject: Optional custom email subject. If not provided, generates default subject.
+        include_details: Whether to include detailed question-by-question results. Default: True
 
     Returns:
         Tuple of (success: bool, message: str)
     """
     print(f"[EMAIL] Starting to send email to: {student_email}")
+    print(f"[EMAIL] Include details: {include_details}")
 
     # Validate configuration
     if not EMAIL_SENDER or not EMAIL_PASSWORD:
@@ -174,12 +185,17 @@ def send_quiz_result_email(student_email: str, submission: dict) -> tuple[bool, 
         msg = MIMEMultipart('alternative')
         msg['From'] = EMAIL_SENDER
         msg['To'] = student_email
-        msg['Subject'] = f"Quiz Results - Score: {submission.get('percent', 0)}%"
+
+        # Use custom subject if provided, otherwise generate default
+        if custom_subject:
+            msg['Subject'] = custom_subject
+        else:
+            msg['Subject'] = f"Quiz Results - Score: {submission.get('percent', 0)}%"
 
         print(f"[EMAIL] Message created with subject: {msg['Subject']}")
 
-        # Generate HTML content
-        html_content = format_quiz_results_html(submission)
+        # Generate HTML content with or without details
+        html_content = format_quiz_results_html(submission, include_details, msg['Subject'])
         html_part = MIMEText(html_content, 'html')
         msg.attach(html_part)
 
@@ -211,12 +227,14 @@ def send_quiz_result_email(student_email: str, submission: dict) -> tuple[bool, 
         return False, f"Error sending email: {str(e)}"
 
 
-def send_bulk_quiz_results(submissions: list[dict]) -> dict:
+def send_bulk_quiz_results(submissions: list[dict], custom_subject: Optional[str] = None, include_details: bool = True) -> dict:
     """
     Send quiz results to multiple students.
 
     Args:
         submissions: List of score entry dicts
+        custom_subject: Optional custom email subject for all emails
+        include_details: Whether to include detailed question-by-question results. Default: True
 
     Returns:
         Dict with success_count, failed_count, and errors list
@@ -235,7 +253,7 @@ def send_bulk_quiz_results(submissions: list[dict]) -> dict:
             results['errors'].append('Missing student email')
             continue
 
-        success, message = send_quiz_result_email(student_email, submission)
+        success, message = send_quiz_result_email(student_email, submission, custom_subject, include_details)
 
         if success:
             results['success_count'] += 1

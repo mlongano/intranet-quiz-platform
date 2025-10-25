@@ -460,6 +460,8 @@ export async function sendResultEmail(
   student_email: string,
   quiz_id: string,
   password: string,
+  subject?: string,
+  includeDetails?: boolean,
 ): Promise<{
   success: boolean;
   message: string;
@@ -469,7 +471,7 @@ export async function sendResultEmail(
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ student_email, quiz_id, pw: password }),
+    body: JSON.stringify({ student_email, quiz_id, pw: password, subject, include_details: includeDetails }),
   });
   return handleResponse<{
     success: boolean;
@@ -482,6 +484,8 @@ export async function sendResultEmail(
  */
 export async function sendAllResultEmails(
   password: string,
+  subject?: string,
+  includeDetails?: boolean,
 ): Promise<{
   success: boolean;
   message: string;
@@ -494,7 +498,7 @@ export async function sendAllResultEmails(
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ pw: password }),
+    body: JSON.stringify({ pw: password, subject, include_details: includeDetails }),
   });
   return handleResponse<{
     success: boolean;

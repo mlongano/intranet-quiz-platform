@@ -20,6 +20,10 @@ function AdminDashboardPage() {
   );
   const [csvError, setCsvError] = useState<string | null>(null);
   const [recalculateMessage, setRecalculateMessage] = useState<string | null>(null);
+  const [emailModal, setEmailModal] = useState<{ studentEmail: string; quizId: string } | null>(null);
+  const [bulkEmailModal, setBulkEmailModal] = useState<boolean>(false);
+  const [emailSubject, setEmailSubject] = useState<string>("");
+  const [includeDetails, setIncludeDetails] = useState<boolean>(true);
 
   // Fetch scores using the password
   const {
@@ -57,38 +61,65 @@ function AdminDashboardPage() {
 
   // Mutation for sending all emails
   const sendAllEmailsMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: ({ subject, includeDetails }: { subject: string; includeDetails: boolean }) => {
       if (!adminPassword) throw new Error("Admin password not provided.");
-      return sendAllResultEmails(adminPassword);
+      return sendAllResultEmails(adminPassword, subject, includeDetails);
     },
     onSuccess: (data) => {
       setRecalculateMessage(
         `✓ ${data.message}${data.errors.length > 0 ? ` Errors: ${data.errors.slice(0, 3).join(", ")}` : ""}`
       );
+      setBulkEmailModal(false);
+      setEmailSubject("");
+      setIncludeDetails(true);
     },
     onError: (err: Error) => {
       setRecalculateMessage(`✗ Failed to send emails: ${err.message}`);
+      setBulkEmailModal(false);
+      setEmailSubject("");
+      setIncludeDetails(true);
     },
   });
 
   const sendSingleEmailMutation = useMutation({
-    mutationFn: ({ studentEmail, quizId }: { studentEmail: string; quizId: string }) => {
+    mutationFn: ({ studentEmail, quizId, subject, includeDetails }: { studentEmail: string; quizId: string; subject: string; includeDetails: boolean }) => {
       if (!adminPassword) throw new Error("Admin password not provided.");
-      return sendResultEmail(studentEmail, quizId, adminPassword);
+      return sendResultEmail(studentEmail, quizId, adminPassword, subject, includeDetails);
     },
     onSuccess: (_data, variables) => {
       setRecalculateMessage(`✓ Email sent to ${variables.studentEmail}`);
+      setEmailModal(null);
+      setEmailSubject("");
+      setIncludeDetails(true);
     },
     onError: (err: Error, variables) => {
       setRecalculateMessage(`✗ Failed to send email to ${variables.studentEmail}: ${err.message}`);
+      setEmailModal(null);
+      setEmailSubject("");
+      setIncludeDetails(true);
     },
   });
 
   const handleSendSingleEmail = (studentEmail: string, quizId: string) => {
-    if (window.confirm(`Send quiz results to ${studentEmail}?`)) {
-      setRecalculateMessage(null);
-      sendSingleEmailMutation.mutate({ studentEmail, quizId });
+    // Open modal to ask for subject
+    setEmailModal({ studentEmail, quizId });
+    setEmailSubject(`Quiz Results - ${quizId}`);
+    setIncludeDetails(true);
+  };
+
+  const handleConfirmSendEmail = () => {
+    if (!emailModal) return;
+    if (!emailSubject.trim()) {
+      alert("Please enter an email subject");
+      return;
     }
+    setRecalculateMessage(null);
+    sendSingleEmailMutation.mutate({
+      studentEmail: emailModal.studentEmail,
+      quizId: emailModal.quizId,
+      subject: emailSubject,
+      includeDetails: includeDetails
+    });
   };
 
   const handleRecalculateScores = () => {
@@ -99,10 +130,19 @@ function AdminDashboardPage() {
   };
 
   const handleSendAllEmails = () => {
-    if (window.confirm(`Send quiz results via email to all ${scores?.length || 0} students?`)) {
-      setRecalculateMessage(null);
-      sendAllEmailsMutation.mutate();
+    // Open modal to ask for subject
+    setBulkEmailModal(true);
+    setEmailSubject("Quiz Results");
+    setIncludeDetails(true);
+  };
+
+  const handleConfirmSendAllEmails = () => {
+    if (!emailSubject.trim()) {
+      alert("Please enter an email subject");
+      return;
     }
+    setRecalculateMessage(null);
+    sendAllEmailsMutation.mutate({ subject: emailSubject, includeDetails: includeDetails });
   };
 
   // --- CSV Export Function ---
@@ -338,6 +378,132 @@ function AdminDashboardPage() {
           adminPassword={adminPassword} // Pass password for detail fetch/override save
           onClose={() => setSelectedStudent(null)} // Allow closing the detail view
         />
+      )}
+
+      {/* Email Subject Modal */}
+      {emailModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Send Quiz Results</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Sending to: <span className="font-medium">{emailModal.studentEmail}</span>
+            </p>
+            <div className="mb-4">
+              <label htmlFor="email-subject" className="block text-sm font-medium text-gray-700 mb-2">
+                Email Subject:
+              </label>
+              <input
+                id="email-subject"
+                type="text"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Enter email subject"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleConfirmSendEmail();
+                  } else if (e.key === 'Escape') {
+                    setEmailModal(null);
+                    setEmailSubject("");
+                  }
+                }}
+              />
+            </div>
+            <div className="mb-4">
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeDetails}
+                  onChange={(e) => setIncludeDetails(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">Include detailed question-by-question results</span>
+              </label>
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setEmailModal(null);
+                  setEmailSubject("");
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmSendEmail}
+                disabled={sendSingleEmailMutation.isPending || !emailSubject.trim()}
+                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {sendSingleEmailMutation.isPending ? "Sending..." : "Send Email"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Email Subject Modal */}
+      {bulkEmailModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Send Quiz Results to All Students</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              This will send emails to <span className="font-medium">{scores?.length || 0} students</span>
+            </p>
+            <div className="mb-4">
+              <label htmlFor="bulk-email-subject" className="block text-sm font-medium text-gray-700 mb-2">
+                Email Subject:
+              </label>
+              <input
+                id="bulk-email-subject"
+                type="text"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Enter email subject"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleConfirmSendAllEmails();
+                  } else if (e.key === 'Escape') {
+                    setBulkEmailModal(false);
+                    setEmailSubject("");
+                  }
+                }}
+              />
+            </div>
+            <div className="mb-4">
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeDetails}
+                  onChange={(e) => setIncludeDetails(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">Include detailed question-by-question results</span>
+              </label>
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setBulkEmailModal(false);
+                  setEmailSubject("");
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmSendAllEmails}
+                disabled={sendAllEmailsMutation.isPending || !emailSubject.trim()}
+                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {sendAllEmailsMutation.isPending ? "Sending..." : `Send to ${scores?.length || 0} Students`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
