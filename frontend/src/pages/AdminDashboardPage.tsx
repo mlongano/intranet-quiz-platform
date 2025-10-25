@@ -203,15 +203,12 @@ export default function AdminRootPage() {
             className="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-500 hover:shadow-lg transition-shadow text-left flex items-start justify-between mb-2 cursor-pointer"
           >
             <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <p className="text-green-600 text-base font-bold">Submissions</p>
-                {isFetchingScores && (
-                  <span className="text-gray-400 text-sm animate-pulse">
-                    Updating...
-                  </span>
-                )}
-              </div>
+              <p className="text-green-600 text-base font-bold">Submissions</p>
               <p className="text-2xl font-bold text-gray-800 mt-1">{totalSubmissions}</p>
+              <p className="text-gray-400 text-sm animate-pulse">
+                {isFetchingScores && ("Updating...")} &nbsp;
+              </p>
+
               <div className="flex items-center gap-2 mt-2">
                 <button
                   onClick={(e) => {
