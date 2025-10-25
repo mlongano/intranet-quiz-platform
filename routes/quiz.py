@@ -108,12 +108,20 @@ def api_start():
             print(f"Error reading existing plan {student_plan_path}: {e}")
 
     # --- Create new quiz ---
-    qbank = load_questions() # Can raise InternalServerError
+    quiz_data = load_questions() # Can raise InternalServerError
+    qbank = quiz_data['questions']
+    quiz_title = quiz_data.get('title')
     random.shuffle(qbank)
     quiz_id, quiz_plan_steps = build_quiz_plan(qbank)
 
     output_plan_path = Path(QUIZ_FOLDER) / f'{safe_id(student)}.json'
-    meta = { "quiz_id": quiz_id, "student": student, "created": datetime.datetime.utcnow().isoformat(timespec='seconds'), "plan": quiz_plan_steps }
+    meta = {
+        "quiz_id": quiz_id,
+        "student": student,
+        "quiz_title": quiz_title,  # Store the quiz title
+        "created": datetime.datetime.utcnow().isoformat(timespec='seconds'),
+        "plan": quiz_plan_steps
+    }
 
     # Write atomically to prevent partial writes during concurrent access
     try:
@@ -136,7 +144,9 @@ def api_submit():
     data = request.get_json(silent=True) or {}
     quiz_id, student_id, answers = validate_submission_data(data)
     plan = load_quiz_plan_by_student(student_id) # Handles NotFound, InternalServerError
-    qbank = load_questions() # Handles InternalServerError
+    quiz_data = load_questions() # Handles InternalServerError
+    qbank = quiz_data['questions']
+    quiz_title = quiz_data.get('title')
     scores = load_scores()
     check_duplicate_submission(student_id, scores) # Handles Conflict
 
@@ -150,6 +160,7 @@ def api_submit():
     scores.append({
         'student':    student_id,
         'quiz_id':    quiz_id,
+        'quiz_title': quiz_title,  # Add quiz title to score record
         'answers':    detailed_answers,
         'raw_points': calc_results['raw_points'],
         'max_points': calc_results['max_points'],
@@ -183,7 +194,8 @@ def api_resume(quiz_id):
     if not found_student_id:
         raise InternalServerError(description=f"Plan file for quiz '{quiz_id}' is missing student identifier.")
 
-    qbank = load_questions() # Can raise InternalServerError
+    quiz_data = load_questions() # Can raise InternalServerError
+    qbank = quiz_data['questions']
 
     qbank_map = {q['id']: q for q in qbank}
     stripped = []

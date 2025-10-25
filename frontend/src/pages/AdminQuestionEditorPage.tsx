@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { parse, ParseError } from "jsonc-parser"; // Import parse from jsonc-parser
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchAdminQuestions, updateAdminQuestions, Question } from "../api"; // Adjust path if needed
+import { fetchAdminQuestions, updateAdminQuestions, QuizData, Question } from "../api"; // Import both QuizData and Question
 import { useLocation, useNavigate } from "react-router-dom";
 import QuestionDisplay from "../components/QuestionDisplay";
 
@@ -36,7 +36,7 @@ const QuestionEditor: React.FC = () => {
     error: loadError,
     refetch: refetchQuestions, // Function to manually trigger a refetch
     isFetching: isFetchingQuestions, // True if fetching, including background refetches
-  } = useQuery<Question[], Error>({
+  } = useQuery<QuizData, Error>({
     // Specify types for data and error
     queryKey: queryKey,
     queryFn: () => {
@@ -63,12 +63,22 @@ const QuestionEditor: React.FC = () => {
         text: "Questions loaded successfully",
       });
       setTimeout(() => setUserMessage(null), 2000);
-      setLengthOfQuestions(questionsData.length);
+      setLengthOfQuestions(questionsData.questions?.length || 0);
     } else if (!isLoadingQuestions && adminPassword) {
       // Handle case where data is null/undefined after loading finishes (e.g., if API returns empty successfully)
-      setQuestionsJson("[]"); // Set to empty array string
+      setQuestionsJson(JSON.stringify({ title: "", questions: [] }, null, 2)); // Set to empty quiz data
     }
   }, [questionsData, isLoadingQuestions, adminPassword]);
+
+  // Extract quiz title from the current data
+  const quizTitle = useMemo(() => {
+    try {
+      const parsed = JSON.parse(questionsJson || '{}');
+      return parsed?.title || '';
+    } catch {
+      return '';
+    }
+  }, [questionsJson]);
 
   // --- Update Questions using useMutation ---
   const {
@@ -80,13 +90,13 @@ const QuestionEditor: React.FC = () => {
   } = useMutation<
     { success: boolean; message: string }, // Type of response on success
     Error, // Type of error
-    Question[] // Type of variables passed to the mutation function
+    QuizData // Type of variables passed to the mutation function
   >({
-    mutationFn: (updatedQuestions: Question[]) => {
+    mutationFn: (updatedQuizData: QuizData) => {
       if (!adminPassword) {
         return Promise.reject(new Error("Password not available for saving"));
       }
-      return updateAdminQuestions(updatedQuestions, adminPassword);
+      return updateAdminQuestions(updatedQuizData, adminPassword);
     },
     onSuccess: (data) => {
       // Invalidate the questions query cache to trigger a refetch
@@ -112,15 +122,15 @@ const QuestionEditor: React.FC = () => {
       return;
     }
 
-    let parsedQuestions: Question[];
+    let parsedData: QuizData;
     try {
-      //parsedQuestions = JSON.parse(questionsJson);
       // Use parse from jsonc-parser
       const errors: ParseError[] = [];
-      parsedQuestions = parse(questionsJson, errors, {
+      parsedData = parse(questionsJson, errors, {
         allowTrailingComma: true,
         disallowComments: false,
-      }); // <--- Modified line
+      });
+
       if (errors.length > 0) {
         console.log("JSON parsing errors:", errors);
         setUserMessage({
@@ -129,11 +139,20 @@ const QuestionEditor: React.FC = () => {
         });
         return;
       }
-      console.log("Parsing JSONC errors:", errors); // <--- Added line
 
-      if (!Array.isArray(parsedQuestions)) {
-        throw new Error("Invalid format: Questions data must be an array.");
+      // Validate new format only
+      if (!parsedData || typeof parsedData !== 'object') {
+        throw new Error("Invalid format: Must be an object with 'title' and 'questions' fields.");
       }
+
+      if (Array.isArray(parsedData)) {
+        throw new Error("Invalid format: Old array format is no longer supported. Please use: {\"title\": \"Quiz Title\", \"questions\": [...]}");
+      }
+
+      if (!parsedData.questions || !Array.isArray(parsedData.questions)) {
+        throw new Error("Invalid format: Missing 'questions' array field.");
+      }
+
       // Backend performs more detailed validation
     } catch (parseError: any) {
       setUserMessage({
@@ -144,8 +163,8 @@ const QuestionEditor: React.FC = () => {
     }
 
     setUserMessage(null); // Clear previous messages before saving
-    setLengthOfQuestions(parsedQuestions.length);
-    saveQuestionsMutation(parsedQuestions); // Trigger the mutation
+    setLengthOfQuestions(parsedData.questions.length);
+    saveQuestionsMutation(parsedData); // Trigger the mutation
   }, [questionsJson, saveQuestionsMutation]);
 
   useEffect(() => {
@@ -178,21 +197,31 @@ const QuestionEditor: React.FC = () => {
     }
 
     try {
-      let currentQuestions: Question[] = JSON.parse(questionsJson || "[]");
-      if (!Array.isArray(currentQuestions)) {
+      const currentData: QuizData = JSON.parse(questionsJson || '{"questions":[]}');
+
+      // Validate format
+      if (Array.isArray(currentData)) {
         setUserMessage({
           type: "error",
-          text: "Cannot apply weights: Current content is not a valid JSON array.",
+          text: "Cannot apply weights: Old array format is no longer supported. Please use: {\"title\": \"Quiz Title\", \"questions\": [...]}",
         });
         return;
       }
 
-      currentQuestions = currentQuestions.map((q) => ({
+      if (!currentData.questions || !Array.isArray(currentData.questions)) {
+        setUserMessage({
+          type: "error",
+          text: "Cannot apply weights: Invalid format. Missing 'questions' array.",
+        });
+        return;
+      }
+
+      currentData.questions = currentData.questions.map((q) => ({
         ...q,
         weight: weightValue,
       }));
 
-      setQuestionsJson(JSON.stringify(currentQuestions, null, 2));
+      setQuestionsJson(JSON.stringify(currentData, null, 2));
       setUserMessage({
         type: "success",
         text: `All question weights set to ${weightValue}. Remember to save.`,
@@ -212,20 +241,36 @@ const QuestionEditor: React.FC = () => {
   const previewParsed = useMemo(() => {
     try {
       const errors: ParseError[] = [];
-      const parsed = parse(questionsJson || "[]", errors, {
+      const parsed = parse(questionsJson || '{"questions":[]}', errors, {
         allowTrailingComma: true,
         disallowComments: false,
-      }) as FullQuestion[];
+      }) as QuizData | FullQuestion[];
       if (errors.length > 0) {
         return {
           error: `Cannot preview: Invalid JSONC (${errors.length} issue${errors.length > 1 ? "s" : ""}).`,
           qs: null as FullQuestion[] | null,
         };
       }
-      if (!Array.isArray(parsed)) {
-        return { error: "Cannot preview: Top-level is not an array.", qs: null };
+
+      // Validate new format only
+      let questions: FullQuestion[];
+      if (Array.isArray(parsed)) {
+        // Old format - no longer supported
+        return {
+          error: "Cannot preview: Old array format is no longer supported. Please use: {\"title\": \"Quiz Title\", \"questions\": [...]}",
+          qs: null
+        };
+      } else if (parsed && typeof parsed === 'object' && 'questions' in parsed && Array.isArray(parsed.questions)) {
+        // New format
+        questions = parsed.questions;
+      } else {
+        return {
+          error: "Cannot preview: Invalid format. Expected object with 'title' and 'questions' array.",
+          qs: null
+        };
       }
-      return { error: null as string | null, qs: parsed };
+
+      return { error: null as string | null, qs: questions };
     } catch (e: any) {
       return { error: `Cannot preview: ${e?.message || String(e)}`, qs: null as FullQuestion[] | null };
     }
@@ -277,7 +322,10 @@ const QuestionEditor: React.FC = () => {
           Go to admin dashboard
         </button>
       </div>
-      <h2 className="text-2xl font-bold mb-4">Question Editor</h2>
+      <h2 className="text-2xl font-bold mb-4">
+        Question Editor
+        {quizTitle && <span className="text-gray-600 font-normal"> - {quizTitle}</span>}
+      </h2>
 
       {/* Error/Success Messages */}
       {/* Display loading errors */}

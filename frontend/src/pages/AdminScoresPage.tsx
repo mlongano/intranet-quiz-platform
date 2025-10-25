@@ -100,10 +100,12 @@ function AdminDashboardPage() {
     },
   });
 
-  const handleSendSingleEmail = (studentEmail: string, quizId: string) => {
+  const handleSendSingleEmail = (studentEmail: string, quizId: string, quizTitle?: string) => {
     // Open modal to ask for subject
     setEmailModal({ studentEmail, quizId });
-    setEmailSubject(`Quiz Results - ${quizId}`);
+    // Use quiz title if available, otherwise use quiz_id
+    const defaultSubject = quizTitle ? `Risultati - ${quizTitle}` : `Quiz Results - ${quizId}`;
+    setEmailSubject(defaultSubject);
     setIncludeDetails(true);
   };
 
@@ -234,6 +236,13 @@ function AdminDashboardPage() {
       <ErrorDisplay message={`Failed to load scores: ${error?.message}`} />
     );
 
+  // Extract quiz title if all submissions are from the same quiz
+  const quizTitle = scores && scores.length > 0
+    ? scores.every(s => s.quiz_title === scores[0].quiz_title)
+      ? scores[0].quiz_title
+      : null
+    : null;
+
   return (
     <div className="space-y-6">
       <div className="flex justify-end items-center mb-2">
@@ -252,7 +261,10 @@ function AdminDashboardPage() {
 
       <div className="flex justify-between items-center mb-2">
         {/* Reduced bottom margin */}
-        <h2 className="text-2xl font-semibold">Submitted Scores</h2>
+        <h2 className="text-2xl font-semibold">
+          Submitted Scores
+          {quizTitle && <span className="text-gray-600 font-normal"> - {quizTitle}</span>}
+        </h2>
         <div className="flex gap-2">
           <button
             onClick={handleSendAllEmails}
@@ -303,7 +315,7 @@ function AdminDashboardPage() {
                   scope="col"
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
-                  Quiz ID
+                  Quiz
                 </th>
                 <th
                   scope="col"
@@ -335,7 +347,14 @@ function AdminDashboardPage() {
                     {entry.student}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {entry.quiz_id}
+                    {entry.quiz_title ? (
+                      <div>
+                        <div className="font-medium text-gray-900">{entry.quiz_title}</div>
+                        <div className="text-xs text-gray-400">{entry.quiz_id}</div>
+                      </div>
+                    ) : (
+                      entry.quiz_id
+                    )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {entry.raw_points} / {entry.max_points}
@@ -348,7 +367,7 @@ function AdminDashboardPage() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
                     <button
-                      onClick={() => handleSendSingleEmail(entry.student, entry.quiz_id)}
+                      onClick={() => handleSendSingleEmail(entry.student, entry.quiz_id, entry.quiz_title)}
                       disabled={sendSingleEmailMutation.isPending}
                       className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Send email to this student"

@@ -135,62 +135,72 @@ create a `students.jsonc` file with the ids of the students who are taking the t
 create a `questions.jsonc` file to store the questions
 
 ```jsonc
-[
-  {
-    "id": 1,
-    "type": "single",
-    "text": "Capital of France?",
-    "options": ["Paris", "Rome", "Madrid", "Berlin"],
-    "correct": 0,
-    "weight": 1,
-  },
-  {
-    "id": 2,
-    "type": "multiple",
-    "text": "Select the prime numbers:",
-    "question_image": "test/question1.jpeg",
-    "options": [
-      {
-        "text": "2",
-        "image": "test/option1a.jpeg",
-      },
-      {
-        "text": "4",
-        "image": "test/option1b.jpeg",
-      },
-      {
-        "text": "5",
-        "image": "test/option1c.jpeg",
-      },
-      {
-        "text": "9",
-        "image": "test/option1d.jpeg",
-      },
-    ],
+{
+  "title": "General Knowledge Quiz 2025",  // Required: Add a title for your quiz
+  "questions": [
+    {
+      "id": 1,
+      "type": "single",
+      "text": "Capital of France?",
+      "options": ["Paris", "Rome", "Madrid", "Berlin"],
+      "correct": 0,
+      "weight": 1,
+    },
+    {
+      "id": 2,
+      "type": "multiple",
+      "text": "Select the prime numbers:",
+      "question_image": "test/question1.jpeg",
+      "options": [
+        {
+          "text": "2",
+          "image": "test/option1a.jpeg",
+        },
+        {
+          "text": "4",
+          "image": "test/option1b.jpeg",
+        },
+        {
+          "text": "5",
+          "image": "test/option1c.jpeg",
+        },
+        {
+          "text": "9",
+          "image": "test/option1d.jpeg",
+        },
+      ],
 
-    "correct": [0, 2],
-    "weight": 2,
-  },
-  {
-    "id": "q7",
-    "type": "open",
-    "text": "Which gas do plants release during photosynthesis?",
-    "question_image": "test/question2.jpeg",
-    "options": [],
-    "weight": 2,
-    "acceptable": ["oxygen", "o2"],
-  },
-  {
-    "id": "q8",
-    "type": "open",
-    "text": "Name three noble gases.",
-    "options": [],
-    "weight": 4,
-    "keywords": ["helium", "neon", "argon", "krypton", "xenon", "radon"],
-    "min_keywords": 3, // get full points when ≥ 3 found
-  },
-]
+      "correct": [0, 2],
+      "weight": 2,
+    },
+    {
+      "id": "q7",
+      "type": "open",
+      "text": "Which gas do plants release during photosynthesis?",
+      "question_image": "test/question2.jpeg",
+      "options": [],
+      "weight": 2,
+      "acceptable": ["oxygen", "o2"],
+    },
+    {
+      "id": "q8",
+      "type": "open",
+      "text": "Name three noble gases.",
+      "options": [],
+      "weight": 4,
+      "keywords": ["helium", "neon", "argon", "krypton", "xenon", "radon"],
+      "min_keywords": 3, // get full points when ≥ 3 found
+    },
+  ]
+}
 ```
+
+**Important Format Requirements:**
+
+- The file **must** be an object with `"title"` and `"questions"` fields
+- The old array format (without wrapping object) is **no longer supported**
+- When saving to the question bank or scores bank, the system will use the slugified title for the filename
+    - Example: "General Knowledge Quiz 2025" → `general-knowledge-quiz-2025.jsonc`
 
 run the backend server
 
@@ -328,7 +338,8 @@ If you need to update correct answers or question weights after students have su
 - [x] Score recalculation against updated question bank
 - [x] CSV export functionality
 - [x] Question bank management and archiving
-- [ ] Add a title to the quiz set in `questions.jsonc` and show it in the admin panel and ema
+- [x] Add a title to the quiz set in `questions.jsonc` and show it in the admin panel and email
+  (uses slugified title for filenames)
 - [ ] Implement a timer for quizzes
 - [ ] Improve UI/UX design of the frontend
 - [ ] Improve error handling and user feedback throughout the app

@@ -61,6 +61,26 @@ def safe_id(raw: str) -> str:
     """Creates a filesystem-safe ID from a raw string."""
     return SAFE.sub('_', raw)
 
+def slugify(text: str) -> str:
+    """
+    Convert text to a URL-friendly slug.
+    Removes accents, converts to lowercase, replaces spaces with hyphens.
+    """
+    # Normalize unicode characters (remove accents)
+    text = unicodedata.normalize('NFKD', text)
+    text = text.encode('ascii', 'ignore').decode('ascii')
+    # Convert to lowercase
+    text = text.lower()
+    # Replace spaces and underscores with hyphens
+    text = re.sub(r'[\s_]+', '-', text)
+    # Remove any character that's not alphanumeric or hyphen
+    text = re.sub(r'[^a-z0-9-]', '', text)
+    # Remove consecutive hyphens
+    text = re.sub(r'-+', '-', text)
+    # Strip hyphens from start and end
+    text = text.strip('-')
+    return text or 'untitled'
+
 # --- Helper to format image path for client ---
 def format_image_url(image_path):
     """Prepends the base image route if the path is valid."""
@@ -177,25 +197,29 @@ def load_scores_from_bank(filename: str):
         raise InternalServerError(description=f"Error copying file from bank: {e}")
 
 
-def save_scores_to_bank(filename_suffix: str):
-    """Saves the current SCORE_FILE to the scores_bank with a date prefix."""
-    import datetime  # Fix: Ensure datetime is imported
+def save_scores_to_bank(filename: str):
+    """Saves the current SCORE_FILE to the scores_bank with the provided filename."""
     source_path = Path(SCORE_FILE)
     if not source_path.exists() or not source_path.is_file():
         # If the main scores file doesn't exist, maybe we shouldn't save an empty one?
         # Or save an empty list? Let's raise an error for now for clarity.
         raise InternalServerError(description=f"Current scores file '{SCORE_FILE}' not found. Cannot save empty/non-existent file.")
 
-    if not filename_suffix:
-         raise BadRequest(description="Filename suffix is required for saving.")
+    # Validate and sanitize the filename
+    if not filename:
+        raise BadRequest(description="Filename is required.")
 
-    date_prefix = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    safe_suffix = safe_id(filename_suffix)
-    target_filename = f"{date_prefix}_{safe_suffix}.jsonc"
-    target_path = Path(SCORES_BANK_FOLDER) / target_filename
+    # Ensure filename ends with .jsonc
+    if not filename.endswith('.jsonc'):
+        filename += '.jsonc'
+
+    # Basic sanitization - remove path separators and dangerous characters
+    safe_filename = filename.replace('/', '_').replace('\\', '_').replace('..', '_')
+
+    target_path = Path(SCORES_BANK_FOLDER) / safe_filename
 
     if target_path.exists():
-        raise Conflict(description=f"File '{target_filename}' already exists in '{SCORES_BANK_FOLDER}'.")
+        raise Conflict(description=f"File '{safe_filename}' already exists in '{SCORES_BANK_FOLDER}'.")
 
     try:
         with source_path.open(encoding='utf-8') as f:
@@ -204,7 +228,6 @@ def save_scores_to_bank(filename_suffix: str):
         raise InternalServerError(description=f"Current file '{SCORE_FILE}' is not a valid JSONC format.")
     except Exception as e:
         raise InternalServerError(description=f"Error reading current file '{SCORE_FILE}': {e}")
-
 
     try:
         shutil.copy2(source_path, target_path)
@@ -257,24 +280,27 @@ def load_quiz_from_bank(filename: str):
         raise InternalServerError(description=f"Error copying file from bank: {e}")
 
 
-def save_quiz_to_bank(filename_suffix: str):
-    """Saves the current QUEST_FILE to the question_bank with a date prefix."""
-    import datetime  # Fix: Ensure datetime is imported
+def save_quiz_to_bank(filename: str):
+    """Saves the current QUEST_FILE to the question_bank with the provided filename."""
     source_path = Path(QUEST_FILE)
     if not source_path.exists() or not source_path.is_file():
         raise InternalServerError(description=f"Current quiz file '{QUEST_FILE}' not found.")
 
-    if not filename_suffix:
-         raise BadRequest(description="Filename suffix is required for saving.")
+    # Validate and sanitize the filename
+    if not filename:
+        raise BadRequest(description="Filename is required.")
 
-    # Generate date-prefixed filename
-    date_prefix = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    safe_suffix = safe_id(filename_suffix) # Ensure suffix is safe
-    target_filename = f"{date_prefix}_{safe_suffix}.jsonc"
-    target_path = Path(QUESTION_BANK_FOLDER) / target_filename
+    # Ensure filename ends with .jsonc
+    if not filename.endswith('.jsonc'):
+        filename += '.jsonc'
+
+    # Basic sanitization - remove path separators and dangerous characters
+    safe_filename = filename.replace('/', '_').replace('\\', '_').replace('..', '_')
+
+    target_path = Path(QUESTION_BANK_FOLDER) / safe_filename
 
     if target_path.exists():
-        raise Conflict(description=f"File '{target_filename}' already exists in '{QUESTION_BANK_FOLDER}'.")
+        raise Conflict(description=f"File '{safe_filename}' already exists in '{QUESTION_BANK_FOLDER}'.")
 
     # Optional: Basic validation of the source file content before saving
     try:
@@ -284,7 +310,6 @@ def save_quiz_to_bank(filename_suffix: str):
         raise InternalServerError(description=f"Current file '{QUEST_FILE}' is not a valid JSONC format.")
     except Exception as e:
         raise InternalServerError(description=f"Error reading current file '{QUEST_FILE}': {e}")
-
 
     try:
         shutil.copy2(source_path, target_path)
@@ -318,7 +343,22 @@ def load_questions(filename: str = QUEST_FILE):
 
     try:
         with file_path.open(encoding='utf-8') as f:
-            questions = json.load(f)
+            data = json.load(f)
+
+            # Validate format: must be object with 'questions' array
+            if not isinstance(data, dict):
+                raise ValueError(f"Invalid format in {file_path.name}: Top-level must be an object with 'title' and 'questions' fields")
+
+            if 'questions' not in data:
+                raise ValueError(f"Invalid format in {file_path.name}: Missing 'questions' field")
+
+            if not isinstance(data['questions'], list):
+                raise ValueError(f"Invalid format in {file_path.name}: 'questions' field must be an array")
+
+            questions = data['questions']
+            title = data.get('title', None)
+
+            # Format image URLs
             for question in questions:
                 question_image = question.get('question_image', None)
                 if question_image:
@@ -328,17 +368,23 @@ def load_questions(filename: str = QUEST_FILE):
                         if type(opt) == dict:
                             opt['image'] = format_image_url(opt.get('image', None))
 
+            # Build result
+            result = {
+                'title': title,
+                'questions': questions
+            }
+
             # Update cache for main file
             if filename == QUEST_FILE:
-                _questions_cache = questions
+                _questions_cache = result
                 _questions_mtime = file_path.stat().st_mtime
                 print(f"Cached questions from '{QUEST_FILE}'")
 
-            return questions
+            return result
     except FileNotFoundError:
         raise InternalServerError(description=f"Master question file '{file_path}' not found.")
-    except ValueError:
-        raise BadRequest(description=f"File '{file_path}' is not a valid JSONC format.")
+    except ValueError as e:
+        raise BadRequest(description=str(e))
     except Exception as e:
         print(f"Error reading bank file '{file_path}': {e}")
         raise InternalServerError(description=f"Error reading bank file '{file_path}': {e}")
@@ -382,15 +428,23 @@ def save_questions(data):
 
             # --- Save ---
             try:
-                # Add basic validation: ensure data is a list
-                if not isinstance(data, list):
-                     raise ValueError("Invalid data format: Top-level structure must be a list.")
+                # Validate format: must be object with 'questions' array
+                if not isinstance(data, dict):
+                    raise ValueError("Invalid data format: Must be an object with 'title' and 'questions' fields")
+
+                if 'questions' not in data:
+                    raise ValueError("Invalid data format: Missing 'questions' field")
+
+                if not isinstance(data['questions'], list):
+                    raise ValueError("Invalid data format: 'questions' field must be an array")
+
+                save_data = data
 
                 # Write atomically using temp file
                 temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(QUEST_FILE) or '.', suffix='.tmp')
                 try:
                     with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
-                        json.dump(data, f, indent=2)
+                        json.dump(save_data, f, indent=2)
                     os.replace(temp_path, QUEST_FILE)  # Atomic on POSIX
                 except Exception as e:
                     if os.path.exists(temp_path):

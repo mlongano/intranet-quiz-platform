@@ -1,6 +1,7 @@
 # routes/admin.py
 from flask import Blueprint, request, jsonify, abort
-from werkzeug.exceptions import Unauthorized, BadRequest, NotFound, InternalServerError
+from pathlib import Path
+from werkzeug.exceptions import Unauthorized, BadRequest, NotFound, InternalServerError, Conflict
 import datetime
 
 # Import necessary functions and data from utils
@@ -158,21 +159,31 @@ def manage_questions():
 
     if request.method == 'POST':
         try:
-            questions = load_questions()
-            return jsonify(questions)
+            quiz_data = load_questions()
+            return jsonify(quiz_data)  # Return the whole object with title and questions
         except Exception:
             abort(404)
             # Handle potential errors from load_questions (e.g., file not found)
             # raise InternalServerError(description=f"Failed to load questions: {e}")
 
     if request.method == 'PUT':
-         # Assuming 'questions' is the key holding the list in the request body
-         new_questions_data = data.get('questions') if data is not None else None
-         if not isinstance(new_questions_data, list):
-             raise BadRequest(description="Invalid data format: 'questions' must be a list.")
+         # Validate the new format
+         if data is None:
+             raise BadRequest(description="No data provided")
+
+         # Must be object with 'questions' field
+         if not isinstance(data, dict):
+             raise BadRequest(description="Invalid data format: Must be an object with 'title' and 'questions' fields")
+
+         if 'questions' not in data:
+             raise BadRequest(description="Invalid data format: Missing 'questions' field")
+
+         if not isinstance(data['questions'], list):
+             raise BadRequest(description="Invalid data format: 'questions' field must be an array")
+
          # **Add more validation here if needed** (e.g., check structure of each question)
          try:
-             save_questions(new_questions_data)
+             save_questions(data)
              return jsonify({"success": True, "message": "Questions updated successfully."})
          except Exception:
              abort(500)
@@ -222,20 +233,22 @@ def api_load_from_bank():
 
 @admin_bp.route('/admin/bank/save', methods=['POST'])
 def api_save_to_bank():
-    """Saves the current QUEST_FILE to the question_bank with a date prefix and suffix."""
+    """Saves the current QUEST_FILE to the question_bank with the provided filename."""
     data = request.get_json(silent=True) or {}
     auth_pw = data.get('pw')
-    filename_suffix = data.get('filename_suffix') # Expect a suffix from the client
+    filename = data.get('filename_suffix', '') # Frontend sends full filename in 'filename_suffix' field
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403) # Forbidden
-    if not filename_suffix:
-        abort(400, description="Missing filename_suffix in request body.")
+    if not filename:
+        abort(400, description="Filename is required.")
 
     try:
-        save_quiz_to_bank(filename_suffix)
-        return jsonify({"success": True, "message": "Successfully saved active quiz to bank."}) # Message will contain the generated filename
-    except (BadRequest, InternalServerError) as e:  # Removed Conflict, which is undefined
+        save_quiz_to_bank(filename)
+        return jsonify({"success": True, "message": f"Successfully saved quiz as '{filename}' to bank."})
+    except Conflict as e:
+        abort(409, description=e.description)
+    except (BadRequest, InternalServerError) as e:
          abort(e.code, description=e.description) if e.code else abort(500, description="Internal server error saving quiz to bank.")
     except Exception as e:
         print(f"Error saving to bank: {e}")
@@ -304,19 +317,21 @@ def api_load_scores_from_bank():
 
 @admin_bp.route('/admin/scores-bank/save', methods=['POST'])
 def api_save_scores_to_bank():
-    """Saves the current SCORE_FILE to the scores_bank with a date prefix and suffix."""
+    """Saves the current SCORE_FILE to the scores_bank with the provided filename."""
     data = request.get_json(silent=True) or {}
     auth_pw = data.get('pw')
-    filename_suffix = data.get('filename_suffix')
+    filename = data.get('filename_suffix', '') # Frontend sends full filename in 'filename_suffix' field
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403)
-    if not filename_suffix:
-        abort(400, description="Missing filename_suffix in request body.")
+    if not filename:
+        abort(400, description="Filename is required.")
 
     try:
-        save_scores_to_bank(filename_suffix)
-        return jsonify({"success": True, "message": "Successfully saved scores to bank."})
+        save_scores_to_bank(filename)
+        return jsonify({"success": True, "message": f"Successfully saved scores as '{filename}' to bank."})
+    except Conflict as e:
+        abort(409, description=e.description)
     except (BadRequest, InternalServerError) as e:
          abort(e.code if hasattr(e, 'code') and e.code is not None else 500, description=getattr(e, 'description', "Internal server error saving scores to bank."))
     except Exception as e:
@@ -379,7 +394,9 @@ def api_recalculate_all_scores():
 
         # Load current scores and questions
         scores = load_scores()
-        questions = load_questions()
+        quiz_data = load_questions()
+        questions = quiz_data['questions']
+        quiz_title = quiz_data.get('title')
 
         # Create a question bank map for quick lookup
         qbank_map = {q['id']: q for q in questions}
@@ -534,6 +551,10 @@ def api_recalculate_all_scores():
                 score_entry['raw_points'] = new_score
                 score_entry['max_points'] = max_score
                 score_entry['percent'] = new_percent
+
+                # Add quiz_title if not present
+                if 'quiz_title' not in score_entry and quiz_title:
+                    score_entry['quiz_title'] = quiz_title
 
                 if abs(old_score - new_score) > 0.01:
                     recalculated_count += 1

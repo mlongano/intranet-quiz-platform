@@ -50,6 +50,12 @@ export interface Question {
 // Define Answer type based on how you store them (number, number[], string)
 export type Answer = number | number[] | string | null;
 
+// NEW: Quiz data structure with optional title
+export interface QuizData {
+  title?: string;
+  questions: Question[];
+}
+
 // Define Score type based on scores.jsonc structure + detailed answers
 export interface DetailedAnswer {
   question_id: string | number;
@@ -69,6 +75,7 @@ export interface DetailedAnswer {
 export interface ScoreEntry {
   student: string;
   quiz_id: string;
+  quiz_title?: string; // Add optional quiz_title field
   answers: DetailedAnswer[]; // Use the detailed structure
   raw_points: number;
   max_points: number;
@@ -232,12 +239,12 @@ export interface UpdateQuestionsResponse {
 // --- New Admin Functions ---
 
 /**
- * Fetches the full list of questions from the admin endpoint.
+ * Fetches the full quiz data (title and questions) from the admin endpoint.
  * Requires admin password.
  */
 export async function fetchAdminQuestions(
   password: string,
-): Promise<Question[]> {
+): Promise<QuizData> {
   // Send password via header (more secure than query param)
   const response = await fetch(`${API_BASE}/admin/questions`, {
     method: "POST",
@@ -249,15 +256,15 @@ export async function fetchAdminQuestions(
     // const response = await fetch(`${API_BASE}/admin/questions?pw=${encodeURIComponent(password)}`);
   });
   // handleResponse will throw for non-ok status (like 401 Unauthorized)
-  return handleResponse<Question[]>(response);
+  return handleResponse<QuizData>(response);
 }
 
 /**
  * Updates the questions file on the server.
- * Requires admin password and the full list of questions.
+ * Requires admin password and the quiz data (title and questions).
  */
 export async function updateAdminQuestions(
-  questions: Question[],
+  quizData: QuizData,
   password: string,
 ): Promise<UpdateQuestionsResponse> {
   console.log(`Updating questions... with password ${password}`);
@@ -267,12 +274,7 @@ export async function updateAdminQuestions(
       "Content-Type": "application/json",
       "X-Admin-Pass": password, // Send password in a custom header
     },
-    body: JSON.stringify({
-      // The backend expects an object with a 'questions' key and optionally 'password'
-      // Adjust if your backend POST implementation expects the password elsewhere
-      questions: questions,
-      // password: password // Alternatively, send password inside the main body if header isn't used
-    }),
+    body: JSON.stringify(quizData), // Send the full quiz data object
   });
   // handleResponse will throw for non-ok status (like 400 Bad Request, 401 Unauthorized, 500 Internal Server Error)
   return handleResponse<UpdateQuestionsResponse>(response);

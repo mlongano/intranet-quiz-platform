@@ -1,5 +1,5 @@
 // frontend/src/pages/AdminBankManagerPage.tsx
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
@@ -13,6 +13,8 @@ import {
   BankOperationResponse,
   QuestionBankFilesResponse,
   Question, // Import the Question type for preview content
+  fetchAdminQuestions,
+  QuizData,
 } from "../api"; // Assuming api.ts is in src/
 
 function AdminBankManagerPage() {
@@ -22,12 +24,64 @@ function AdminBankManagerPage() {
 
   const adminPassword = location.state?.adminPassword;
 
-  const [saveSuffix, setSaveSuffix] = useState("");
+  const [saveFilename, setSaveFilename] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [previewingFile, setPreviewingFile] = useState<string | null>(null); // State to track which file is being previewed
 
   const queryClient = useQueryClient(); // Get Query Client instance
+
+  // --- Fetch current quiz data to get the title ---
+  const { data: currentQuizData } = useQuery<QuizData, Error>({
+    queryKey: ["adminQuestions", adminPassword],
+    queryFn: () => {
+      if (!adminPassword) {
+        throw new Error("Admin password not available.");
+      }
+      return fetchAdminQuestions(adminPassword);
+    },
+    enabled: !!adminPassword,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Slugify function to match backend implementation
+  const slugify = (text: string): string => {
+    return text
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove accents
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, '-') // Replace spaces with hyphens
+      .replace(/[^\w-]+/g, '') // Remove non-word chars except hyphens
+      .replace(/--+/g, '-') // Replace multiple hyphens with single hyphen
+      .replace(/^-+/, '') // Trim hyphens from start
+      .replace(/-+$/, ''); // Trim hyphens from end
+  };
+
+  // Generate default filename based on current quiz title
+  const defaultFilename = useMemo(() => {
+    const now = new Date();
+    // Format: 2025-10-25_18-46
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const datePrefix = `${year}-${month}-${day}_${hours}-${minutes}`;
+
+    if (currentQuizData?.title) {
+      const slug = slugify(currentQuizData.title);
+      return `${datePrefix}_${slug}.jsonc`;
+    }
+    return `${datePrefix}_quiz.jsonc`;
+  }, [currentQuizData?.title]);
+
+  // Pre-fill the filename input when default changes
+  useMemo(() => {
+    if (defaultFilename) {
+      setSaveFilename(defaultFilename);
+    }
+  }, [defaultFilename]);
 
   // --- Fetch list of files in the question_bank using React Query ---
   const {
@@ -89,7 +143,8 @@ function AdminBankManagerPage() {
     },
     onSuccess: (data) => {
       setMessage(data.message || "File saved successfully!");
-      setSaveSuffix(""); // Clear input on success
+      // Clear input on success - will be reset to default on next render
+      setSaveFilename("");
       // Refetch the list of bank files after saving
       queryClient.invalidateQueries({ queryKey: ["questionBankFiles"] }); // Invalidate to refetch
     },
@@ -127,12 +182,20 @@ function AdminBankManagerPage() {
   };
 
   const handleSaveClick = () => {
-    if (!saveSuffix.trim()) {
-      setError("Please provide a filename suffix to save.");
+    // Validate filename
+    if (!saveFilename.trim()) {
+      setError("Please provide a filename.");
       return;
     }
-    // Trigger the save mutation
-    saveFileMutation.mutate(saveSuffix.trim());
+
+    // Ensure filename ends with .jsonc
+    let finalFilename = saveFilename.trim();
+    if (!finalFilename.endsWith('.jsonc')) {
+      finalFilename += '.jsonc';
+    }
+
+    // Trigger the save mutation with the full filename
+    saveFileMutation.mutate(finalFilename);
   };
 
   const handlePreviewClick = (filename: string) => {
@@ -202,28 +265,31 @@ function AdminBankManagerPage() {
         <h2 className="text-xl font-semibold mb-2">
           Save Current Quiz to Bank
         </h2>
-        <div className="flex items-center">
-          {/* Display date format example for user guidance */}
-          <span className="mr-2 text-sm text-gray-600">
-            {new Date().toLocaleDateString("sv").replace(/-/g, "")}
-            _[suffix].jsonc
-          </span>
+        {currentQuizData?.title && (
+          <p className="text-sm text-gray-600 mb-2">
+            Quiz title: <span className="font-medium">"{currentQuizData.title}"</span>
+          </p>
+        )}
+        <div className="flex items-center gap-2">
           <input
             type="text"
-            placeholder="Enter suffix"
-            className="border p-2 mr-2 flex-grow"
-            value={saveSuffix}
-            onChange={(e) => setSaveSuffix(e.target.value)}
-            disabled={isLoading || !adminPassword} // Disable if loading or no password
+            placeholder="Enter filename (e.g., 20251025_123456_quiz-title.jsonc)"
+            className="border p-2 flex-grow font-mono text-sm"
+            value={saveFilename}
+            onChange={(e) => setSaveFilename(e.target.value)}
+            disabled={isLoading || !adminPassword}
           />
           <button
             onClick={handleSaveClick}
-            className="bg-green-500 text-white p-2 rounded disabled:bg-gray-400"
-            disabled={isLoading || !adminPassword || !saveSuffix.trim()} // Disable if loading, no password, or empty suffix
+            className="bg-green-500 text-white p-2 px-4 rounded disabled:bg-gray-400 whitespace-nowrap"
+            disabled={isLoading || !adminPassword || !saveFilename.trim()}
           >
             {saveFileMutation.isPending ? "Saving..." : "Save"}
           </button>
         </div>
+        <p className="text-xs text-gray-500 mt-1">
+          You can edit the filename. The .jsonc extension will be added automatically if missing.
+        </p>
       </div>
 
       <div>
