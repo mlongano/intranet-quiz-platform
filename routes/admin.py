@@ -18,6 +18,9 @@ from utils import (
     save_quiz_to_bank,
 )
 
+# Import email service
+from email_service import send_quiz_result_email, send_bulk_quiz_results, is_valid_email
+
 admin_bp = Blueprint('admin', __name__, url_prefix='/api')
 
 @admin_bp.route('/scores', methods=['POST'])
@@ -568,3 +571,103 @@ def api_recalculate_all_scores():
         import traceback
         traceback.print_exc()
         abort(500, description=f"Failed to recalculate scores: {str(e)}")
+
+# --- Email Endpoints ---
+
+@admin_bp.route('/admin/email/send-result', methods=['POST'])
+def api_send_single_result_email():
+    """Send quiz result email to a single student."""
+    print("=== Single Email Endpoint Called ===")
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        print("Authentication failed")
+        abort(403, description="Admin authentication failed.")
+
+    student_email = data.get('student_email')
+    quiz_id = data.get('quiz_id')
+
+    print(f"Attempting to send email to: {student_email} for quiz: {quiz_id}")
+
+    if not student_email or not quiz_id:
+        print("Missing required parameters")
+        abort(400, description="Missing student_email or quiz_id.")
+
+    try:
+        # Load scores and find the specific submission
+        scores = load_scores()
+        print(f"Loaded {len(scores)} score entries")
+        submission = None
+
+        for score_entry in scores:
+            if score_entry.get('student') == student_email and score_entry.get('quiz_id') == quiz_id:
+                submission = score_entry
+                print(f"Found submission for {student_email}")
+                break
+
+        if not submission:
+            print(f"No submission found for {student_email} with quiz_id {quiz_id}")
+            abort(404, description=f"No submission found for {student_email} with quiz_id {quiz_id}")
+
+        # Send email
+        print(f"Calling send_quiz_result_email for {student_email}")
+        success, message = send_quiz_result_email(student_email, submission)
+
+        if success:
+            print(f"Email sent successfully: {message}")
+            return jsonify({"success": True, "message": message})
+        else:
+            print(f"Email failed: {message}")
+            abort(500, description=message)
+
+    except Exception as e:
+        print(f"Error sending email: {e}")
+        import traceback
+        traceback.print_exc()
+        abort(500, description=f"Failed to send email: {str(e)}")
+
+@admin_bp.route('/admin/email/send-all-results', methods=['POST'])
+def api_send_all_results_email():
+    """Send quiz result emails to all students."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    try:
+        # Load all scores
+        scores = load_scores()
+
+        # Filter to only valid email addresses
+        valid_submissions = [
+            s for s in scores
+            if is_valid_email(s.get('student', ''))
+        ]
+
+        if not valid_submissions:
+            return jsonify({
+                "success": True,
+                "message": "No valid email addresses found in submissions.",
+                "success_count": 0,
+                "failed_count": 0,
+                "errors": []
+            })
+
+        # Send emails
+        results = send_bulk_quiz_results(valid_submissions)
+
+        return jsonify({
+            "success": True,
+            "message": f"Sent {results['success_count']} emails, {results['failed_count']} failed.",
+            "success_count": results['success_count'],
+            "failed_count": results['failed_count'],
+            "errors": results['errors'][:10]  # Limit error list
+        })
+
+    except Exception as e:
+        print(f"Error sending bulk emails: {e}")
+        import traceback
+        traceback.print_exc()
+        abort(500, description=f"Failed to send emails: {str(e)}")

@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom"; // Import useNavigate
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchScores, ScoreEntry, recalculateAllScores } from "../api"; // Import API and type
+import { fetchScores, ScoreEntry, recalculateAllScores, sendResultEmail, sendAllResultEmails } from "../api"; // Import API and type
 // Assume helper components exist
 import LoadingSpinner from "../components/LoadingSpinner";
 import ErrorDisplay from "../components/ErrorDisplay";
@@ -55,10 +55,53 @@ function AdminDashboardPage() {
     },
   });
 
+  // Mutation for sending all emails
+  const sendAllEmailsMutation = useMutation({
+    mutationFn: () => {
+      if (!adminPassword) throw new Error("Admin password not provided.");
+      return sendAllResultEmails(adminPassword);
+    },
+    onSuccess: (data) => {
+      setRecalculateMessage(
+        `✓ ${data.message}${data.errors.length > 0 ? ` Errors: ${data.errors.slice(0, 3).join(", ")}` : ""}`
+      );
+    },
+    onError: (err: Error) => {
+      setRecalculateMessage(`✗ Failed to send emails: ${err.message}`);
+    },
+  });
+
+  const sendSingleEmailMutation = useMutation({
+    mutationFn: ({ studentEmail, quizId }: { studentEmail: string; quizId: string }) => {
+      if (!adminPassword) throw new Error("Admin password not provided.");
+      return sendResultEmail(studentEmail, quizId, adminPassword);
+    },
+    onSuccess: (_data, variables) => {
+      setRecalculateMessage(`✓ Email sent to ${variables.studentEmail}`);
+    },
+    onError: (err: Error, variables) => {
+      setRecalculateMessage(`✗ Failed to send email to ${variables.studentEmail}: ${err.message}`);
+    },
+  });
+
+  const handleSendSingleEmail = (studentEmail: string, quizId: string) => {
+    if (window.confirm(`Send quiz results to ${studentEmail}?`)) {
+      setRecalculateMessage(null);
+      sendSingleEmailMutation.mutate({ studentEmail, quizId });
+    }
+  };
+
   const handleRecalculateScores = () => {
     if (window.confirm("This will re-grade all submissions against the current question bank. Continue?")) {
       setRecalculateMessage(null);
       recalculateMutation.mutate();
+    }
+  };
+
+  const handleSendAllEmails = () => {
+    if (window.confirm(`Send quiz results via email to all ${scores?.length || 0} students?`)) {
+      setRecalculateMessage(null);
+      sendAllEmailsMutation.mutate();
     }
   };
 
@@ -172,6 +215,13 @@ function AdminDashboardPage() {
         <h2 className="text-2xl font-semibold">Submitted Scores</h2>
         <div className="flex gap-2">
           <button
+            onClick={handleSendAllEmails}
+            disabled={!scores || scores.length === 0 || sendAllEmailsMutation.isPending}
+            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {sendAllEmailsMutation.isPending ? "Sending..." : "📧 Email All Results"}
+          </button>
+          <button
             onClick={handleRecalculateScores}
             disabled={!scores || scores.length === 0 || recalculateMutation.isPending}
             className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -234,7 +284,7 @@ function AdminDashboardPage() {
                   Timestamp
                 </th>
                 <th scope="col" className="relative px-6 py-3">
-                  <span className="sr-only">Details</span>
+                  <span className="sr-only">Actions</span>
                 </th>
               </tr>
             </thead>
@@ -256,10 +306,18 @@ function AdminDashboardPage() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {new Date(entry.timestamp + 'Z').toLocaleString()}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                    <button
+                      onClick={() => handleSendSingleEmail(entry.student, entry.quiz_id)}
+                      disabled={sendSingleEmailMutation.isPending}
+                      className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Send email to this student"
+                    >
+                      📧 Email
+                    </button>
                     <button
                       onClick={() => setSelectedStudent(entry)}
-                      className="text-indigo-600 hover:text-indigo-900"
+                      className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
                     >
                       View Details
                     </button>
