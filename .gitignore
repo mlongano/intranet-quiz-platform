@@ -11,10 +11,11 @@ wheels/
 
 .env
 quizzes/
-scores_bank/
 frontend/pnpm-workspace.yaml
-questions.jsonc
+question*
 question_bank/
 *.bak
 students.jsonc
 .DS_Store
+scores*
+
