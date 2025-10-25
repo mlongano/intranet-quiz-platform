@@ -351,6 +351,7 @@ If you need to update correct answers or question weights after students have su
 - [ ] Add support for more question types (e.g., matching, fill-in-the-blank)
 - [ ] Use a database instead of JSONC files for better scalability
 - [ ] Manage student list from the admin panel
+- [ ] Add cloud backup support for scores, questions and students banks
 
 ## License
 
