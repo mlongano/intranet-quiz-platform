@@ -1,54 +1,252 @@
-# React + TypeScript + Vite
+# QuizParty Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Modern React + TypeScript admin interface for the QuizParty quiz management system.
 
-Currently, two official plugins are available:
+> 📖 **For full project documentation, installation instructions, and features, see the [main README](../README.md)**
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Overview
 
-## Expanding the ESLint configuration
+This is the admin frontend built with:
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- **React 18** - Modern React with hooks
+- **TypeScript** - Type-safe development
+- **Vite** - Fast build tool and dev server
+- **TanStack Query (React Query)** - Server state management and caching
+- **React Router** - Client-side routing
+- **Tailwind CSS** - Utility-first styling
+- **React Markdown** - Markdown rendering with syntax support
 
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+## Architecture
+
+### Pages
+
+The frontend provides a comprehensive admin interface:
+
+- **`AdminLoginPage`** - Password-protected admin access
+- **`AdminDashboardPage`** - Main navigation hub
+- **`AdminScoresPage`** - View all submissions with:
+  - Score table with quiz titles
+  - CSV export functionality
+  - Recalculate all scores
+  - Email individual or bulk results
+  - Detailed submission view with score overrides
+- **`AdminQuestionEditorPage`** - JSONC editor with:
+  - Live preview with answer highlighting
+  - Batch weight operations
+  - Format validation
+  - Quiz title display
+- **`AdminBankManagerPage`** - Question bank management:
+  - Save/load quiz files
+  - Preview question banks
+  - Custom filename control with slugified titles
+- **`AdminScoresBankPage`** - Score archive management:
+  - Save/load score files
+  - Formatted preview of archived scores
+  - Custom filename control
+
+### Components
+
+Reusable components for the interface:
+
+- **`QuestionDisplay`** - Renders questions with markdown support and images
+- **`SubmissionDetailView`** - Detailed score view with override capability
+- **`LoadingSpinner`** - Loading state indicator
+- **`ErrorDisplay`** - Error message display
+
+### API Layer (`api.ts`)
+
+Centralized API communication with TypeScript interfaces:
+
+- Question CRUD operations
+- Score management and recalculation
+- Email sending (single and bulk)
+- Bank file management
+- Preview functionality
+
+### State Management
+
+Uses TanStack Query for:
+
+- Server state caching and synchronization
+- Automatic background refetching
+- Optimistic updates
+- Request deduplication
+- Loading and error states
+
+## Development
+
+### Prerequisites
+
+See the [main README](../README.md) for installation of Node.js and pnpm.
+
+### Development Server
+
+Start the development server with hot module replacement:
+
+```bash
+cd frontend
+pnpm install
+pnpm dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The dev server runs on `http://localhost:5173` (or next available port).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### Building for Production
 
-export default tseslint.config({
-  plugins: {
-    // Add the react-x and react-dom plugins
-    'react-x': reactX,
-    'react-dom': reactDom,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended typescript rules
-    ...reactX.configs['recommended-typescript'].rules,
-    ...reactDom.configs.recommended.rules,
-  },
-})
+Build optimized production bundle:
+
+```bash
+pnpm build
 ```
+
+Output goes to `../static/` directory, served by the Python backend.
+
+### Type Checking
+
+Run TypeScript type checking:
+
+```bash
+pnpm type-check
+```
+
+### Linting
+
+Run ESLint:
+
+```bash
+pnpm lint
+```
+
+## Features Implemented
+
+### Quiz Title Support
+
+- Quiz titles displayed throughout admin interface
+- Slugified titles used for automatic filename generation
+- Format: `YYYY-MM-DD_HH-MM_slugified-title.jsonc`
+- Scores use prefix: `YYYY-MM-DD_HH-MM_risultati_slugified-title.jsonc`
+
+### File Management
+
+- Custom filename control with intelligent defaults
+- Preview functionality for both questions and scores
+- Formatted score preview matching detail view
+- Automatic `.jsonc` extension handling
+
+### Score Management
+
+- Detailed submission review
+- Manual score override capability
+- Bulk operations (recalculate, email)
+- CSV export
+- Visual indicators (✓, ⚠, ❌) for answer correctness
+
+### Email Integration
+
+- Individual result emails
+- Bulk email sending
+- Customizable subject lines
+- Optional detailed breakdowns
+- Italian language support
+
+## Technology Stack Details
+
+### React Query Setup
+
+The app uses TanStack Query v5 with:
+
+- 5-minute stale time for most queries
+- Automatic invalidation on mutations
+- Query keys structured hierarchically
+- Background refetching disabled for most queries
+
+### Routing Structure
+
+```
+/admin              → AdminLoginPage
+/admin/dashboard    → AdminDashboardPage
+/admin/scores       → AdminScoresPage
+/admin/questions    → AdminQuestionEditorPage
+/admin/bank         → AdminBankManagerPage
+/admin/scores-bank  → AdminScoresBankPage
+```
+
+Password state is passed via React Router `location.state` (note: lost on refresh).
+
+### Data Flow
+
+1. User authenticates via password input
+2. Password passed to API calls via request body
+3. Backend validates password for each protected endpoint
+4. React Query caches responses with password-based keys
+5. Mutations trigger query invalidation for UI updates
+
+## Security Notes
+
+- Admin password stored in browser memory only (not persisted)
+- Password required for all API operations
+- No client-side data encryption (LAN-only operation)
+- CORS not configured (same-origin only)
+
+## Customization
+
+### Styling
+
+Tailwind CSS configuration in `tailwind.config.js`. Customize:
+
+- Colors and theme
+- Spacing and sizing
+- Typography
+- Component variants
+
+### Markdown Rendering
+
+Markdown support includes:
+
+- GitHub Flavored Markdown (tables, strikethrough, etc.)
+- Sanitized HTML output
+- Math equations via KaTeX (configured in backend)
+
+### Date/Time Format
+
+Filenames use local timezone with format:
+
+- Questions: `YYYY-MM-DD_HH-MM_title.jsonc`
+- Scores: `YYYY-MM-DD_HH-MM_risultati_title.jsonc`
+
+## Troubleshooting
+
+### Port Already in Use
+
+Vite will automatically try the next available port if 5173 is taken.
+
+### Build Errors
+
+Ensure TypeScript types are correct:
+
+```bash
+pnpm type-check
+```
+
+### API Connection Issues
+
+The dev server proxies API requests to `http://localhost:5000`. Ensure the backend is running.
+
+### State Lost on Refresh
+
+Admin password is not persisted. This is by design for security. Re-login after page refresh.
+
+## Contributing
+
+When adding new features:
+
+1. **Types First** - Define TypeScript interfaces in `api.ts`
+2. **API Layer** - Add API functions with proper error handling
+3. **Query/Mutation** - Use TanStack Query for server state
+4. **Components** - Keep components focused and reusable
+5. **Validation** - Validate data at both frontend and backend
+6. **Testing** - Test with the backend running locally
+
+## License
+
+See [main project LICENSE](../LICENSE).
