@@ -698,4 +698,102 @@ def api_send_all_results_email():
         print(f"Error sending bulk emails: {e}")
         import traceback
         traceback.print_exc()
-        abort(500, description=f"Failed to send emails: {str(e)}")
+        abort(500, description=f"Failed to send bulk emails: {str(e)}")
+
+@admin_bp.route('/admin/students', methods=['GET'])
+def api_get_students():
+    """Get the current students list."""
+    data = request.args if request.method == 'GET' else request.get_json(silent=True) or {}
+    auth_pw = data.get('pw') if isinstance(data, dict) else request.headers.get('X-Admin-Password')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    try:
+        from utils import STUDENTS_FILE
+        import commentjson
+
+        students_path = Path(STUDENTS_FILE)
+        if not students_path.exists():
+            return jsonify([])
+
+        with students_path.open(encoding='utf-8') as f:
+            students = commentjson.load(f)
+
+        return jsonify(students)
+    except Exception as e:
+        print(f"Error loading students: {e}")
+        abort(500, description=f"Failed to load students: {str(e)}")
+
+@admin_bp.route('/admin/students', methods=['PUT'])
+def api_update_students():
+    """Update the students list with validation."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    students_data = data.get('students')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    if students_data is None:
+        abort(400, description="Missing 'students' field in request body.")
+
+    # Validate students data
+    if not isinstance(students_data, list):
+        abort(400, description="Students data must be an array.")
+
+    # Validate each student entry
+    for idx, student in enumerate(students_data):
+        if isinstance(student, str):
+            # Simple email string format (backward compatible)
+            if not is_valid_email(student):
+                abort(400, description=f"Invalid email format at index {idx}: {student}")
+        elif isinstance(student, dict):
+            # Check if it's a group entry with emails array
+            if 'emails' in student:
+                # Group format: { "group": "...", "emails": [...] }
+                if 'group' not in student:
+                    abort(400, description=f"Missing 'group' field for emails array at index {idx}.")
+                if not isinstance(student['group'], str):
+                    abort(400, description=f"Group must be a string at index {idx}.")
+                if not isinstance(student['emails'], list):
+                    abort(400, description=f"Emails must be an array at index {idx}.")
+                # Validate each email in the array
+                for email_idx, email in enumerate(student['emails']):
+                    if not isinstance(email, str):
+                        abort(400, description=f"Email at index {idx}, position {email_idx} must be a string.")
+                    if not is_valid_email(email):
+                        abort(400, description=f"Invalid email format at index {idx}, position {email_idx}: {email}")
+            elif 'email' in student:
+                # Single student format: { "email": "...", "group": "..." }
+                if not is_valid_email(student['email']):
+                    abort(400, description=f"Invalid email format at index {idx}: {student['email']}")
+                # Group is optional but must be string if present
+                if 'group' in student and not isinstance(student['group'], str):
+                    abort(400, description=f"Group must be a string at index {idx}.")
+            else:
+                abort(400, description=f"Invalid student entry at index {idx}. Must have 'email' or 'emails' field.")
+        else:
+            abort(400, description=f"Invalid student entry at index {idx}. Must be string or object.")
+
+    try:
+        from utils import STUDENTS_FILE
+        import commentjson
+
+        students_path = Path(STUDENTS_FILE)
+
+        # Create backup before saving
+        if students_path.exists():
+            backup_path = students_path.with_suffix('.jsonc.bak')
+            import shutil
+            shutil.copy2(students_path, backup_path)
+
+        # Save the new students list
+        with students_path.open('w', encoding='utf-8') as f:
+            commentjson.dump(students_data, f, indent=2, ensure_ascii=False)
+
+        return jsonify({"success": True, "message": "Students list updated successfully."})
+
+    except Exception as e:
+        print(f"Error saving students: {e}")
+        abort(500, description=f"Failed to save students: {str(e)}")

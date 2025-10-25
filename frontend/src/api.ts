@@ -510,3 +510,44 @@ export async function sendAllResultEmails(
     errors: string[];
   }>(response);
 }
+
+/**
+ * Student entry type - can be:
+ * - A simple email string
+ * - An object with email and optional group
+ * - An object with group and emails array (for defining multiple students in same group)
+ */
+export type StudentEntry =
+  | string
+  | { email: string; group?: string }
+  | { group: string; emails: string[] };
+
+/**
+ * Fetch the current students list.
+ */
+export async function fetchStudents(password: string): Promise<StudentEntry[]> {
+  const response = await fetch(`${API_BASE}/admin/students?pw=${encodeURIComponent(password)}`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+  return handleResponse<StudentEntry[]>(response);
+}
+
+/**
+ * Update the students list.
+ */
+export async function updateStudents(
+  students: StudentEntry[],
+  password: string,
+): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${API_BASE}/admin/students`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ students, pw: password }),
+  });
+  return handleResponse<{ success: boolean; message: string }>(response);
+}

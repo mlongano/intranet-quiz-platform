@@ -19,6 +19,7 @@ import AdminQuestionEditorPage from "./pages/AdminQuestionEditorPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import AdminBankManagerPage from "./pages/AdminBankManagerPage"; // Assuming this file is in ./pages
 import AdminScoresBankPage from "./pages/AdminScoresBankPage";
+import AdminStudentsPage from "./pages/AdminStudentsPage";
 
 // Create a client
 const queryClient = new QueryClient();
@@ -67,6 +68,10 @@ const router = createBrowserRouter([
       {
         path: "scores-bank", // This will make the route /admin/bank
         element: <AdminScoresBankPage />, // The component to manage bank files
+      },
+      {
+        path: "students", // This will make the route /admin/students
+        element: <AdminStudentsPage />, // The component to manage students list
       },
     ],
   },

@@ -162,7 +162,7 @@ The app uses TanStack Query v5 with:
 
 ### Routing Structure
 
-```
+```txt
 /admin              → AdminLoginPage
 /admin/dashboard    → AdminDashboardPage
 /admin/scores       → AdminScoresPage
