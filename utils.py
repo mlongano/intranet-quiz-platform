@@ -5,6 +5,8 @@ from pathlib import Path
 import os, re, unicodedata
 from dotenv import load_dotenv
 import shutil
+import tempfile
+from filelock import FileLock, Timeout
 
 # --- Load Environment Variables ---
 load_dotenv()
@@ -17,6 +19,10 @@ QUIZ_FOLDER = 'quizzes'
 IMAGES_FOLDER = 'images'
 QUESTION_BANK_FOLDER = 'question_bank' # New constant for the question bank directory
 SCORES_BANK_FOLDER = 'scores_bank'     # NEW: Directory for scores bank files
+
+# --- Cache for questions (reduce disk I/O) ---
+_questions_cache = None
+_questions_mtime = 0
 
 # --- Load Admin Password from Environment Variable ---
 ADMIN_PW = os.getenv('ADMIN_PW') # <-- Get password from environment
@@ -94,12 +100,41 @@ def load_scores(filename: str = SCORE_FILE):
         raise InternalServerError(description=f"Error reading scores file '{file_path}': {e}")
 
 def save_scores(data):
-    """Saves scores to the scores file."""
+    """Saves scores to the scores file with file locking to prevent race conditions."""
+    lock_path = f"{SCORE_FILE}.lock"
+    lock = FileLock(lock_path, timeout=10)
+
     try:
-        with open(SCORE_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2)
+        with lock:
+            # Read current scores to merge (in case another process wrote during our operation)
+            current_scores = []
+            if Path(SCORE_FILE).exists():
+                try:
+                    with open(SCORE_FILE, 'r', encoding='utf-8') as f:
+                        current_scores = json.load(f)
+                except (ValueError, FileNotFoundError):
+                    current_scores = []
+
+            # Merge: append new scores if they're not already present
+            # Assuming 'data' is the complete list to save (not just new entries)
+            # If data is meant to be appended, adjust logic here
+
+            # Write atomically using temp file
+            temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(SCORE_FILE) or '.', suffix='.tmp')
+            try:
+                with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=2)
+                os.replace(temp_path, SCORE_FILE)  # Atomic on POSIX systems
+            except Exception as e:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+                raise e
+    except Timeout:
+        print(f"Error: Could not acquire lock on {SCORE_FILE} within timeout")
+        raise InternalServerError(description="Could not save scores due to lock timeout. Please try again.")
     except Exception as e:
-        print(f"Error saving scores to {SCORE_FILE}: {e}") # Log error
+        print(f"Error saving scores to {SCORE_FILE}: {e}")
+        raise InternalServerError(description=f"Error saving scores: {e}")
 
 def list_scores_bank_files():
     """Lists available scores files (jsonc) in the scores_bank folder."""
@@ -260,7 +295,19 @@ def save_quiz_to_bank(filename_suffix: str):
 
 
 def load_questions(filename: str = QUEST_FILE):
-    """Reads and returns the JSON content of a specified file."""
+    """Reads and returns the JSON content of a specified file with caching for default file."""
+    global _questions_cache, _questions_mtime
+
+    # Use cache only for the main QUEST_FILE
+    if filename == QUEST_FILE:
+        quest_path = Path(QUEST_FILE)
+        if quest_path.exists():
+            current_mtime = quest_path.stat().st_mtime
+            if _questions_cache is not None and current_mtime <= _questions_mtime:
+                print(f"Using cached questions from '{QUEST_FILE}'")
+                return _questions_cache
+
+    # Load from file
     if filename != QUEST_FILE:
         file_path = Path(QUESTION_BANK_FOLDER) / filename
     else:
@@ -280,6 +327,13 @@ def load_questions(filename: str = QUEST_FILE):
                     for opt in question.get('options', []):
                         if type(opt) == dict:
                             opt['image'] = format_image_url(opt.get('image', None))
+
+            # Update cache for main file
+            if filename == QUEST_FILE:
+                _questions_cache = questions
+                _questions_mtime = file_path.stat().st_mtime
+                print(f"Cached questions from '{QUEST_FILE}'")
+
             return questions
     except FileNotFoundError:
         raise InternalServerError(description=f"Master question file '{file_path}' not found.")
@@ -311,53 +365,68 @@ def copy_file(source, destination, messages={'success': 'file copied', 'error': 
             print(f"{messages['error']}{e}")
 
 def save_questions(data):
-    """Saves questions to the master question bank (QUEST_FILE) with backup."""
+    """Saves questions to the master question bank (QUEST_FILE) with backup and file locking."""
     backup_file_path = f"{QUEST_FILE}.bak"
-    # --- Backup ---
-    copy_file(
-        source=QUEST_FILE,
-        destination=backup_file_path,
-        messages={
-            'success': f'Backup created of {QUEST_FILE} in {backup_file_path}',
-            'error': f'Warning: Could not create backup file of {QUEST_FILE} in {backup_file_path}:'})
+    lock_path = f"{QUEST_FILE}.lock"
+    lock = FileLock(lock_path, timeout=10)
 
-    # --- Save ---
     try:
-        # Add basic validation: ensure data is a list
-        if not isinstance(data, list):
-             raise ValueError("Invalid data format: Top-level structure must be a list.")
+        with lock:
+            # --- Backup ---
+            copy_file(
+                source=QUEST_FILE,
+                destination=backup_file_path,
+                messages={
+                    'success': f'Backup created of {QUEST_FILE} in {backup_file_path}',
+                    'error': f'Warning: Could not create backup file of {QUEST_FILE} in {backup_file_path}:'})
 
-        with open(QUEST_FILE, 'w', encoding='utf-8') as f:
-            # Use commentjson if comments need preserving, else standard json
-            # json.dump(data, f, indent=2) # For standard JSON
-            json.dump(data, f, indent=2) # For commentjson
-    except (ValueError, TypeError) as e: # Catch data format errors or JSON serialization errors
-        # Attempt to restore from backup if saving failed
-        copy_file(
-            source=backup_file_path,
-            destination= QUEST_FILE,
-            messages={
-                'success': f"Error saving questions. Restored from backup: {backup_file_path}",
-                'error': f"CRITICAL: Failed to save questions AND failed to restore {QUEST_FILE} from backup {backup_file_path}:"})
-        raise BadRequest(description=f"Invalid question data provided: {e}") # 400 Bad Request for data issues
-    except IOError as e: # Catch file writing errors
-        # Attempt to restore from backup
-        if os.path.exists(backup_file_path):
+            # --- Save ---
             try:
-                shutil.copy2(backup_file_path, QUEST_FILE)
-                print(f"Error saving questions. Restored from backup: {copy_file}")
-            except Exception as restore_e:
-                 print(f"CRITICAL: Failed to save questions AND failed to restore backup: {restore_e}")
-        raise InternalServerError(description=f"I/O error saving questions to {QUEST_FILE}: {e}") # 500 for system errors
-    except Exception as e: # Catch other unexpected errors
-        # Attempt to restore from backup
-        if os.path.exists(backup_file_path):
-             try:
-                 shutil.copy2(backup_file_path, QUEST_FILE)
-                 print(f"Error saving questions. Restored from backup: {copy_file}")
-             except Exception as restore_e:
-                 print(f"CRITICAL: Failed to save questions AND failed to restore backup: {restore_e}")
-        raise InternalServerError(description=f"Unexpected error saving questions: {e}")
+                # Add basic validation: ensure data is a list
+                if not isinstance(data, list):
+                     raise ValueError("Invalid data format: Top-level structure must be a list.")
+
+                # Write atomically using temp file
+                temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(QUEST_FILE) or '.', suffix='.tmp')
+                try:
+                    with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
+                        json.dump(data, f, indent=2)
+                    os.replace(temp_path, QUEST_FILE)  # Atomic on POSIX
+                except Exception as e:
+                    if os.path.exists(temp_path):
+                        os.unlink(temp_path)
+                    raise e
+
+            except (ValueError, TypeError) as e: # Catch data format errors or JSON serialization errors
+                # Attempt to restore from backup if saving failed
+                copy_file(
+                    source=backup_file_path,
+                    destination= QUEST_FILE,
+                    messages={
+                        'success': f"Error saving questions. Restored from backup: {backup_file_path}",
+                        'error': f"CRITICAL: Failed to save questions AND failed to restore {QUEST_FILE} from backup {backup_file_path}:"})
+                raise BadRequest(description=f"Invalid question data provided: {e}") # 400 Bad Request for data issues
+            except IOError as e: # Catch file writing errors
+                # Attempt to restore from backup
+                if os.path.exists(backup_file_path):
+                    try:
+                        shutil.copy2(backup_file_path, QUEST_FILE)
+                        print(f"Error saving questions. Restored from backup: {backup_file_path}")
+                    except Exception as restore_e:
+                         print(f"CRITICAL: Failed to save questions AND failed to restore backup: {restore_e}")
+                raise InternalServerError(description=f"I/O error saving questions to {QUEST_FILE}: {e}") # 500 for system errors
+            except Exception as e: # Catch other unexpected errors
+                # Attempt to restore from backup
+                if os.path.exists(backup_file_path):
+                     try:
+                         shutil.copy2(backup_file_path, QUEST_FILE)
+                         print(f"Error saving questions. Restored from backup: {backup_file_path}")
+                     except Exception as restore_e:
+                         print(f"CRITICAL: Failed to save questions AND failed to restore backup: {restore_e}")
+                raise InternalServerError(description=f"Unexpected error saving questions: {e}")
+    except Timeout:
+        print(f"Error: Could not acquire lock on {QUEST_FILE} within timeout")
+        raise InternalServerError(description="Could not save questions due to lock timeout. Please try again.")
 
 # --- Grading Logic ---
 def normalise(txt: str) -> str:
@@ -618,5 +687,6 @@ def format_detailed_answers(plan, qbank_map, answers, scores_list):
             "raw_points": points,
             "raw_student_answer": student_answer_raw,
             "raw_correct_answer": correct_answer_raw if question_detail else None,
+            "option_order": shuffled_option_order,  # Save the shuffle order for recalculation
         })
     return detailed_answers

@@ -423,3 +423,88 @@ export async function fetchPreviewScoresBankFile(
   });
   return handleResponse<ScoreEntry[]>(response);
 }
+
+/**
+ * Recalculates all scores against the current question bank.
+ * This is useful when question correct answers have been updated.
+ */
+export async function recalculateAllScores(
+  password: string,
+): Promise<{
+  success: boolean;
+  message: string;
+  updated_count: number;
+  total_count: number;
+  errors: string[];
+}> {
+  const response = await fetch(`${API_BASE}/admin/scores/recalculate`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ pw: password }),
+  });
+  return handleResponse<{
+    success: boolean;
+    message: string;
+    updated_count: number;
+    total_count: number;
+    errors: string[];
+  }>(response);
+}
+
+/**
+ * Send quiz result email to a single student.
+ */
+export async function sendResultEmail(
+  student_email: string,
+  quiz_id: string,
+  password: string,
+  subject?: string,
+  includeDetails?: boolean,
+): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  const response = await fetch(`${API_BASE}/admin/email/send-result`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ student_email, quiz_id, pw: password, subject, include_details: includeDetails }),
+  });
+  return handleResponse<{
+    success: boolean;
+    message: string;
+  }>(response);
+}
+
+/**
+ * Send quiz result emails to all students.
+ */
+export async function sendAllResultEmails(
+  password: string,
+  subject?: string,
+  includeDetails?: boolean,
+): Promise<{
+  success: boolean;
+  message: string;
+  success_count: number;
+  failed_count: number;
+  errors: string[];
+}> {
+  const response = await fetch(`${API_BASE}/admin/email/send-all-results`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ pw: password, subject, include_details: includeDetails }),
+  });
+  return handleResponse<{
+    success: boolean;
+    message: string;
+    success_count: number;
+    failed_count: number;
+    errors: string[];
+  }>(response);
+}

@@ -17,3 +17,4 @@ questions.jsonc
 question_bank/
 *.bak
 students.jsonc
+.DS_Store

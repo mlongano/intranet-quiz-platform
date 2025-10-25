@@ -1,5 +1,8 @@
 // frontend/src/components/SubmissionDetailView.tsx
 import { useState, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeSanitize from "rehype-sanitize";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ScoreEntry, saveScoreOverrides, OverridePayload } from "../api"; // Import API functions and types
 import LoadingSpinner from "./LoadingSpinner"; // Assuming this exists
@@ -128,23 +131,23 @@ function SubmissionDetailView({
       <div>
         {Array.isArray(images)
           ? images.map(
-              (image, index) =>
-                image && (
-                  <img
-                    key={index}
-                    src={image}
-                    alt={`${answers[index]}`}
-                    className="w-40 max-w-10 mx-auto my-2"
-                  />
-                ),
-            )
+            (image, index) =>
+              image && (
+                <img
+                  key={index}
+                  src={image}
+                  alt={`${answers[index]}`}
+                  className="w-40 max-w-10 mx-auto my-2"
+                />
+              ),
+          )
           : images && (
-              <img
-                src={images}
-                alt={`${answers}`}
-                className="w-40 max-w-10 mx-auto my-2"
-              />
-            )}
+            <img
+              src={images}
+              alt={`${answers}`}
+              className="w-40 max-w-10 mx-auto my-2"
+            />
+          )}
       </div>
     );
   }
@@ -186,12 +189,20 @@ function SubmissionDetailView({
               className="p-4 border rounded-md bg-gray-50 shadow-sm"
             >
               {/* Question Info */}
-              <p className="font-semibold text-gray-800 mb-1">
-                {index + 1}. {ans.question_text}
-                <span className="text-xs text-gray-400 ml-2">
+              <div className="font-semibold text-gray-800 mb-1">
+                <span className="mr-1">{index + 1}.</span>
+                <span className="align-middle">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeSanitize]}
+                  >
+                    {ans.question_text || ""}
+                  </ReactMarkdown>
+                </span>
+                <span className="text-xs text-gray-400 ml-2 align-middle">
                   (ID: {ans.question_id})
                 </span>
-              </p>
+              </div>
               {ans.question_image && (
                 <img
                   src={ans.question_image}

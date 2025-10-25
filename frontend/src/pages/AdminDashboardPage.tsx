@@ -1,10 +1,61 @@
 import { useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { fetchScores } from "../api";
 
 export default function AdminRootPage() {
   const location = useLocation();
   // Attempt to get password from navigation state (insecure, lost on refresh)
   const adminPassword = location.state?.adminPassword;
   const navigate = useNavigate();
+  const [isValidating, setIsValidating] = useState(true);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Validate password on mount
+  useEffect(() => {
+    const validateAccess = async () => {
+      if (!adminPassword) {
+        // No password provided - redirect to login
+        navigate("/admin", { replace: true });
+        return;
+      }
+
+      try {
+        // Validate password by attempting to fetch scores
+        await fetchScores(adminPassword);
+        setIsValidating(false);
+      } catch {
+        // Invalid password - show error and redirect after delay
+        setValidationError("Invalid session. Redirecting to login...");
+        setTimeout(() => {
+          navigate("/admin", { replace: true });
+        }, 2000);
+      }
+    };
+
+    validateAccess();
+  }, [adminPassword, navigate]);
+
+  // Show loading while validating
+  if (isValidating) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <p className="text-lg">Validating access...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error message if validation failed
+  if (validationError) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <p className="text-lg text-red-600">{validationError}</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleScorePage = () => {
     navigate("/admin/scores", { state: { adminPassword: adminPassword } });

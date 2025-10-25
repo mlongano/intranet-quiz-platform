@@ -1,41 +1,36 @@
 // frontend/src/pages/AdminLoginPage.tsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-// We need a way to store the password for subsequent requests.
-// WARNING: Storing plain password in JS state is not ideal security,
-// but matches the current backend. Use Context or Zustand for better state sharing.
-// For simplicity now, we'll pass it via navigation state (can be lost on refresh).
-// A better approach involves proper auth state management (Context/Zustand/Redux).
+import { fetchScores } from "../api"; // Import to validate password
 
 function AdminLoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [isValidating, setIsValidating] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     if (!password) {
       setError("Password is required.");
       return;
     }
-    // Basic check: Try fetching scores to validate password.
-    // In a real app, you'd have a dedicated login endpoint.
-    // For now, we navigate and pass the password via state.
-    // The dashboard will use this password to fetch.
-    // NOTE: This password will be lost if the page is refreshed on the dashboard.
-    // A proper auth state solution (Context/Zustand) is needed for persistence.
-    console.log(
-      "Navigating to dashboard, passing password in state (insecure for refresh)",
-    );
-    navigate("/admin/dashboard", { state: { adminPassword: password } });
 
-    // ---- OR ----
-    // If using a state management library (like Zustand):
-    // import useAuthStore from './store/authStore'; // Example store
-    // const { login } = useAuthStore();
-    // login(password); // Store password securely (or better, a token)
-    // navigate('/admin/dashboard');
+    // Validate password by attempting to fetch scores
+    setIsValidating(true);
+    try {
+      await fetchScores(password);
+      // If successful, password is valid - navigate to dashboard
+      console.log("Password validated successfully");
+      navigate("/admin/dashboard", { state: { adminPassword: password } });
+    } catch (err: any) {
+      // Password is incorrect or server error
+      setError(err.message || "Invalid password. Please try again.");
+      console.error("Login failed:", err);
+    } finally {
+      setIsValidating(false);
+    }
   };
 
   return (
@@ -54,9 +49,10 @@ function AdminLoginPage() {
         </label>
         <button
           type="submit"
-          className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
+          disabled={isValidating}
+          className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Login
+          {isValidating ? "Validating..." : "Login"}
         </button>
         {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
       </form>

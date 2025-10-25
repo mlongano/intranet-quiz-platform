@@ -18,6 +18,9 @@ from utils import (
     save_quiz_to_bank,
 )
 
+# Import email service
+from email_service import send_quiz_result_email, send_bulk_quiz_results, is_valid_email
+
 admin_bp = Blueprint('admin', __name__, url_prefix='/api')
 
 @admin_bp.route('/scores', methods=['POST'])
@@ -342,3 +345,336 @@ def api_preview_scores_bank_file():
     except Exception as e:
         print(f"Error previewing scores bank file '{filename}': {e}")
         abort(500, description="Internal server error previewing scores bank file.")
+
+@admin_bp.route('/admin/scores/recalculate', methods=['POST'])
+def api_recalculate_all_scores():
+    """Re-grades all submissions against the current question bank.
+
+    Extracts original answer indices from formatted answer strings like "'text' (Index: 2)"
+    This allows full recalculation even for old submissions without option_order saved.
+    """
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    try:
+        # Import necessary functions from utils
+        from utils import load_questions
+        import shutil
+        import os
+        from datetime import datetime
+
+        # Create a timestamped backup before recalculation
+        score_file = os.getenv('SCORE_FILE', './scores.jsonc')
+        if os.path.exists(score_file):
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_file = f"{score_file}.backup_{timestamp}"
+            try:
+                shutil.copy2(score_file, backup_file)
+                print(f"Created backup: {backup_file}")
+            except Exception as e:
+                print(f"Warning: Could not create backup: {e}")
+
+        # Load current scores and questions
+        scores = load_scores()
+        questions = load_questions()
+
+        # Create a question bank map for quick lookup
+        qbank_map = {q['id']: q for q in questions}
+
+        recalculated_count = 0
+        errors = []
+
+        for score_entry in scores:
+            try:
+                if 'answers' not in score_entry or not isinstance(score_entry['answers'], list):
+                    errors.append(f"Student {score_entry.get('student')}: Missing or invalid answers field")
+                    continue
+
+                student_id = score_entry.get('student', '')
+
+                # Check if this submission has option_order data
+                has_option_order = any(
+                    'option_order' in ans and ans.get('option_order')
+                    for ans in score_entry['answers']
+                )
+
+                # Helper function to extract indices from formatted answers like "'text' (Index: 2)"
+                import re
+                def extract_indices_from_formatted_answer(formatted_answer):
+                    """Extract original indices from formatted answer strings."""
+                    if isinstance(formatted_answer, str):
+                        # Single answer: "'text' (Index: 2)"
+                        match = re.search(r'\(Index:\s*(\d+)\)', formatted_answer)
+                        if match:
+                            return int(match.group(1))
+                        return None
+                    elif isinstance(formatted_answer, list):
+                        # Multiple answers: ["'text1' (Index: 2)", "'text2' (Index: 3)"]
+                        indices = []
+                        for item in formatted_answer:
+                            if isinstance(item, str):
+                                match = re.search(r'\(Index:\s*(\d+)\)', item)
+                                if match:
+                                    indices.append(int(match.group(1)))
+                        return indices if indices else None
+                    return None
+
+                # Recalculate scores (works with or without option_order)
+                total_score = 0.0
+                max_score = 0.0
+
+                for answer_detail in score_entry['answers']:
+                    q_id = answer_detail.get('question_id')
+
+                    if q_id not in qbank_map:
+                        errors.append(f"Student {student_id}: Question {q_id} not found in current question bank")
+                        continue
+
+                    current_question = qbank_map[q_id]
+                    q_type = current_question.get('type')
+                    weight = current_question.get('weight', 1)
+                    max_score += weight
+
+                    current_correct_answer = current_question.get('correct')
+                    current_options = current_question.get('options', [])
+
+                    # Helper to get text from an option (string or object)
+                    def get_option_text(option):
+                        return option.get('text', '') if isinstance(option, dict) else str(option)
+
+                    # Update stored correct answer (both raw and formatted)
+                    answer_detail['raw_correct_answer'] = current_correct_answer
+
+                    # Regenerate formatted correct_answer to reflect current question bank
+                    if q_type == 'single' and isinstance(current_correct_answer, int) and 0 <= current_correct_answer < len(current_options):
+                        option_text = get_option_text(current_options[current_correct_answer])
+                        answer_detail['correct_answer'] = f"'{option_text}' (Index: {current_correct_answer})"
+                    elif q_type == 'multiple' and isinstance(current_correct_answer, list):
+                        formatted_correct = [
+                            f"'{get_option_text(current_options[idx])}' (Index: {idx})"
+                            for idx in current_correct_answer
+                            if 0 <= idx < len(current_options)
+                        ]
+                        answer_detail['correct_answer'] = formatted_correct
+                    elif q_type == 'open':
+                        # For open questions, keep existing or use keywords/acceptable
+                        if 'acceptable' in current_question:
+                            answer_detail['correct_answer'] = current_question['acceptable']
+                        elif 'keywords' in current_question:
+                            answer_detail['correct_answer'] = {"keywords": current_question['keywords']}
+                        # else keep existing formatted answer
+
+                    # Calculate score
+                    question_score = 0.0
+
+                    if q_type == 'open':
+                        # Keep existing score for open questions
+                        question_score = answer_detail.get('points_awarded', 0)
+                    elif q_type == 'single':
+                        # Extract student's original index from formatted answer
+                        student_original_index = None
+
+                        if has_option_order and 'option_order' in answer_detail:
+                            # Use option_order if available
+                            raw_student_answer = answer_detail.get('raw_student_answer')
+                            option_order = answer_detail.get('option_order', [])
+                            if isinstance(raw_student_answer, int) and raw_student_answer < len(option_order):
+                                student_original_index = option_order[raw_student_answer]
+                        else:
+                            # Parse from formatted student_answer
+                            formatted_answer = answer_detail.get('student_answer', '')
+                            student_original_index = extract_indices_from_formatted_answer(formatted_answer)
+
+                        if student_original_index is not None and student_original_index == current_correct_answer:
+                            question_score = weight
+
+                    elif q_type == 'multiple':
+                        current_correct_indices = current_correct_answer if isinstance(current_correct_answer, list) else []
+                        student_original_indices = None
+
+                        if has_option_order and 'option_order' in answer_detail:
+                            # Use option_order if available
+                            raw_student_answer = answer_detail.get('raw_student_answer')
+                            option_order = answer_detail.get('option_order', [])
+                            if isinstance(raw_student_answer, list):
+                                student_original_indices = []
+                                for shuffled_idx in raw_student_answer:
+                                    if isinstance(shuffled_idx, int) and shuffled_idx < len(option_order):
+                                        student_original_indices.append(option_order[shuffled_idx])
+                        else:
+                            # Parse from formatted student_answer
+                            formatted_answer = answer_detail.get('student_answer', [])
+                            student_original_indices = extract_indices_from_formatted_answer(formatted_answer)
+
+                        if student_original_indices is not None:
+                            num_options = len(current_question.get('options', []))
+                            num_correct_total = len(current_correct_indices)
+                            num_user_correct = len([idx for idx in student_original_indices if idx in current_correct_indices])
+                            num_user_wrong = len([idx for idx in student_original_indices if idx not in current_correct_indices])
+
+                            if num_correct_total > 0:
+                                points_per_correct = weight / num_correct_total
+                                points_per_wrong = weight / (num_options - num_correct_total) if (num_options - num_correct_total) > 0 else weight
+                                calculated_score = (num_user_correct * points_per_correct) - (num_user_wrong * points_per_wrong)
+                                question_score = max(0.0, calculated_score)
+
+                    # Update both score fields
+                    answer_detail['points_awarded'] = round(question_score, 2)
+                    answer_detail['raw_points'] = round(question_score, 2)
+                    total_score += question_score
+
+                # Update totals
+                old_score = score_entry.get('raw_points', 0)
+                new_score = round(total_score, 2)
+                new_percent = round(total_score / max_score * 100, 2) if max_score > 0 else 0
+
+                score_entry['raw_points'] = new_score
+                score_entry['max_points'] = max_score
+                score_entry['percent'] = new_percent
+
+                if abs(old_score - new_score) > 0.01:
+                    recalculated_count += 1
+                    print(f"Recalculated score for {student_id}: {old_score} -> {new_score}")
+                else:
+                    print(f"No change for {student_id}: score remains {old_score}")
+
+            except Exception as e:
+                errors.append(f"Student {score_entry.get('student', 'unknown')}: {str(e)}")
+                print(f"Error processing {score_entry.get('student')}: {e}")
+                import traceback
+                traceback.print_exc()
+                continue
+
+        # Save updated scores (always save, as individual question scores may have changed)
+        save_scores(scores)
+
+        result_message = f"Recalculated {recalculated_count} out of {len(scores)} submissions"
+        if recalculated_count < len(scores):
+            result_message += f" ({len(scores) - recalculated_count} had no total score change)"
+        result_message += "."
+        if errors:
+            result_message += f" Encountered {len(errors)} errors."
+
+        return jsonify({
+            "success": True,
+            "message": result_message,
+            "updated_count": recalculated_count,
+            "total_count": len(scores),
+            "errors": errors[:10]
+        })
+
+    except Exception as e:
+        print(f"Error during score recalculation: {e}")
+        import traceback
+        traceback.print_exc()
+        abort(500, description=f"Failed to recalculate scores: {str(e)}")
+
+# --- Email Endpoints ---
+
+@admin_bp.route('/admin/email/send-result', methods=['POST'])
+def api_send_single_result_email():
+    """Send quiz result email to a single student."""
+    print("=== Single Email Endpoint Called ===")
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        print("Authentication failed")
+        abort(403, description="Admin authentication failed.")
+
+    student_email = data.get('student_email')
+    quiz_id = data.get('quiz_id')
+    subject = data.get('subject')  # Optional custom subject
+    include_details = data.get('include_details', True)  # Default to True
+
+    print(f"Attempting to send email to: {student_email} for quiz: {quiz_id}")
+    if subject:
+        print(f"Custom subject: {subject}")
+    print(f"Include details: {include_details}")
+
+    if not student_email or not quiz_id:
+        print("Missing required parameters")
+        abort(400, description="Missing student_email or quiz_id.")
+
+    try:
+        # Load scores and find the specific submission
+        scores = load_scores()
+        print(f"Loaded {len(scores)} score entries")
+        submission = None
+
+        for score_entry in scores:
+            if score_entry.get('student') == student_email and score_entry.get('quiz_id') == quiz_id:
+                submission = score_entry
+                print(f"Found submission for {student_email}")
+                break
+
+        if not submission:
+            print(f"No submission found for {student_email} with quiz_id {quiz_id}")
+            abort(404, description=f"No submission found for {student_email} with quiz_id {quiz_id}")
+
+        # Send email with optional custom subject and include_details
+        print(f"Calling send_quiz_result_email for {student_email}")
+        success, message = send_quiz_result_email(student_email, submission, subject, include_details)
+
+        if success:
+            print(f"Email sent successfully: {message}")
+            return jsonify({"success": True, "message": message})
+        else:
+            print(f"Email failed: {message}")
+            abort(500, description=message)
+
+    except Exception as e:
+        print(f"Error sending email: {e}")
+        import traceback
+        traceback.print_exc()
+        abort(500, description=f"Failed to send email: {str(e)}")
+
+@admin_bp.route('/admin/email/send-all-results', methods=['POST'])
+def api_send_all_results_email():
+    """Send quiz result emails to all students."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    subject = data.get('subject')  # Optional custom subject
+    include_details = data.get('include_details', True)  # Default to True
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    try:
+        # Load all scores
+        scores = load_scores()
+
+        # Filter to only valid email addresses
+        valid_submissions = [
+            s for s in scores
+            if is_valid_email(s.get('student', ''))
+        ]
+
+        if not valid_submissions:
+            return jsonify({
+                "success": True,
+                "message": "No valid email addresses found in submissions.",
+                "success_count": 0,
+                "failed_count": 0,
+                "errors": []
+            })
+
+        # Send emails with optional custom subject and include_details
+        results = send_bulk_quiz_results(valid_submissions, subject, include_details)
+
+        return jsonify({
+            "success": True,
+            "message": f"Sent {results['success_count']} emails, {results['failed_count']} failed.",
+            "success_count": results['success_count'],
+            "failed_count": results['failed_count'],
+            "errors": results['errors'][:10]  # Limit error list
+        })
+
+    except Exception as e:
+        print(f"Error sending bulk emails: {e}")
+        import traceback
+        traceback.print_exc()
+        abort(500, description=f"Failed to send emails: {str(e)}")
