@@ -254,7 +254,7 @@ function AdminDashboardPage() {
                     {entry.percent}%
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(entry.timestamp).toLocaleString()}
+                    {new Date(entry.timestamp + 'Z').toLocaleString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <button
