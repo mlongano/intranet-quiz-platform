@@ -35,6 +35,12 @@ The frontend provides a comprehensive admin interface:
   - Batch weight operations
   - Format validation
   - Quiz title display
+- **`AdminStudentsPage`** - Student list management:
+  - JSONC editor with syntax highlighting
+  - Live preview grouped by class/section
+  - Email validation with visual indicators
+  - Support for three student formats (simple, individual, group)
+  - Keyboard shortcuts (Ctrl/Cmd+S to save)
 - **`AdminBankManagerPage`** - Question bank management:
   - Save/load quiz files
   - Preview question banks
@@ -43,6 +49,11 @@ The frontend provides a comprehensive admin interface:
   - Save/load score files
   - Formatted preview of archived scores
   - Custom filename control
+- **`AdminStudentsBankPage`** - Student list archive management:
+  - Save/load student lists for different classes
+  - Preview students grouped by class
+  - Email validation in preview
+  - Quick switching between different student lists
 
 ### Components
 
@@ -60,8 +71,9 @@ Centralized API communication with TypeScript interfaces:
 - Question CRUD operations
 - Score management and recalculation
 - Email sending (single and bulk)
-- Bank file management
-- Preview functionality
+- Student list management (GET/PUT)
+- Bank file management (questions, scores, students)
+- Preview functionality for all bank types
 
 ### State Management
 
@@ -119,6 +131,17 @@ pnpm lint
 
 ## Features Implemented
 
+### Students Management
+
+- **Three Format Support**:
+  - Simple: `"email@example.com"`
+  - Individual: `{ "email": "...", "group": "5CI" }`
+  - Group: `{ "group": "5CI", "emails": ["...", "..."] }`
+- **Live Preview**: Students grouped by class/section
+- **Email Validation**: Visual indicators (✓ valid, ✗ invalid)
+- **Bank Management**: Save/load different student lists
+- **Collapsible Format Guide**: Help section with examples
+
 ### Quiz Title Support
 
 - Quiz titles displayed throughout admin interface
@@ -167,8 +190,10 @@ The app uses TanStack Query v5 with:
 /admin/dashboard    → AdminDashboardPage
 /admin/scores       → AdminScoresPage
 /admin/questions    → AdminQuestionEditorPage
+/admin/students     → AdminStudentsPage
 /admin/bank         → AdminBankManagerPage
 /admin/scores-bank  → AdminScoresBankPage
+/admin/students-bank → AdminStudentsBankPage
 ```
 
 Password state is passed via React Router `location.state` (note: lost on refresh).

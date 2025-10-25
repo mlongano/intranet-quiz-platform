@@ -132,6 +132,48 @@ create a `students.jsonc` file with the ids of the students who are taking the t
 ]
 ```
 
+**Students Format Options:**
+
+The `students.jsonc` file supports three flexible formats:
+
+1. **Simple format** (email strings only):
+
+   ```jsonc
+   [
+     "student1@example.com",
+     "student2@example.com"
+   ]
+   ```
+
+2. **Individual format** (with optional groups):
+
+   ```jsonc
+   [
+     { "email": "student1@example.com", "group": "5CI" },
+     { "email": "student2@example.com", "group": "4BI" }
+   ]
+   ```
+
+3. **Group format** (multiple students in same group):
+
+   ```jsonc
+   [
+     {
+       "group": "5CI",
+       "emails": [
+         "student1@example.com",
+         "student2@example.com"
+       ]
+     },
+     {
+       "group": "4BI",
+       "emails": ["student3@example.com"]
+     }
+   ]
+   ```
+
+You can mix all three formats in the same file. The group field is useful for organizing students by class or section in the admin panel.
+
 create a `questions.jsonc` file to store the questions
 
 ```jsonc
@@ -249,8 +291,17 @@ Access the admin panel at `/admin` with the password set in `.env`:
   - Bulk send results to all students
   - Customize email subject
   - Choose to include or exclude detailed question-by-question breakdown
-- **Question Management**: Edit questions, answers, and weights
-- **Bank Management**: Save/load question banks and score archives
+- **Question Management**: Edit questions, answers, and weights via JSONC editor
+- **Students Management**:
+  - Edit student list via JSONC editor with live preview
+  - Email validation with visual indicators
+  - Support for simple emails, individual entries with groups, or group format
+  - Preview students grouped by class/section
+  - Save/load student lists from students bank for different classes
+- **Bank Management**:
+  - **Question Bank**: Save/load question sets for different quizzes
+  - **Scores Bank**: Archive and restore quiz results
+  - **Students Bank**: Save/load student lists for different classes or years
 
 ### Automatic Features
 
@@ -306,6 +357,41 @@ If you need to update correct answers or question weights after students have su
 
 **Note**: The recalculation preserves each student's shuffled answer order, so scores are recalculated accurately.
 
+### Managing Students
+
+Access the Students page from the admin dashboard to manage your student list:
+
+**Editing Students:**
+
+1. Go to the Students page
+2. Edit the JSONC directly in the editor
+3. See live preview grouped by class/section
+4. Email validation shows visual indicators (✓ for valid, ✗ for invalid)
+5. Press Ctrl/Cmd+S or click "Save Changes" to update
+
+**Using Students Bank:**
+
+The Students Bank allows you to save and restore different student lists (e.g., for different classes or years):
+
+1. **Save current students**: Go to Students Bank page, enter a filename, click "Save to Bank"
+   - Default format: `YYYY-MM-DD_HH-MM_students.jsonc`
+2. **Preview saved lists**: Click "Preview" on any saved file to see students grouped by class
+3. **Load saved lists**: Click "Load" to restore a saved student list (backs up current list first)
+
+**Supported Formats:**
+
+- Simple email strings: `"student@example.com"`
+- Individual with group: `{ "email": "student@example.com", "group": "5CI" }`
+- Group with emails: `{ "group": "5CI", "emails": ["student1@...", "student2@..."] }`
+- Mix all formats in the same file
+
+**Benefits:**
+
+- Organize students by class/section for better management
+- Quickly switch between different classes or academic years
+- Maintain multiple student lists without manual file editing
+- Preview before loading to avoid mistakes
+
 ## Troubleshooting
 
 ### Email Issues
@@ -340,6 +426,8 @@ If you need to update correct answers or question weights after students have su
 - [x] Question bank management and archiving
 - [x] Add a title to the quiz set in `questions.jsonc` and show it in the admin panel and email
   (uses slugified title for filenames)
+- [x] Manage student list from the admin panel with group support and email validation
+- [x] Students bank for saving/loading different student lists
 - [ ] Implement a timer for quizzes
 - [ ] Improve UI/UX design of the frontend
 - [ ] Improve error handling and user feedback throughout the app
@@ -350,7 +438,6 @@ If you need to update correct answers or question weights after students have su
 - [ ] Implement a feedback system for students
 - [ ] Add support for more question types (e.g., matching, fill-in-the-blank)
 - [ ] Use a database instead of JSONC files for better scalability
-- [ ] Manage student list from the admin panel
 - [ ] Add cloud backup support for scores, questions and students banks
 
 ## License
