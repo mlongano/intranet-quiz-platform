@@ -423,3 +423,32 @@ export async function fetchPreviewScoresBankFile(
   });
   return handleResponse<ScoreEntry[]>(response);
 }
+
+/**
+ * Recalculates all scores against the current question bank.
+ * This is useful when question correct answers have been updated.
+ */
+export async function recalculateAllScores(
+  password: string,
+): Promise<{
+  success: boolean;
+  message: string;
+  updated_count: number;
+  total_count: number;
+  errors: string[];
+}> {
+  const response = await fetch(`${API_BASE}/admin/scores/recalculate`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ pw: password }),
+  });
+  return handleResponse<{
+    success: boolean;
+    message: string;
+    updated_count: number;
+    total_count: number;
+    errors: string[];
+  }>(response);
+}

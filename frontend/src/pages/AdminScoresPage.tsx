@@ -1,8 +1,8 @@
 // frontend/src/pages/AdminDashboardPage.tsx
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom"; // Import useNavigate
-import { useQuery } from "@tanstack/react-query";
-import { fetchScores, ScoreEntry } from "../api"; // Import API and type
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { fetchScores, ScoreEntry, recalculateAllScores } from "../api"; // Import API and type
 // Assume helper components exist
 import LoadingSpinner from "../components/LoadingSpinner";
 import ErrorDisplay from "../components/ErrorDisplay";
@@ -12,12 +12,14 @@ import SubmissionDetailView from "../components/SubmissionDetailView";
 function AdminDashboardPage() {
   const location = useLocation();
   const navigate = useNavigate(); // Initialize useNavigate
+  const queryClient = useQueryClient();
   // Attempt to get password from navigation state (insecure, lost on refresh)
   const adminPassword = location.state?.adminPassword;
   const [selectedStudent, setSelectedStudent] = useState<ScoreEntry | null>(
     null,
   );
   const [csvError, setCsvError] = useState<string | null>(null);
+  const [recalculateMessage, setRecalculateMessage] = useState<string | null>(null);
 
   // Fetch scores using the password
   const {
@@ -34,6 +36,31 @@ function AdminDashboardPage() {
     enabled: !!adminPassword, // Only fetch if password exists
     staleTime: 5 * 60 * 1000, // Cache scores for 5 minutes
   });
+
+  // Mutation for recalculating scores
+  const recalculateMutation = useMutation({
+    mutationFn: () => {
+      if (!adminPassword) throw new Error("Admin password not provided.");
+      return recalculateAllScores(adminPassword);
+    },
+    onSuccess: (data) => {
+      setRecalculateMessage(
+        `✓ ${data.message}${data.errors.length > 0 ? ` Errors: ${data.errors.join(", ")}` : ""}`
+      );
+      // Invalidate and refetch scores
+      queryClient.invalidateQueries({ queryKey: ["adminScores", adminPassword] });
+    },
+    onError: (err: Error) => {
+      setRecalculateMessage(`✗ Failed to recalculate scores: ${err.message}`);
+    },
+  });
+
+  const handleRecalculateScores = () => {
+    if (window.confirm("This will re-grade all submissions against the current question bank. Continue?")) {
+      setRecalculateMessage(null);
+      recalculateMutation.mutate();
+    }
+  };
 
   // --- CSV Export Function ---
   const handleExportCSV = () => {
@@ -143,17 +170,33 @@ function AdminDashboardPage() {
       <div className="flex justify-between items-center mb-2">
         {/* Reduced bottom margin */}
         <h2 className="text-2xl font-semibold">Submitted Scores</h2>
-        <button
-          onClick={handleExportCSV}
-          disabled={!scores || scores.length === 0}
-          className="px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Export to CSV
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleRecalculateScores}
+            disabled={!scores || scores.length === 0 || recalculateMutation.isPending}
+            className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {recalculateMutation.isPending ? "Recalculating..." : "Recalculate All Scores"}
+          </button>
+          <button
+            onClick={handleExportCSV}
+            disabled={!scores || scores.length === 0}
+            className="px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Export to CSV
+          </button>
+        </div>
       </div>
 
       {/* *** ADDED: Display CSV Export Errors *** */}
       <ErrorDisplay message={csvError} />
+
+      {/* Display Recalculate Message */}
+      {recalculateMessage && (
+        <div className={`p-3 rounded-md mb-4 ${recalculateMessage.startsWith('✓') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+          {recalculateMessage}
+        </div>
+      )}
 
       {scores && scores.length > 0 ? (
         <div className="overflow-x-auto shadow rounded-lg border">
