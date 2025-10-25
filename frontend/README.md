@@ -23,7 +23,13 @@ This is the admin frontend built with:
 The frontend provides a comprehensive admin interface:
 
 - **`AdminLoginPage`** - Password-protected admin access
-- **`AdminDashboardPage`** - Main navigation hub
+- **`AdminDashboardPage`** - Modern dashboard with real-time statistics:
+  - Interactive statistics cards (clickable for navigation)
+  - Current quiz overview
+  - Auto-refreshing submissions tracker (30-second interval)
+  - Pending/submitted students modals
+  - Archive breakdown by type
+  - Organized feature categories (Quiz/Results/Students Management)
 - **`AdminScoresPage`** - View all submissions with:
   - Score table with quiz titles
   - CSV export functionality
@@ -130,6 +136,23 @@ pnpm lint
 ```
 
 ## Features Implemented
+
+### Dashboard Enhancements
+
+- **Real-time Statistics Cards**:
+  - Current Quiz card - Shows quiz title, question count, links to editor
+  - Submissions card - Auto-refreshes every 30s, shows submitted/pending counts
+  - Students card - Shows enrolled count, links to management
+  - Archives card - Shows total with breakdown (questions/scores/students)
+- **Interactive Elements**:
+  - All cards clickable for quick navigation
+  - Submission counts link to modals showing student lists
+  - Archive counts link to respective bank pages
+  - Manual refresh button alongside auto-refresh
+- **Pending/Submitted Modals**:
+  - View list of students who haven't submitted
+  - View list of students who have submitted
+  - Color-coded themes (orange for pending, green for submitted)
 
 ### Students Management
 

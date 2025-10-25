@@ -282,6 +282,13 @@ now the frontend is served by the `server.py`
 
 Access the admin panel at `/admin` with the password set in `.env`:
 
+- **Dashboard**: Modern overview with real-time statistics
+  - Clickable statistics cards for quick navigation
+  - Current quiz info with question count
+  - Auto-refreshing submissions tracker (30-second countdown)
+  - Click submission counts to view submitted/pending students
+  - Students count with quick access to management
+  - Archive overview with split counts (questions/scores/students)
 - **View Scores**: See all submitted quiz results with timestamps and percentages
 - **Export CSV**: Export all scores to CSV format for external analysis
 - **View Details**: Click any submission to see detailed question-by-question results
