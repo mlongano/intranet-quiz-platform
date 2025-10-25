@@ -19,6 +19,7 @@ QUIZ_FOLDER = 'quizzes'
 IMAGES_FOLDER = 'images'
 QUESTION_BANK_FOLDER = 'question_bank' # New constant for the question bank directory
 SCORES_BANK_FOLDER = 'scores_bank'     # NEW: Directory for scores bank files
+STUDENTS_BANK_FOLDER = 'students_bank' # NEW: Directory for students bank files
 
 # --- Cache for questions (reduce disk I/O) ---
 _questions_cache = None
@@ -37,6 +38,7 @@ if not ADMIN_PW:
 os.makedirs(QUIZ_FOLDER, exist_ok=True) # Ensure QUIZ_FOLDER exists
 os.makedirs(QUESTION_BANK_FOLDER, exist_ok=True) # Ensure question_bank folder exists
 os.makedirs(SCORES_BANK_FOLDER, exist_ok=True) # NEW: Ensure scores_bank folder exists
+os.makedirs(STUDENTS_BANK_FOLDER, exist_ok=True) # NEW: Ensure students_bank folder exists
 
 # --- Load initial student data ---
 try:
@@ -744,3 +746,84 @@ def format_detailed_answers(plan, qbank_map, answers, scores_list):
             "option_order": shuffled_option_order,  # Save the shuffle order for recalculation
         })
     return detailed_answers
+
+
+# --- Students Bank Functions ---
+
+def list_students_bank_files():
+    """Lists available students files (jsonc) in the students_bank folder."""
+    students_files = []
+    bank_path = Path(STUDENTS_BANK_FOLDER)
+    if not bank_path.is_dir():
+        return []
+    for item in bank_path.iterdir():
+        if item.is_file() and item.suffix.lower() == '.jsonc':
+            students_files.append(item.name)
+    return sorted(students_files)
+
+def load_students_from_bank(filename: str):
+    """Overwrites STUDENTS_FILE with the content of the specified file from the students_bank."""
+    source_path = Path(STUDENTS_BANK_FOLDER) / filename
+    target_path = Path(STUDENTS_FILE)
+
+    if not source_path.exists() or not source_path.is_file():
+         raise NotFound(description=f"Students file '{filename}' not found in '{STUDENTS_BANK_FOLDER}'.")
+
+    try:
+        with source_path.open(encoding='utf-8') as f:
+            json.load(f) # Just load to check if it's valid JSONC
+    except ValueError:
+        raise BadRequest(description=f"File '{filename}' is not a valid JSONC format.")
+    except Exception as e:
+        raise InternalServerError(description=f"Error reading source file '{filename}': {e}")
+
+    try:
+        # Create a backup of the current STUDENTS_FILE before overwriting
+        if target_path.exists():
+            backup_file = f"{target_path}.bak"
+            shutil.copy2(target_path, backup_file)
+            print(f"Backed up current {STUDENTS_FILE} to {backup_file}")
+
+        shutil.copy2(source_path, target_path)
+        print(f"Copied '{filename}' from '{STUDENTS_BANK_FOLDER}' to '{STUDENTS_FILE}'.")
+    except Exception as e:
+        print(f"Error loading students from bank: {e}")
+        raise InternalServerError(description=f"Error copying file from bank: {e}")
+
+
+def save_students_to_bank(filename: str):
+    """Saves the current STUDENTS_FILE to the students_bank with the provided filename."""
+    source_path = Path(STUDENTS_FILE)
+    if not source_path.exists() or not source_path.is_file():
+        raise InternalServerError(description=f"Current students file '{STUDENTS_FILE}' not found. Cannot save empty/non-existent file.")
+
+    # Validate and sanitize the filename
+    if not filename:
+        raise BadRequest(description="Filename is required.")
+
+    # Ensure filename ends with .jsonc
+    if not filename.endswith('.jsonc'):
+        filename += '.jsonc'
+
+    # Basic sanitization - remove path separators and dangerous characters
+    safe_filename = filename.replace('/', '_').replace('\\', '_').replace('..', '_')
+
+    target_path = Path(STUDENTS_BANK_FOLDER) / safe_filename
+
+    if target_path.exists():
+        raise Conflict(description=f"File '{safe_filename}' already exists in '{STUDENTS_BANK_FOLDER}'.")
+
+    try:
+        with source_path.open(encoding='utf-8') as f:
+            json.load(f) # Just load to check if it's valid JSONC
+    except ValueError:
+        raise InternalServerError(description=f"Current file '{STUDENTS_FILE}' is not a valid JSONC format.")
+    except Exception as e:
+        raise InternalServerError(description=f"Error reading current file '{STUDENTS_FILE}': {e}")
+
+    try:
+        shutil.copy2(source_path, target_path)
+        print(f"Saved '{STUDENTS_FILE}' to '{target_path}'.")
+    except Exception as e:
+        print(f"Error saving students to bank: {e}")
+        raise InternalServerError(description=f"Error copying file to bank: {e}")

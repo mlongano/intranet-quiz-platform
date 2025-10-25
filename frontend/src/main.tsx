@@ -20,6 +20,7 @@ import AdminDashboardPage from "./pages/AdminDashboardPage";
 import AdminBankManagerPage from "./pages/AdminBankManagerPage"; // Assuming this file is in ./pages
 import AdminScoresBankPage from "./pages/AdminScoresBankPage";
 import AdminStudentsPage from "./pages/AdminStudentsPage";
+import AdminStudentsBankPage from "./pages/AdminStudentsBankPage";
 
 // Create a client
 const queryClient = new QueryClient();
@@ -72,6 +73,10 @@ const router = createBrowserRouter([
       {
         path: "students", // This will make the route /admin/students
         element: <AdminStudentsPage />, // The component to manage students list
+      },
+      {
+        path: "students-bank", // This will make the route /admin/students-bank
+        element: <AdminStudentsBankPage />, // The component to manage students bank
       },
     ],
   },

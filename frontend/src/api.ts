@@ -551,3 +551,68 @@ export async function updateStudents(
   });
   return handleResponse<{ success: boolean; message: string }>(response);
 }
+
+/**
+ * List available students bank files.
+ */
+export async function listStudentsBankFiles(password: string): Promise<{ files: string[] }> {
+  const response = await fetch(`${API_BASE}/admin/students-bank/files`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ pw: password }),
+  });
+  return handleResponse<{ files: string[] }>(response);
+}
+
+/**
+ * Load a students file from the students bank.
+ */
+export async function loadStudentsFromBank(
+  filename: string,
+  password: string,
+): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${API_BASE}/admin/students-bank/load`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ filename, pw: password }),
+  });
+  return handleResponse<{ success: boolean; message: string }>(response);
+}
+
+/**
+ * Save current students to the students bank.
+ */
+export async function saveStudentsToBank(
+  filename: string,
+  password: string,
+): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${API_BASE}/admin/students-bank/save`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ filename, pw: password }),
+  });
+  return handleResponse<{ success: boolean; message: string }>(response);
+}
+
+/**
+ * Preview a students bank file.
+ */
+export async function previewStudentsBankFile(
+  filename: string,
+  password: string,
+): Promise<{ students: StudentEntry[]; filename: string }> {
+  const response = await fetch(`${API_BASE}/admin/students-bank/preview`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ filename, pw: password }),
+  });
+  return handleResponse<{ students: StudentEntry[]; filename: string }>(response);
+}

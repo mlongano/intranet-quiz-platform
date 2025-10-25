@@ -17,6 +17,9 @@ from utils import (
     list_question_bank_files, # New function
     load_quiz_from_bank,      # New function
     save_quiz_to_bank,
+    list_students_bank_files, # NEW import for students bank
+    load_students_from_bank,  # NEW import for students bank
+    save_students_to_bank,    # NEW import for students bank
 )
 
 # Import email service
@@ -797,3 +800,98 @@ def api_update_students():
     except Exception as e:
         print(f"Error saving students: {e}")
         abort(500, description=f"Failed to save students: {str(e)}")
+
+
+# --- Students Bank Endpoints ---
+
+@admin_bp.route('/admin/students-bank/files', methods=['POST'])
+def api_list_students_bank_files():
+    """Lists available students files (jsonc) in the students_bank folder."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    try:
+        available_files = list_students_bank_files()
+        return jsonify({"files": available_files})
+    except Exception as e:
+        print(f"Error listing students bank files: {e}")
+        abort(500, description=f"Failed to list students bank files: {str(e)}")
+
+@admin_bp.route('/admin/students-bank/load', methods=['POST'])
+def api_load_students_from_bank():
+    """Loads a specified students file from the students_bank into STUDENTS_FILE."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    filename = data.get('filename')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    if not filename:
+        abort(400, description="Missing 'filename' in request body.")
+
+    try:
+        load_students_from_bank(filename)
+        return jsonify({"success": True, "message": f"Loaded '{filename}' from students bank."})
+    except (NotFound, BadRequest, InternalServerError) as e:
+        abort(e.code, description=e.description)
+    except Exception as e:
+        print(f"Unexpected error loading students from bank: {e}")
+        abort(500, description=f"Unexpected error: {str(e)}")
+
+@admin_bp.route('/admin/students-bank/save', methods=['POST'])
+def api_save_students_to_bank():
+    """Saves the current STUDENTS_FILE to the students_bank with the provided filename."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    filename = data.get('filename')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    if not filename:
+        abort(400, description="Missing 'filename' in request body.")
+
+    try:
+        save_students_to_bank(filename)
+        return jsonify({"success": True, "message": f"Saved current students list to '{filename}' in students bank."})
+    except (Conflict, BadRequest, InternalServerError) as e:
+        abort(e.code, description=e.description)
+    except Exception as e:
+        print(f"Unexpected error saving students to bank: {e}")
+        abort(500, description=f"Unexpected error: {str(e)}")
+
+@admin_bp.route('/admin/students-bank/preview', methods=['POST'])
+def api_preview_students_bank_file():
+    """Reads and returns the JSON content of a specified file in the students_bank for preview."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    filename = data.get('filename')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    if not filename:
+        abort(400, description="Missing 'filename' in request body.")
+
+    try:
+        from utils import STUDENTS_BANK_FOLDER
+        import commentjson as json
+
+        file_path = Path(STUDENTS_BANK_FOLDER) / filename
+        if not file_path.exists() or not file_path.is_file():
+            abort(404, description=f"File '{filename}' not found in students bank.")
+
+        with file_path.open(encoding='utf-8') as f:
+            students_data = json.load(f)
+
+        return jsonify({"students": students_data, "filename": filename})
+
+    except json.JSONLibraryException:
+        abort(400, description=f"File '{filename}' is not a valid JSONC format.")
+    except Exception as e:
+        print(f"Error previewing students bank file: {e}")
+        abort(500, description=f"Failed to preview file: {str(e)}")
