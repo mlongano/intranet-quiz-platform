@@ -68,11 +68,37 @@ install `uv` and `pnpm` using the official instructions
 
 ### setup the environment
 
-create a `.env` file with the following content:
+create a `.env` file with the following content (you can copy from `.env.example`):
 
 ```sh
+# Required: Admin password for accessing admin panel
 ADMIN_PW=<your-super-secret-password>
+
+# Optional: Email configuration for sending quiz results to students
+# If not configured, email functionality will be disabled
+EMAIL_SENDER=your.email@example.com
+EMAIL_PASSWORD=your_app_password_here
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
 ```
+
+#### Email Configuration (Optional)
+
+To enable email functionality for sending quiz results to students:
+
+1. **[For Gmail users:](./EMAIL_SETUP.md)**
+   - Enable 2-factor authentication on your Google account
+   - Generate an App Password at <https://myaccount.google.com/apppasswords>
+   - Use the generated 16-character password as `EMAIL_PASSWORD`
+   - Set `EMAIL_SENDER` to your Gmail address
+
+2. **For other email providers:**
+   - Set `SMTP_SERVER` to your provider's SMTP server
+   - Set `SMTP_PORT` to the appropriate port (usually 587 for TLS)
+   - Set `EMAIL_SENDER` to your email address
+   - Set `EMAIL_PASSWORD` to your email password or app-specific password
+
+**Note:** Email addresses in `students.jsonc` will be used as recipient addresses when sending quiz results.
 
 create a `students.jsonc` file with the ids of the students who are taking the test
 
@@ -168,10 +194,127 @@ pnpm build
 
 now the frontend is served by the `server.py`
 
+## Features
+
+### Student Features
+
+- **Quiz Taking**: Students log in with their email (must be in `students.jsonc`) and take randomized quizzes
+- **Question Types**: Supports single choice, multiple choice, and open-ended questions
+- **Images**: Questions and answer options can include images
+- **Auto-save**: Quiz progress is automatically saved
+- **Resume**: Students can resume incomplete quizzes from where they left off
+
+### Admin Features
+
+Access the admin panel at `/admin` with the password set in `.env`:
+
+- **View Scores**: See all submitted quiz results with timestamps and percentages
+- **Export CSV**: Export all scores to CSV format for external analysis
+- **View Details**: Click any submission to see detailed question-by-question results
+- **Recalculate Scores**: Re-grade all submissions against updated question bank (useful if answers change)
+- **Send Emails**:
+    - Send individual quiz results to specific students
+    - Bulk send results to all students
+    - Customize email subject
+    - Choose to include or exclude detailed question-by-question breakdown
+- **Question Management**: Edit questions, answers, and weights
+- **Bank Management**: Save/load question banks and score archives
+
+### Automatic Features
+
+- **Shuffle Prevention**: Each student's answer options are shuffled once and saved to prevent re-randomization
+- **Score Backup**: Automatic timestamped backups before recalculation
+- **File Locking**: Thread-safe file operations prevent data corruption
+
+## Admin Panel Usage
+
+### Accessing Admin Panel
+
+1. Navigate to `http://localhost:5000/admin` (or your server address)
+2. Enter the admin password (set in `.env` as `ADMIN_PW`)
+3. You'll be redirected to the admin dashboard
+
+### Sending Quiz Results via Email
+
+**Requirements**: Email must be configured in `.env` (see Email Configuration above)
+
+**To send a single result:**
+
+1. Go to the Scores page
+2. Find the student's submission
+3. Click the "📧 Email" button in that row
+4. Enter the email subject (e.g., "Quiz Results - UF07-WEB")
+5. Choose whether to include detailed question-by-question results
+6. Click "Send Email"
+
+**To send all results in bulk:**
+
+1. Go to the Scores page
+2. Click "📧 Email All Results" button at the top
+3. Enter the email subject
+4. Choose whether to include detailed results
+5. Confirm to send to all students
+
+**Email Content:**
+
+- Summary with student name, quiz ID, score, percentage, and submission date
+- Optional detailed breakdown showing each question, student's answer, correct answer, and points awarded
+- Fully styled HTML email in Italian
+
+### Recalculating Scores
+
+If you need to update correct answers or question weights after students have submitted:
+
+1. Edit the `questions.jsonc` file with updated answers/weights
+2. Go to the Scores page in admin panel
+3. Click "Recalculate All Scores" button
+4. Confirm the action
+5. All submissions will be re-graded automatically
+6. A backup of old scores is saved to `scores_bank/` with timestamp
+
+**Note**: The recalculation preserves each student's shuffled answer order, so scores are recalculated accurately.
+
+## Troubleshooting
+
+### Email Issues
+
+- **"Email service not configured"**: Make sure `EMAIL_SENDER` and `EMAIL_PASSWORD` are set in `.env`
+- **"Authentication failed"**:
+    - For Gmail: Make sure 2FA is enabled and you're using an App Password (not your regular password)
+    - For other providers: Check that your SMTP credentials are correct
+- **"Invalid email address"**: Ensure student emails in `students.jsonc` are valid email format
+- **No emails received**: Check spam/junk folders; verify SMTP settings are correct for your provider
+
+### Student Login Issues
+
+- **"Unknown student"**: The student email must be listed in `students.jsonc` exactly as typed
+- **Server restart required**: After editing `students.jsonc`, restart the server for changes to take effect
+
+### Score Issues
+
+- **Scores show as 0 or incorrect**: Use "Recalculate All Scores" to re-grade against current question bank
+- **Missing option_order**: Run the backfill script if you have old scores before option tracking was added
+
 ## TODO Section
 
 - [ ] access the admin endpoint only from localhost
 - [ ] check if the resume is from the same pc
-- [ ] handle the comments in the jsoncfiles
-- [ ] Markdown support
+- [x] handle the comments in the jsonc files
+- [x] Markdown support (implemented with react-markdown)
 - [ ] personalize the quiz for some student that has special needs
+- [x] Email quiz results to students
+- [x] Score recalculation against updated question bank
+- [x] CSV export functionality
+- [x] Question bank management and archiving
+- [ ] Add a title to the quiz set in `questions.jsonc` and show it in the admin panel and ema
+- [ ] OAuth2 support for Gmail and Google Workspace accounts
+- [ ] Implement a timer for quizzes
+- [ ] Improve UI/UX design of the frontend
+- [ ] Improve error handling and user feedback throughout the app
+- [ ] Internationalization (i18n) support
+- [ ] Integration tests for backend and frontend components
+- [ ] Dockerfile for easy deployment
+- [ ] Documentation site with mkdocs
+- [ ] Implement a feedback system for students
+- [ ] Add support for more question types (e.g., matching, fill-in-the-blank)
+- [ ] Use a database instead of JSONC files for better scalability
