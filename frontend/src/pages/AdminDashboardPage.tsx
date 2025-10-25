@@ -186,89 +186,102 @@ export default function AdminRootPage() {
       <main className="container mx-auto px-6 py-8">
         {/* Statistics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-500">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-sm font-medium">Current Quiz</p>
-                <p className="text-2xl font-bold text-gray-800 mt-1">{quizTitle}</p>
-                <p className="text-gray-600 text-sm mt-2">{totalQuestions} questions</p>
-              </div>
-              <div className="text-blue-500 text-4xl">📝</div>
+          <button
+            onClick={() => navigateTo("/admin/questions")}
+            className="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-500 hover:shadow-lg transition-shadow text-left flex items-start justify-between cursor-pointer"
+          >
+            <div>
+              <p className="text-blue-600 text-base font-bold">Current Quiz</p>
+              <p className="text-2xl font-bold text-gray-800 mt-1">{quizTitle}</p>
+              <p className="text-gray-600 text-sm mt-2">{totalQuestions} questions</p>
             </div>
-          </div>
+            <div className="text-blue-500 text-4xl">📝</div>
+          </button>
 
-          <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-500">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="text-gray-500 text-sm font-medium">Submissions</p>
-                  {isFetchingScores && (
-                    <span className="text-gray-400 text-sm animate-pulse">
-                      Updating...
-                    </span>
-                  )}
-                </div>
-                <p className="text-2xl font-bold text-gray-800 mt-1">{totalSubmissions}</p>
-                <div className="flex items-center gap-2 mt-2">
-                  <button
-                    onClick={() => setShowSubmittedModal(true)}
-                    className="text-gray-600 text-sm hover:text-gray-800 hover:underline cursor-pointer"
-                  >
-                    {totalSubmissions} submitted
-                  </button>
-                  {pendingSubmissions > 0 && (
-                    <>
-                      <span className="text-gray-400">•</span>
-                      <button
-                        onClick={() => setShowPendingModal(true)}
-                        className="text-orange-600 text-sm font-medium hover:text-orange-700 hover:underline cursor-pointer"
-                      >
-                        {pendingSubmissions} pending
-                      </button>
-                    </>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 mt-2">
-                  <p className="text-gray-400 text-xs">
-                    Auto-updates in {countdown}s
-                  </p>
-                  <button
-                    onClick={handleRefreshScores}
-                    disabled={isFetchingScores}
-                    className="text-gray-400 hover:text-gray-600 text-xs hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Refresh now"
-                  >
-                    🔄 Refresh now
-                  </button>
-                </div>
+          <button
+            onClick={() => navigateTo("/admin/scores")}
+            className="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-500 hover:shadow-lg transition-shadow text-left flex items-start justify-between mb-2 cursor-pointer"
+          >
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <p className="text-green-600 text-base font-bold">Submissions</p>
+                {isFetchingScores && (
+                  <span className="text-gray-400 text-sm animate-pulse">
+                    Updating...
+                  </span>
+                )}
               </div>
-              <div className="text-green-500 text-4xl">✅</div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-purple-500">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-sm font-medium">Students</p>
-                <p className="text-2xl font-bold text-gray-800 mt-1">{totalStudents}</p>
-                <p className="text-gray-600 text-sm mt-2">Enrolled students</p>
+              <p className="text-2xl font-bold text-gray-800 mt-1">{totalSubmissions}</p>
+              <div className="flex items-center gap-2 mt-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowSubmittedModal(true);
+                  }}
+                  className="text-gray-600 text-sm hover:text-gray-800 hover:underline cursor-pointer"
+                >
+                  {totalSubmissions} submitted
+                </button>
+                {pendingSubmissions > 0 && (
+                  <>
+                    <span className="text-gray-400">•</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowPendingModal(true);
+                      }}
+                      className="text-orange-600 text-sm font-medium hover:text-orange-700 hover:underline cursor-pointer"
+                    >
+                      {pendingSubmissions} pending
+                    </button>
+                  </>
+                )}
               </div>
-              <div className="text-purple-500 text-4xl">👥</div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-orange-500">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-sm font-medium">Archives</p>
-                <p className="text-2xl font-bold text-gray-800 mt-1">
-                  {(questionBankFiles?.files?.length || 0) + (scoresBankFiles?.files?.length || 0) + (studentsBankFiles?.files?.length || 0)}
+              <div className="flex items-center gap-2 mt-2">
+                <p className="text-gray-400 text-xs">
+                  Auto-updates in {countdown}s
                 </p>
-                <p className="text-gray-600 text-sm mt-2">Saved in banks</p>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRefreshScores();
+                  }}
+                  disabled={isFetchingScores}
+                  className="text-gray-400 hover:text-gray-600 text-xs hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Refresh now"
+                >
+                  🔄 Refresh now
+                </button>
               </div>
-              <div className="text-orange-500 text-4xl">🗄️</div>
             </div>
-          </div>
+            <div className="text-green-500 text-4xl">✅</div>
+          </button>
+
+          <button
+            onClick={() => navigateTo("/admin/students")}
+            className="bg-white rounded-lg shadow-md p-6 border-l-4 border-purple-500 hover:shadow-lg transition-shadow text-left flex items-start justify-between cursor-pointer"
+          >
+            <div>
+              <p className="text-purple-600 text-base font-bold">Students</p>
+              <p className="text-2xl font-bold text-gray-800 mt-1">{totalStudents}</p>
+              <p className="text-gray-600 text-sm mt-2">Enrolled students</p>
+            </div>
+            <div className="text-purple-500 text-4xl">👥</div>
+          </button>
+
+          <button
+            onClick={() => navigateTo("/admin/bank")}
+            className="bg-white rounded-lg shadow-md p-6 border-l-4 border-orange-500 hover:shadow-lg transition-shadow text-left flex items-start justify-between cursor-pointer"
+          >
+            <div>
+              <p className="text-orange-600 text-base font-bold">Archives</p>
+              <p className="text-2xl font-bold text-gray-800 mt-1">
+                {(questionBankFiles?.files?.length || 0) + (scoresBankFiles?.files?.length || 0) + (studentsBankFiles?.files?.length || 0)}
+              </p>
+              <p className="text-gray-600 text-sm mt-2">Saved in banks</p>
+            </div>
+            <div className="text-orange-500 text-4xl">🗄️</div>
+          </button>
         </div>
 
         {/* Quick Actions */}
