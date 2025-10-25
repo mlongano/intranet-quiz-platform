@@ -200,7 +200,7 @@ create a `questions.jsonc` file to store the questions
 - The file **must** be an object with `"title"` and `"questions"` fields
 - The old array format (without wrapping object) is **no longer supported**
 - When saving to the question bank or scores bank, the system will use the slugified title for the filename
-    - Example: "General Knowledge Quiz 2025" → `general-knowledge-quiz-2025.jsonc`
+  - Example: "General Knowledge Quiz 2025" → `general-knowledge-quiz-2025.jsonc`
 
 run the backend server
 
@@ -245,10 +245,10 @@ Access the admin panel at `/admin` with the password set in `.env`:
 - **View Details**: Click any submission to see detailed question-by-question results
 - **Recalculate Scores**: Re-grade all submissions against updated question bank (useful if answers change)
 - **Send Emails**:
-    - Send individual quiz results to specific students
-    - Bulk send results to all students
-    - Customize email subject
-    - Choose to include or exclude detailed question-by-question breakdown
+  - Send individual quiz results to specific students
+  - Bulk send results to all students
+  - Customize email subject
+  - Choose to include or exclude detailed question-by-question breakdown
 - **Question Management**: Edit questions, answers, and weights
 - **Bank Management**: Save/load question banks and score archives
 
@@ -312,8 +312,8 @@ If you need to update correct answers or question weights after students have su
 
 - **"Email service not configured"**: Make sure `EMAIL_SENDER` and `EMAIL_PASSWORD` are set in `.env`
 - **"Authentication failed"**:
-    - For Gmail: Make sure 2FA is enabled and you're using an App Password (not your regular password)
-    - For other providers: Check that your SMTP credentials are correct
+  - For Gmail: Make sure 2FA is enabled and you're using an App Password (not your regular password)
+  - For other providers: Check that your SMTP credentials are correct
 - **"Invalid email address"**: Ensure student emails in `students.jsonc` are valid email format
 - **No emails received**: Check spam/junk folders; verify SMTP settings are correct for your provider
 
@@ -351,4 +351,15 @@ If you need to update correct answers or question weights after students have su
 - [ ] Add support for more question types (e.g., matching, fill-in-the-blank)
 - [ ] Use a database instead of JSONC files for better scalability
 - [ ] Manage student list from the admin panel
-- [ ]
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+**What this means:**
+
+- ✅ Free to use for educational institutions
+- ✅ Modify and adapt to your needs
+- ✅ Use in commercial settings (private schools, tutoring centers)
+- ✅ No obligation to share your modifications
+- ℹ️ Just keep the copyright notice
