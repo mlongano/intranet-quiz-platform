@@ -52,18 +52,65 @@ describing only the randomized order of that quiz.
 
 ## Install instructions
 
-install `node.js` following the official instructions for your operating system
+### Prerequisites
 
-clone the repository
+**Check Python Installation:**
+
+QuizParty requires Python 3.10 or higher. Check if Python is installed:
+
+```bash
+# Check Python version
+python --version
+# or
+python3 --version
+```
+
+If Python is not installed or the version is below 3.10, install Python:
+
+- **Windows**: Download from [python.org](https://www.python.org/downloads/) or use [Microsoft Store](https://apps.microsoft.com/detail/9ncvdn91xzqp)
+- **macOS**: Use Homebrew: `brew install python@3.12`
+- **Linux**: Use your package manager: `sudo apt install python3.12` (Ubuntu/Debian) or `sudo dnf install python3.12` (Fedora)
+
+#### Optional: Install Latest Python Version
+
+For best performance and latest features, install Python 3.12 or higher:
+
+```bash
+# macOS with Homebrew
+brew install python@3.12
+
+# Ubuntu/Debian
+sudo apt update
+sudo apt install python3.12
+
+# Fedora
+sudo dnf install python3.12
+
+# Windows - Download installer from python.org
+# Make sure to check "Add Python to PATH" during installation
+```
+
+#### Install Node.js
+
+Install **Node.js** (v18 or higher) following the [official instructions](https://nodejs.org/) for your operating system.
+
+```bash
+# Check Node.js version
+node --version
+```
+
+### Clone the Repository
 
 ```sh
 git clone https://github.com/mlongano/intranet-quiz-manager.git
 cd intranet-quiz-manager
 ```
 
-### Windows
+### Install Dependencies
 
-install uv
+#### Windows
+
+**Install uv (Python package manager):**
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -Command '
@@ -75,7 +122,7 @@ $NewPath = "$($env:USERPROFILE)\.local\bin;$($env:Path)"
 [Environment]::SetEnvironmentVariable("Path", $NewPath, [System.EnvironmentVariableTarget]::User)
 ```
 
-optionally install pnpm
+**Install pnpm (Node.js package manager) - Recommended:**
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -Command '
@@ -86,20 +133,39 @@ Invoke-WebRequest https://get.pnpm.io/install.ps1 -UseBasicParsing | Invoke-Expr
 $NewPath = "$($env:Path);$($env:LOCALAPPDATA)\pnpm"
 [Environment]::SetEnvironmentVariable("Path", $NewPath, [System.EnvironmentVariableTarget]::User)
 [Environment]::SetEnvironmentVariable("PNPM_HOME", "$($env:LOCALAPPDATA)\pnpm", [System.EnvironmentVariableTarget]::User)
-
 ```
 
-### Linux and MacOs
+**Note:** You may need to restart your terminal or PowerShell after installation.
 
-install `uv` and `pnpm` using the official instructions
+#### Linux and macOS
 
-### setup the environment
+**Install uv:**
 
-create a `.env` file with the following content (you can copy from `.env.example`):
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**Install pnpm:**
+
+```bash
+curl -fsSL https://get.pnpm.io/install.sh | sh -
+```
+
+Or use npm if you prefer:
+
+```bash
+npm install -g pnpm
+```
+
+### Configuration
+
+#### 1. Create Environment File
+
+Create a `.env` file in the project root (you can copy from `.env.example`):
 
 ```sh
 # Required: Admin password for accessing admin panel
-ADMIN_PW=<your-super-secret-password>
+ADMIN_PW=your-secure-password-here
 
 # Optional: Email configuration for sending quiz results to students
 # If not configured, email functionality will be disabled
@@ -107,6 +173,10 @@ EMAIL_SENDER=your.email@example.com
 EMAIL_PASSWORD=your_app_password_here
 SMTP_SERVER=smtp.gmail.com
 SMTP_PORT=587
+
+# Optional: Cloud sync configuration (Git-based backup)
+# BANKS_GIT_REMOTE=https://github.com/yourusername/quiz-banks.git
+# BANKS_GIT_TOKEN=your_github_personal_access_token
 ```
 
 #### Email Configuration (Optional)
@@ -127,7 +197,9 @@ To enable email functionality for sending quiz results to students:
 
 **Note:** Email addresses in `students.jsonc` will be used as recipient addresses when sending quiz results.
 
-create a `students.jsonc` file with the ids of the students who are taking the test
+#### 2. Create Students File
+
+create a `students.jsonc` file with the email addresses of students who will take the quiz:
 
 ```jsonc
 [
@@ -179,7 +251,9 @@ The `students.jsonc` file supports three flexible formats:
 
 You can mix all three formats in the same file. The group field is useful for organizing students by class or section in the admin panel.
 
-create a `questions.jsonc` file to store the questions
+#### 3. Create Questions File
+
+create a `questions.jsonc` file to store your quiz questions:
 
 ```jsonc
 {
@@ -249,13 +323,19 @@ create a `questions.jsonc` file to store the questions
 - When saving to the question bank or scores bank, the system will use the slugified title for the filename
   - Example: "General Knowledge Quiz 2025" → `general-knowledge-quiz-2025.jsonc`
 
-run the backend server
+### Running the Application
+
+#### Development Mode (for testing and development)
+
+**Start the backend server:**
 
 ```sh
 uv run server.py
 ```
 
-run the frontend in developer mode
+The server will start on `http://localhost:5001` (accessible on your LAN).
+
+**In a new terminal, start the frontend development server:**
 
 ```sh
 cd frontend
@@ -263,7 +343,11 @@ pnpm install
 pnpm dev
 ```
 
-deploy the frontend in production mode
+The frontend dev server runs on `http://localhost:5173` with hot-reload.
+
+#### Production Mode (recommended for actual quizzes)
+
+**Build the frontend:**
 
 ```sh
 cd frontend
@@ -271,7 +355,25 @@ pnpm install
 pnpm build
 ```
 
-now the frontend is served by the `server.py`
+This compiles the React app and copies it to the backend's static folder.
+
+**Start the server:**
+
+```sh
+uv run server.py
+```
+
+Now the backend serves both the API and the frontend at `http://localhost:5001`.
+
+**Access the application:**
+
+- **Students**: Navigate to `http://your-server-ip:5001/` to start the quiz
+- **Admin**: Navigate to `http://your-server-ip:5001/admin` to access the admin panel
+
+**Finding your server IP:**
+
+- The server will display all available addresses when it starts
+- Students on the same network can access using your local IP (e.g., `http://192.168.1.100:5001`)
 
 ## Features
 
