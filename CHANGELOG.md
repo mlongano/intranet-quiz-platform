@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+(No unreleased changes yet)
+
+---
+
+## [2.1.0] - 2025-10-26
+
+### Added
+
+#### Quiz Enable/Disable Feature
+
+- **Quiz control toggle** in admin dashboard header
+- Visual toggle switch with green (enabled) / red (disabled) color coding
+- Animated toggle state transitions
+- Real-time status updates without page refresh
+- Quiz status persistence in `quiz_status.jsonc` file
+- Backend API endpoints for quiz status management (`GET/POST /api/admin/quiz-status`)
+- Student-facing warning banner on start page when quiz is disabled
+- Full-page "Quiz Disabled" message with friendly UI when students try to access
+- Disabled state prevents quiz start, resume, and submission at API level
+- Silent toggle operation (no modal on success, only on error)
+
+#### Backend
+
+- **New utility functions** in `utils.py`:
+  - `load_quiz_status()` - Load quiz enabled/disabled state from file
+  - `save_quiz_status()` - Save quiz status with atomic writes
+- **Updated `/api/start` endpoint** - Checks quiz status before allowing students to start
+- **New API endpoints** in `routes/admin.py`:
+  - `GET /api/admin/quiz-status` - Public endpoint to check if quiz is enabled
+  - `POST /api/admin/quiz-status` - Admin endpoint to enable/disable quiz
+
+#### Frontend
+
+- **TypeScript Interface** in `frontend/src/api.ts`:
+  - `QuizStatus` - Quiz enabled/disabled state
+- **API Functions**:
+  - `getQuizStatus()` - Fetch current quiz status
+  - `setQuizStatus(enabled, password)` - Toggle quiz status (admin only)
+- **UI Updates**:
+  - `AdminDashboardPage.tsx` - Toggle switch in header with real-time status
+  - `QuizPage.tsx` - Full-page disabled message with icon and back button
+  - `StartPage.tsx` - Warning banner and disabled form inputs when quiz is off
+
+---
+
+## [2.0.0] - 2025-10-26
+
 ### Added
 
 #### Cloud Sync Feature (Git-based)
