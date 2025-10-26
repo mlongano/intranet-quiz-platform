@@ -1103,3 +1103,75 @@ def api_git_sync():
         import traceback
         traceback.print_exc()
         abort(500, description=f"Failed to sync: {str(e)}")
+
+
+# --- Image Management Endpoints ---
+
+@admin_bp.route('/admin/images/upload', methods=['POST'])
+def api_upload_image():
+    """Upload an image for a specific quiz"""
+    password = request.form.get('password')
+    if password != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    quiz_filename = request.form.get('quiz_filename')
+    if not quiz_filename:
+        abort(400, description="quiz_filename is required")
+
+    if 'image' not in request.files:
+        abort(400, description="No image file provided")
+
+    image_file = request.files['image']
+    if image_file.filename == '':
+        abort(400, description="No image file selected")
+
+    try:
+        from utils import upload_image_to_quiz
+        result = upload_image_to_quiz(quiz_filename, image_file, image_file.filename)
+        return jsonify(result)
+    except Conflict as e:
+        abort(409, description=str(e))
+    except Exception as e:
+        print(f"Error uploading image: {e}")
+        abort(500, description=f"Error uploading image: {str(e)}")
+
+
+@admin_bp.route('/admin/images/list/<path:quiz_filename>', methods=['GET'])
+def api_list_quiz_images(quiz_filename):
+    """List all images for a specific quiz"""
+    password = request.args.get('password')
+    if password != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    try:
+        from utils import list_quiz_images
+        images = list_quiz_images(quiz_filename)
+        return jsonify({"images": images})
+    except Exception as e:
+        print(f"Error listing images: {e}")
+        abort(500, description=f"Error listing images: {str(e)}")
+
+
+@admin_bp.route('/admin/images/delete', methods=['DELETE'])
+def api_delete_quiz_image():
+    """Delete an image from a quiz's images folder"""
+    data = request.get_json(silent=True) or {}
+    password = data.get('password')
+    if password != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    quiz_filename = data.get('quiz_filename')
+    image_filename = data.get('image_filename')
+
+    if not quiz_filename or not image_filename:
+        abort(400, description="quiz_filename and image_filename are required")
+
+    try:
+        from utils import delete_quiz_image
+        result = delete_quiz_image(quiz_filename, image_filename)
+        return jsonify(result)
+    except NotFound as e:
+        abort(404, description=str(e))
+    except Exception as e:
+        print(f"Error deleting image: {e}")
+        abort(500, description=f"Error deleting image: {str(e)}")

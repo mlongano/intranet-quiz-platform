@@ -21,6 +21,7 @@ import AdminBankManagerPage from "./pages/AdminBankManagerPage"; // Assuming thi
 import AdminScoresBankPage from "./pages/AdminScoresBankPage";
 import AdminStudentsPage from "./pages/AdminStudentsPage";
 import AdminStudentsBankPage from "./pages/AdminStudentsBankPage";
+import AdminImageManagerPage from "./pages/AdminImageManagerPage";
 
 // Create a client
 const queryClient = new QueryClient();
@@ -77,6 +78,10 @@ const router = createBrowserRouter([
       {
         path: "students-bank", // This will make the route /admin/students-bank
         element: <AdminStudentsBankPage />, // The component to manage students bank
+      },
+      {
+        path: "images", // This will make the route /admin/images
+        element: <AdminImageManagerPage />, // The component to manage quiz images
       },
     ],
   },

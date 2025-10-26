@@ -43,6 +43,15 @@ def serve_images(filename):
     # Could add more checks here if needed (e.g., allowed extensions)
     return send_from_directory(IMAGE_DIR, filename)
 
+# --- NEW: Route to serve images from the banks folder ---
+@APP.route('/banks/<path:filename>')
+def serve_banks_files(filename):
+    banks_dir = os.path.join(APP_DIR, 'banks')
+    if not os.path.exists(banks_dir):
+         abort(404, description="Banks directory not found.")
+    # Basic security: prevent path traversal (Flask's send_from_directory helps)
+    return send_from_directory(banks_dir, filename)
+
 # Route to serve frontend application (index.html) and handle client-side routing
 # This catch-all route should come AFTER specific API and asset routes.
 @APP.route('/', defaults={'path': ''})

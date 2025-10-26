@@ -89,6 +89,22 @@ def safe_id(raw: str) -> str:
     """Creates a filesystem-safe ID from a raw string."""
     return SAFE.sub('_', raw)
 
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitizes a filename by removing or replacing dangerous characters.
+    - Removes path separators (/, \)
+    - Removes parent directory references (..)
+    - Removes other dangerous characters
+    - Preserves file extension
+    """
+    # Remove path separators and parent directory references
+    safe_name = filename.replace('/', '_').replace('\\', '_').replace('..', '_')
+    # Remove any remaining dangerous characters but keep alphanumeric, dots, dashes, underscores
+    safe_name = re.sub(r'[^\w\s.-]', '', safe_name)
+    # Remove leading/trailing whitespace and dots
+    safe_name = safe_name.strip('. ')
+    return safe_name
+
 def slugify(text: str) -> str:
     """
     Convert text to a URL-friendly slug.
@@ -307,8 +323,8 @@ def save_scores_to_bank(filename: str):
     if not filename.endswith('.jsonc'):
         filename += '.jsonc'
 
-    # Basic sanitization - remove path separators and dangerous characters
-    safe_filename = filename.replace('/', '_').replace('\\', '_').replace('..', '_')
+    # Sanitize the filename
+    safe_filename = sanitize_filename(filename)
 
     target_path = Path(SCORES_BANK_FOLDER) / safe_filename
 
@@ -415,8 +431,8 @@ def save_quiz_to_bank(filename: str):
     if not filename.endswith('.jsonc'):
         filename += '.jsonc'
 
-    # Basic sanitization - remove path separators and dangerous characters
-    safe_filename = filename.replace('/', '_').replace('\\', '_').replace('..', '_')
+    # Sanitize the filename
+    safe_filename = sanitize_filename(filename)
 
     target_path = Path(QUESTION_BANK_FOLDER) / safe_filename
 
@@ -445,8 +461,8 @@ def delete_quiz_from_bank(filename: str):
     if not filename:
         raise BadRequest(description="Filename is required.")
 
-    # Basic sanitization - remove path separators and dangerous characters
-    safe_filename = filename.replace('/', '_').replace('\\', '_').replace('..', '_')
+    # Sanitize the filename
+    safe_filename = sanitize_filename(filename)
 
     file_path = Path(QUESTION_BANK_FOLDER) / safe_filename
 
@@ -987,8 +1003,8 @@ def save_students_to_bank(filename: str):
     if not filename.endswith('.jsonc'):
         filename += '.jsonc'
 
-    # Basic sanitization - remove path separators and dangerous characters
-    safe_filename = filename.replace('/', '_').replace('\\', '_').replace('..', '_')
+    # Sanitize the filename
+    safe_filename = sanitize_filename(filename)
 
     target_path = Path(STUDENTS_BANK_FOLDER) / safe_filename
 
@@ -1082,3 +1098,140 @@ def save_quiz_status(status):
     except Exception as e:
         print(f"Error saving quiz status: {e}")
         raise InternalServerError(description=f"Error saving quiz status: {e}")
+
+
+# --- Image Management Functions ---
+
+def get_quiz_images_folder(quiz_filename):
+    """
+    Get the images folder path for a specific quiz file.
+    Format: /banks/question_bank/{quiz_basename}_images/
+    """
+    print(f"[DEBUG] get_quiz_images_folder called with: {quiz_filename}")
+    quiz_path = Path(quiz_filename)
+    quiz_basename = quiz_path.stem  # Get filename without extension
+    images_folder = Path(QUESTION_BANK_FOLDER) / f"{quiz_basename}_images"
+    print(f"[DEBUG] Images folder path: {images_folder}")
+    return images_folder
+
+
+def upload_image_to_quiz(quiz_filename, image_file, original_filename):
+    """
+    Upload an image file for a specific quiz.
+    
+    Args:
+        quiz_filename: The quiz file name (e.g., "20251024_164801_5CI-TPSIT-Java_Thread.jsonc")
+        image_file: File object (from Flask request.files)
+        original_filename: Original filename of the uploaded image
+    
+    Returns:
+        dict: {"success": True, "path": "/banks/question_bank/...", "filename": "..."}
+    """
+    # Sanitize the filename
+    safe_filename = sanitize_filename(original_filename)
+    
+    # Get or create the quiz images folder
+    images_folder = get_quiz_images_folder(quiz_filename)
+    images_folder.mkdir(parents=True, exist_ok=True)
+    
+    # Create full path for the image
+    image_path = images_folder / safe_filename
+    
+    # Check if file already exists
+    if image_path.exists():
+        raise Conflict(description=f"Image '{safe_filename}' already exists for this quiz")
+    
+    # Save the file
+    try:
+        image_file.save(str(image_path))
+        # Convert to absolute path first, then get relative path
+        absolute_path = image_path.resolve()
+        relative_path = str(absolute_path.relative_to(Path.cwd().resolve()))
+        print(f"Uploaded image: {relative_path}")
+        return {
+            "success": True,
+            "path": f"/{relative_path}",
+            "filename": safe_filename
+        }
+    except Exception as e:
+        print(f"Error uploading image: {e}")
+        raise InternalServerError(description=f"Error uploading image: {e}")
+
+
+def list_quiz_images(quiz_filename):
+    """
+    List all images for a specific quiz.
+    
+    Args:
+        quiz_filename: The quiz file name
+    
+    Returns:
+        list: Array of image info dicts with path, filename, size
+    """
+    try:
+        images_folder = get_quiz_images_folder(quiz_filename)
+        
+        if not images_folder.exists():
+            return []
+        
+        images = []
+        for image_file in images_folder.iterdir():
+            if image_file.is_file() and image_file.suffix.lower() in ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp']:
+                # Convert to absolute path first, then get relative path
+                absolute_path = image_file.resolve()
+                relative_path = str(absolute_path.relative_to(Path.cwd().resolve()))
+                images.append({
+                    "filename": image_file.name,
+                    "path": f"/{relative_path}",
+                    "size": image_file.stat().st_size
+                })
+        
+        return images
+    except Exception as e:
+        print(f"Error in list_quiz_images for '{quiz_filename}': {e}")
+        import traceback
+        traceback.print_exc()
+        raise InternalServerError(description=f"Error listing images: {e}")
+
+
+def delete_quiz_image(quiz_filename, image_filename):
+    """
+    Delete an image file from a quiz's images folder.
+    
+    Args:
+        quiz_filename: The quiz file name
+        image_filename: The image filename to delete
+    
+    Returns:
+        dict: {"success": True, "message": "..."}
+    """
+    # Sanitize the image filename to prevent path traversal
+    safe_image_filename = sanitize_filename(image_filename)
+    
+    images_folder = get_quiz_images_folder(quiz_filename)
+    image_path = images_folder / safe_image_filename
+    
+    # Validate that the path is within the images folder
+    try:
+        image_path = image_path.resolve()
+        images_folder = images_folder.resolve()
+        if not str(image_path).startswith(str(images_folder)):
+            raise BadRequest(description="Invalid image path")
+    except Exception:
+        raise BadRequest(description="Invalid image path")
+    
+    # Check if file exists
+    if not image_path.exists():
+        raise NotFound(description=f"Image '{image_filename}' not found")
+    
+    # Delete the file
+    try:
+        image_path.unlink()
+        print(f"Deleted image: {image_path}")
+        return {
+            "success": True,
+            "message": f"Image '{image_filename}' deleted successfully"
+        }
+    except Exception as e:
+        print(f"Error deleting image: {e}")
+        raise InternalServerError(description=f"Error deleting image: {e}")

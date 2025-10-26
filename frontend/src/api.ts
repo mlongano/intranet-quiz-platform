@@ -805,3 +805,83 @@ export async function setQuizStatus(enabled: boolean, password: string): Promise
     status: QuizStatus;
   }>(response);
 }
+
+
+/**
+ * Image Management Types and Functions
+ */
+
+export interface QuizImage {
+  filename: string;
+  path: string;
+  size: number;
+}
+
+export interface UploadImageResponse {
+  success: boolean;
+  path: string;
+  filename: string;
+}
+
+/**
+ * Upload an image for a specific quiz.
+ */
+export async function uploadImage(
+  quizFilename: string,
+  imageFile: File,
+  password: string
+): Promise<UploadImageResponse> {
+  const formData = new FormData();
+  formData.append('quiz_filename', quizFilename);
+  formData.append('image', imageFile);
+  formData.append('password', password);
+
+  const response = await fetch(`${API_BASE}/admin/images/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  return handleResponse<UploadImageResponse>(response);
+}
+
+/**
+ * List all images for a specific quiz.
+ */
+export async function listQuizImages(
+  quizFilename: string,
+  password: string
+): Promise<QuizImage[]> {
+  const response = await fetch(
+    `${API_BASE}/admin/images/list/${encodeURIComponent(quizFilename)}?password=${encodeURIComponent(password)}`,
+    {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    }
+  );
+  const data = await handleResponse<{ images: QuizImage[] }>(response);
+  return data.images;
+}
+
+/**
+ * Delete an image from a quiz's images folder.
+ */
+export async function deleteImage(
+  quizFilename: string,
+  imageFilename: string,
+  password: string
+): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${API_BASE}/admin/images/delete`, {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      quiz_filename: quizFilename,
+      image_filename: imageFilename,
+      password,
+    }),
+  });
+  return handleResponse<{ success: boolean; message: string }>(response);
+}
+

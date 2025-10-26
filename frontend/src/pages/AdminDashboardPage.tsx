@@ -484,6 +484,13 @@ export default function AdminRootPage() {
                 <div className="font-semibold text-blue-900">Question Bank</div>
                 <div className="text-sm text-blue-700">Save & load quiz templates</div>
               </button>
+              <button
+                onClick={() => navigateTo("/admin/images")}
+                className="w-full text-left px-4 py-3 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
+              >
+                <div className="font-semibold text-blue-900">Image Manager</div>
+                <div className="text-sm text-blue-700">Upload & manage quiz images</div>
+              </button>
             </div>
           </div>
 
