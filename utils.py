@@ -184,6 +184,70 @@ def save_scores(data):
         print(f"Error saving scores to {SCORE_FILE}: {e}")
         raise InternalServerError(description=f"Error saving scores: {e}")
 
+def clear_scores_with_backup():
+    """Clears all scores by saving to a temporary backup file and emptying the main scores file."""
+    backup_file = f"{SCORE_FILE}.temp_backup"
+
+    try:
+        # Read current scores
+        current_scores = load_scores()
+
+        if not current_scores or len(current_scores) == 0:
+            return {"success": True, "message": "No scores to clear.", "backup_file": None}
+
+        # Save to temporary backup
+        backup_path = Path(backup_file)
+        with backup_path.open('w', encoding='utf-8') as f:
+            json.dump(current_scores, f, indent=2)
+        print(f"Created temporary backup at {backup_file} with {len(current_scores)} scores")
+
+        # Clear the main scores file
+        save_scores([])
+
+        return {
+            "success": True,
+            "message": f"Cleared {len(current_scores)} scores. Backup saved to {backup_file}",
+            "backup_file": backup_file,
+            "cleared_count": len(current_scores)
+        }
+    except Exception as e:
+        print(f"Error clearing scores: {e}")
+        raise InternalServerError(description=f"Error clearing scores: {e}")
+
+def restore_scores_from_backup():
+    """Restores scores from the temporary backup file."""
+    backup_file = f"{SCORE_FILE}.temp_backup"
+    backup_path = Path(backup_file)
+
+    if not backup_path.exists():
+        raise NotFound(description="No temporary backup file found. Please clear scores first to create a backup.")
+
+    try:
+        # Read backup
+        with backup_path.open('r', encoding='utf-8') as f:
+            backup_scores = json.load(f)
+
+        if not isinstance(backup_scores, list):
+            raise BadRequest(description="Backup file has invalid format.")
+
+        # Save to main scores file
+        save_scores(backup_scores)
+
+        print(f"Restored {len(backup_scores)} scores from {backup_file}")
+
+        return {
+            "success": True,
+            "message": f"Restored {len(backup_scores)} scores from temporary backup.",
+            "restored_count": len(backup_scores)
+        }
+    except FileNotFoundError:
+        raise NotFound(description="Temporary backup file not found.")
+    except json.JSONDecodeError:
+        raise BadRequest(description="Backup file is corrupted or not valid JSON.")
+    except Exception as e:
+        print(f"Error restoring scores: {e}")
+        raise InternalServerError(description=f"Error restoring scores: {e}")
+
 def list_scores_bank_files():
     """Lists available scores files (jsonc) in the scores_bank folder."""
     scores_files = []

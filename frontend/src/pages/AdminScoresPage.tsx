@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom"; // Import useNavigate
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchScores, ScoreEntry, recalculateAllScores, sendResultEmail, sendAllResultEmails } from "../api"; // Import API and type
+import { fetchScores, ScoreEntry, recalculateAllScores, sendResultEmail, sendAllResultEmails, clearScores, restoreScores } from "../api"; // Import API and type
 // Assume helper components exist
 import LoadingSpinner from "../components/LoadingSpinner";
 import ErrorDisplay from "../components/ErrorDisplay";
@@ -81,6 +81,38 @@ function AdminDashboardPage() {
     },
   });
 
+  // Mutation for clearing scores
+  const clearScoresMutation = useMutation({
+    mutationFn: () => {
+      if (!adminPassword) throw new Error("Admin password not provided.");
+      return clearScores(adminPassword);
+    },
+    onSuccess: (data) => {
+      setRecalculateMessage(`✓ ${data.message}`);
+      // Invalidate and refetch scores
+      queryClient.invalidateQueries({ queryKey: ["adminScores", adminPassword] });
+    },
+    onError: (err: Error) => {
+      setRecalculateMessage(`✗ Failed to clear scores: ${err.message}`);
+    },
+  });
+
+  // Mutation for restoring scores
+  const restoreScoresMutation = useMutation({
+    mutationFn: () => {
+      if (!adminPassword) throw new Error("Admin password not provided.");
+      return restoreScores(adminPassword);
+    },
+    onSuccess: (data) => {
+      setRecalculateMessage(`✓ ${data.message}`);
+      // Invalidate and refetch scores
+      queryClient.invalidateQueries({ queryKey: ["adminScores", adminPassword] });
+    },
+    onError: (err: Error) => {
+      setRecalculateMessage(`✗ Failed to restore scores: ${err.message}`);
+    },
+  });
+
   const sendSingleEmailMutation = useMutation({
     mutationFn: ({ studentEmail, quizId, subject, includeDetails }: { studentEmail: string; quizId: string; subject: string; includeDetails: boolean }) => {
       if (!adminPassword) throw new Error("Admin password not provided.");
@@ -145,6 +177,20 @@ function AdminDashboardPage() {
     }
     setRecalculateMessage(null);
     sendAllEmailsMutation.mutate({ subject: emailSubject, includeDetails: includeDetails });
+  };
+
+  const handleClearScores = () => {
+    if (window.confirm("This will clear ALL scores and create a temporary backup. You can restore them using the Restore button. Continue?")) {
+      setRecalculateMessage(null);
+      clearScoresMutation.mutate();
+    }
+  };
+
+  const handleRestoreScores = () => {
+    if (window.confirm("This will restore scores from the temporary backup. Any current scores will be overwritten. Continue?")) {
+      setRecalculateMessage(null);
+      restoreScoresMutation.mutate();
+    }
   };
 
   // --- CSV Export Function ---
@@ -286,6 +332,20 @@ function AdminDashboardPage() {
             className="px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Export to CSV
+          </button>
+          <button
+            onClick={handleClearScores}
+            disabled={!scores || scores.length === 0 || clearScoresMutation.isPending}
+            className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {clearScoresMutation.isPending ? "Clearing..." : "🗑️ Clear All Scores"}
+          </button>
+          <button
+            onClick={handleRestoreScores}
+            disabled={restoreScoresMutation.isPending}
+            className="px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {restoreScoresMutation.isPending ? "Restoring..." : "↩️ Restore Scores"}
           </button>
         </div>
       </div>

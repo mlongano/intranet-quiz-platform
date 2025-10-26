@@ -648,6 +648,48 @@ def api_recalculate_all_scores():
         traceback.print_exc()
         abort(500, description=f"Failed to recalculate scores: {str(e)}")
 
+@admin_bp.route('/admin/scores/clear', methods=['POST'])
+def api_clear_scores():
+    """Clears all scores after creating a temporary backup."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    try:
+        from utils import clear_scores_with_backup
+        result = clear_scores_with_backup()
+        return jsonify(result)
+    except InternalServerError as e:
+        abort(500, description=e.description)
+    except Exception as e:
+        print(f"Error clearing scores: {e}")
+        abort(500, description=f"Failed to clear scores: {str(e)}")
+
+@admin_bp.route('/admin/scores/restore', methods=['POST'])
+def api_restore_scores():
+    """Restores scores from the temporary backup file."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    try:
+        from utils import restore_scores_from_backup
+        result = restore_scores_from_backup()
+        return jsonify(result)
+    except NotFound as e:
+        abort(404, description=e.description)
+    except BadRequest as e:
+        abort(400, description=e.description)
+    except InternalServerError as e:
+        abort(500, description=e.description)
+    except Exception as e:
+        print(f"Error restoring scores: {e}")
+        abort(500, description=f"Failed to restore scores: {str(e)}")
+
 # --- Email Endpoints ---
 
 @admin_bp.route('/admin/email/send-result', methods=['POST'])

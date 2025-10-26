@@ -486,6 +486,56 @@ export async function recalculateAllScores(
 }
 
 /**
+ * Clear all scores with a temporary backup.
+ */
+export async function clearScores(
+  password: string,
+): Promise<{
+  success: boolean;
+  message: string;
+  backup_file?: string;
+  cleared_count?: number;
+}> {
+  const response = await fetch(`${API_BASE}/admin/scores/clear`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ pw: password }),
+  });
+  return handleResponse<{
+    success: boolean;
+    message: string;
+    backup_file?: string;
+    cleared_count?: number;
+  }>(response);
+}
+
+/**
+ * Restore scores from temporary backup.
+ */
+export async function restoreScores(
+  password: string,
+): Promise<{
+  success: boolean;
+  message: string;
+  restored_count?: number;
+}> {
+  const response = await fetch(`${API_BASE}/admin/scores/restore`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ pw: password }),
+  });
+  return handleResponse<{
+    success: boolean;
+    message: string;
+    restored_count?: number;
+  }>(response);
+}
+
+/**
  * Send quiz result email to a single student.
  */
 export async function sendResultEmail(
