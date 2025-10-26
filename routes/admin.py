@@ -393,6 +393,31 @@ def api_save_scores_to_bank():
         print(f"Error saving scores to bank: {e}")
         abort(500, description="Internal server error saving scores to bank.")
 
+@admin_bp.route('/admin/scores-bank/delete', methods=['POST'])
+def api_delete_scores_from_bank():
+    """Deletes a specified scores file from the scores_bank."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    filename = data.get('filename')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403)
+    if not filename:
+        abort(400, description="Missing filename in request body.")
+
+    try:
+        from utils import delete_scores_from_bank
+        delete_scores_from_bank(filename)
+        return jsonify({"success": True, "message": f"Successfully deleted '{filename}' from scores bank."})
+    except NotFound as e:
+        return jsonify({'error': e.description or 'File not found'}), 404
+    except InternalServerError as e:
+        print(f"Internal error deleting scores from bank '{filename}': {e}")
+        return jsonify({'error': e.description or 'Internal server error'}), 500
+    except Exception as e:
+        print(f"Error deleting scores from bank: {e}")
+        return jsonify({'error': f'Internal server error deleting scores from bank: {str(e)}'}), 500
+
 @admin_bp.route('/admin/scores-bank/preview', methods=['POST'])
 def api_preview_scores_bank_file():
     """Reads and returns the JSON content of a specified file in the scores_bank for preview."""
@@ -957,6 +982,32 @@ def api_save_students_to_bank():
     except Exception as e:
         print(f"Unexpected error saving students to bank: {e}")
         abort(500, description=f"Unexpected error: {str(e)}")
+
+@admin_bp.route('/admin/students-bank/delete', methods=['POST'])
+def api_delete_students_from_bank():
+    """Deletes a specified students file from the students_bank."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    filename = data.get('filename')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    if not filename:
+        abort(400, description="Missing 'filename' in request body.")
+
+    try:
+        from utils import delete_students_from_bank
+        delete_students_from_bank(filename)
+        return jsonify({"success": True, "message": f"Successfully deleted '{filename}' from students bank."})
+    except NotFound as e:
+        return jsonify({'error': e.description or 'File not found'}), 404
+    except InternalServerError as e:
+        print(f"Internal error deleting students from bank '{filename}': {e}")
+        return jsonify({'error': e.description or 'Internal server error'}), 500
+    except Exception as e:
+        print(f"Error deleting students from bank: {e}")
+        return jsonify({'error': f'Internal server error deleting students from bank: {str(e)}'}), 500
 
 @admin_bp.route('/admin/students-bank/preview', methods=['POST'])
 def api_preview_students_bank_file():

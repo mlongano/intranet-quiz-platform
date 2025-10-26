@@ -10,6 +10,7 @@ import {
   loadScoresFromBank,
   saveScoresToBank,
   fetchPreviewScoresBankFile,
+  deleteScoresFromBank,
   BankOperationResponse,
   ScoresBankFilesResponse,
   ScoreEntry, // Import the ScoreEntry type for preview content
@@ -31,6 +32,7 @@ function AdminScoresBankPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [previewingFile, setPreviewingFile] = useState<string | null>(null); // State to track which file is being previewed
+  const [deleteConfirmFile, setDeleteConfirmFile] = useState<string | null>(null); // Track which file is awaiting delete confirmation
 
   const queryClient = useQueryClient(); // Get Query Client instance
 
@@ -154,6 +156,28 @@ function AdminScoresBankPage() {
     },
   });
 
+  // --- Mutation for Deleting a file from the scores bank ---
+  const deleteFileMutation = useMutation<BankOperationResponse, Error, string>({
+    mutationFn: (filename: string) => {
+      if (!adminPassword) {
+        throw new Error("Admin password not available.");
+      }
+      setError(null);
+      setMessage(null);
+      return deleteScoresFromBank(filename, adminPassword);
+    },
+    onSuccess: (data) => {
+      setMessage(data.message || "Scores file deleted successfully!");
+      setDeleteConfirmFile(null); // Reset confirmation state
+      // Refetch the list of scores bank files after deleting
+      queryClient.invalidateQueries({ queryKey: ["scoresBankFiles"] });
+    },
+    onError: (err: any) => {
+      setError(`Failed to delete scores file: ${err.message}`);
+      setDeleteConfirmFile(null); // Reset confirmation state even on error
+    },
+  });
+
   // --- Query for Previewing a file from the scores bank (triggered on demand) ---
   const {
     data: previewData,
@@ -200,6 +224,21 @@ function AdminScoresBankPage() {
     saveFileMutation.mutate(finalFilename);
   };
 
+  const handleDeleteClick = (filename: string) => {
+    // Set the file to delete confirmation state instead of using window.confirm
+    setDeleteConfirmFile(filename);
+  };
+
+  const handleDeleteConfirm = (filename: string) => {
+    // Trigger the delete mutation
+    deleteFileMutation.mutate(filename);
+  };
+
+  const handleDeleteCancel = () => {
+    // Cancel the delete operation
+    setDeleteConfirmFile(null);
+  };
+
   const handlePreviewClick = (filename: string) => {
     // Toggle previewing the selected file
     if (previewingFile === filename) {
@@ -217,6 +256,7 @@ function AdminScoresBankPage() {
     isLoadingFiles ||
     loadFileMutation.isPending ||
     saveFileMutation.isPending ||
+    deleteFileMutation.isPending ||
     isLoadingPreview;
   const currentError =
     error ||
@@ -321,7 +361,7 @@ function AdminScoresBankPage() {
                     </button>
                     <button
                       onClick={() => handleLoadClick(filename)}
-                      className="bg-yellow-500 text-white p-1 text-sm rounded disabled:bg-gray-400"
+                      className="bg-yellow-500 text-white p-1 text-sm rounded mr-2 disabled:bg-gray-400"
                       disabled={isLoading || !adminPassword}
                     >
                       {loadFileMutation.isPending &&
@@ -329,6 +369,34 @@ function AdminScoresBankPage() {
                         ? "Loading..."
                         : "Load"}
                     </button>
+                    {/* Delete Button with Inline Confirmation */}
+                    {deleteConfirmFile === filename ? (
+                      <span className="inline-flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded border border-yellow-300">
+                        <span className="text-sm text-gray-700 mr-1">Delete?</span>
+                        <button
+                          onClick={() => handleDeleteConfirm(filename)}
+                          className="bg-red-600 text-white px-2 py-1 text-xs rounded hover:bg-red-700"
+                          disabled={deleteFileMutation.isPending}
+                        >
+                          {deleteFileMutation.isPending ? "Deleting..." : "Yes"}
+                        </button>
+                        <button
+                          onClick={handleDeleteCancel}
+                          className="bg-gray-500 text-white px-2 py-1 text-xs rounded hover:bg-gray-600"
+                          disabled={deleteFileMutation.isPending}
+                        >
+                          No
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleDeleteClick(filename)}
+                        className="bg-red-500 text-white p-1 text-sm rounded disabled:bg-gray-400"
+                        disabled={isLoading || !adminPassword}
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </div>
                 {/* --- Preview Area --- */}

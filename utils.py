@@ -576,6 +576,54 @@ def delete_quiz_from_bank(filename: str):
         raise InternalServerError(description=f"Error deleting file from bank: {e}")
 
 
+def delete_scores_from_bank(filename: str):
+    """Deletes a specified scores file from the scores_bank."""
+    if not filename:
+        raise BadRequest(description="Filename is required.")
+
+    # Sanitize the filename
+    safe_filename = sanitize_filename(filename)
+
+    file_path = Path(SCORES_BANK_FOLDER) / safe_filename
+
+    if not file_path.exists():
+        raise NotFound(description=f"File '{safe_filename}' not found in '{SCORES_BANK_FOLDER}'.")
+
+    if not file_path.is_file():
+        raise BadRequest(description=f"'{safe_filename}' is not a file.")
+
+    try:
+        file_path.unlink()  # Delete the file
+        print(f"Deleted '{safe_filename}' from '{SCORES_BANK_FOLDER}'.")
+    except Exception as e:
+        print(f"Error deleting scores from bank: {e}")
+        raise InternalServerError(description=f"Error deleting file from bank: {e}")
+
+
+def delete_students_from_bank(filename: str):
+    """Deletes a specified students file from the students_bank."""
+    if not filename:
+        raise BadRequest(description="Filename is required.")
+
+    # Sanitize the filename
+    safe_filename = sanitize_filename(filename)
+
+    file_path = Path(STUDENTS_BANK_FOLDER) / safe_filename
+
+    if not file_path.exists():
+        raise NotFound(description=f"File '{safe_filename}' not found in '{STUDENTS_BANK_FOLDER}'.")
+
+    if not file_path.is_file():
+        raise BadRequest(description=f"'{safe_filename}' is not a file.")
+
+    try:
+        file_path.unlink()  # Delete the file
+        print(f"Deleted '{safe_filename}' from '{STUDENTS_BANK_FOLDER}'.")
+    except Exception as e:
+        print(f"Error deleting students from bank: {e}")
+        raise InternalServerError(description=f"Error deleting file from bank: {e}")
+
+
 def load_questions(filename: str = QUEST_FILE, lenient: bool = False):
     """Reads and returns the JSON content of a specified file with caching for default file.
 

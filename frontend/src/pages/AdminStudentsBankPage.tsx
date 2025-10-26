@@ -7,6 +7,7 @@ import {
   loadStudentsFromBank,
   saveStudentsToBank,
   previewStudentsBankFile,
+  deleteStudentsFromBank,
   StudentEntry,
 } from "../api";
 
@@ -19,6 +20,7 @@ function AdminStudentsBankPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [previewingFile, setPreviewingFile] = useState<string | null>(null);
+  const [deleteConfirmFile, setDeleteConfirmFile] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -127,6 +129,31 @@ function AdminStudentsBankPage() {
     },
   });
 
+  // Delete mutation
+  const deleteMutation = useMutation<
+    { success: boolean; message: string },
+    Error,
+    string
+  >({
+    mutationFn: (filename: string) => {
+      if (!adminPassword) {
+        throw new Error("Admin password not available.");
+      }
+      return deleteStudentsFromBank(filename, adminPassword);
+    },
+    onSuccess: (data) => {
+      setMessage(data.message || "Students file deleted successfully.");
+      setError(null);
+      setDeleteConfirmFile(null);
+      queryClient.invalidateQueries({ queryKey: ["studentsBankFiles"] });
+    },
+    onError: (err) => {
+      setError(`Delete failed: ${err.message}`);
+      setMessage(null);
+      setDeleteConfirmFile(null);
+    },
+  });
+
   const handleLoad = (filename: string) => {
     if (
       window.confirm(
@@ -152,6 +179,18 @@ function AdminStudentsBankPage() {
 
   const handleClosePreview = () => {
     setPreviewingFile(null);
+  };
+
+  const handleDeleteClick = (filename: string) => {
+    setDeleteConfirmFile(filename);
+  };
+
+  const handleDeleteConfirm = (filename: string) => {
+    deleteMutation.mutate(filename);
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteConfirmFile(null);
   };
 
   // Email validation helper
@@ -283,6 +322,34 @@ function AdminStudentsBankPage() {
                   >
                     {loadMutation.isPending ? "Loading..." : "Load"}
                   </button>
+                  {/* Delete Button with Inline Confirmation */}
+                  {deleteConfirmFile === file ? (
+                    <span className="inline-flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded border border-yellow-300">
+                      <span className="text-sm text-gray-700 mr-1">Delete?</span>
+                      <button
+                        onClick={() => handleDeleteConfirm(file)}
+                        className="bg-red-600 text-white px-2 py-1 text-xs rounded hover:bg-red-700"
+                        disabled={deleteMutation.isPending}
+                      >
+                        {deleteMutation.isPending ? "Deleting..." : "Yes"}
+                      </button>
+                      <button
+                        onClick={handleDeleteCancel}
+                        className="bg-gray-500 text-white px-2 py-1 text-xs rounded hover:bg-gray-600"
+                        disabled={deleteMutation.isPending}
+                      >
+                        No
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => handleDeleteClick(file)}
+                      className="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50"
+                      disabled={loadMutation.isPending || deleteMutation.isPending}
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

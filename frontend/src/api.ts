@@ -439,6 +439,23 @@ export async function saveScoresToBank(
 }
 
 /**
+ * Deletes a specified scores file from the scores_bank.
+ */
+export async function deleteScoresFromBank(
+  filename: string,
+  password: string,
+): Promise<BankOperationResponse> {
+  const response = await fetch(`${API_BASE}/admin/scores-bank/delete`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ filename: filename, pw: password }),
+  });
+  return handleResponse<BankOperationResponse>(response);
+}
+
+/**
  * Fetches the content (scores) of a specific file in the scores_bank for preview.
  * Requires admin password and the filename to preview.
  */
@@ -679,6 +696,23 @@ export async function saveStudentsToBank(
     body: JSON.stringify({ filename, pw: password }),
   });
   return handleResponse<{ success: boolean; message: string }>(response);
+}
+
+/**
+ * Deletes a specified students file from the students_bank.
+ */
+export async function deleteStudentsFromBank(
+  filename: string,
+  password: string,
+): Promise<BankOperationResponse> {
+  const response = await fetch(`${API_BASE}/admin/students-bank/delete`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ filename: filename, pw: password }),
+  });
+  return handleResponse<BankOperationResponse>(response);
 }
 
 /**
