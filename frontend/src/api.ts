@@ -616,3 +616,68 @@ export async function previewStudentsBankFile(
   });
   return handleResponse<{ students: StudentEntry[]; filename: string }>(response);
 }
+
+/**
+ * Git Sync Types and Functions
+ */
+export interface GitSyncStatus {
+  configured: boolean;
+  initialized: boolean;
+  remote_url: string | null;
+  has_changes: boolean;
+  last_commit: string | null;
+  behind_remote: boolean;
+}
+
+export interface GitSyncResult {
+  success: boolean;
+  message: string;
+  details?: {
+    pulled: boolean;
+    committed: boolean;
+    pushed: boolean;
+    changes: string[];
+  };
+}
+
+/**
+ * Get Git sync status.
+ */
+export async function getGitSyncStatus(password: string): Promise<GitSyncStatus> {
+  const response = await fetch(`${API_BASE}/admin/git-sync/status`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ password }),
+  });
+  return handleResponse<GitSyncStatus>(response);
+}
+
+/**
+ * Initialize Git repository in banks directory.
+ */
+export async function initGitSync(password: string): Promise<GitSyncResult> {
+  const response = await fetch(`${API_BASE}/admin/git-sync/init`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ password }),
+  });
+  return handleResponse<GitSyncResult>(response);
+}
+
+/**
+ * Sync banks with remote Git repository.
+ */
+export async function syncBanks(password: string, pullFirst: boolean = true): Promise<GitSyncResult> {
+  const response = await fetch(`${API_BASE}/admin/git-sync/sync`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ password, pull_first: pullFirst }),
+  });
+  return handleResponse<GitSyncResult>(response);
+}

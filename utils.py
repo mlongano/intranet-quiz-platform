@@ -17,9 +17,10 @@ SCORE_FILE = 'scores.jsonc'
 STUDENTS_FILE = 'students.jsonc'
 QUIZ_FOLDER = 'quizzes'
 IMAGES_FOLDER = 'images'
-QUESTION_BANK_FOLDER = 'question_bank' # New constant for the question bank directory
-SCORES_BANK_FOLDER = 'scores_bank'     # NEW: Directory for scores bank files
-STUDENTS_BANK_FOLDER = 'students_bank' # NEW: Directory for students bank files
+BANKS_BASE = 'banks' # NEW: Base directory for all banks
+QUESTION_BANK_FOLDER = os.path.join(BANKS_BASE, 'question_bank') # Question bank directory
+SCORES_BANK_FOLDER = os.path.join(BANKS_BASE, 'scores_bank')     # Scores bank directory
+STUDENTS_BANK_FOLDER = os.path.join(BANKS_BASE, 'students_bank') # Students bank directory
 
 # --- Cache for questions (reduce disk I/O) ---
 _questions_cache = None
@@ -36,6 +37,7 @@ if not ADMIN_PW:
 
 
 os.makedirs(QUIZ_FOLDER, exist_ok=True) # Ensure QUIZ_FOLDER exists
+os.makedirs(BANKS_BASE, exist_ok=True) # NEW: Ensure banks base folder exists
 os.makedirs(QUESTION_BANK_FOLDER, exist_ok=True) # Ensure question_bank folder exists
 os.makedirs(SCORES_BANK_FOLDER, exist_ok=True) # NEW: Ensure scores_bank folder exists
 os.makedirs(STUDENTS_BANK_FOLDER, exist_ok=True) # NEW: Ensure students_bank folder exists
@@ -43,9 +45,25 @@ os.makedirs(STUDENTS_BANK_FOLDER, exist_ok=True) # NEW: Ensure students_bank fol
 # --- Load initial student data ---
 try:
     with open(STUDENTS_FILE, encoding='utf-8') as f:
-        VALID_STUDENTS = {s.lower() for s in json.load(f)}
-    if not VALID_STUDENTS:
-        print(f"Warning: No valid students found in {STUDENTS_FILE}. Quiz start may fail.")
+        students_data = json.load(f)
+        VALID_STUDENTS = set()
+
+        # Handle different student formats
+        for item in students_data:
+            if isinstance(item, str):
+                # Simple string format: "email@example.com"
+                VALID_STUDENTS.add(item.lower())
+            elif isinstance(item, dict):
+                if 'email' in item:
+                    # Individual format: {"email": "...", "group": "..."}
+                    VALID_STUDENTS.add(item['email'].lower())
+                elif 'emails' in item:
+                    # Group format: {"group": "...", "emails": [...]}
+                    for email in item.get('emails', []):
+                        VALID_STUDENTS.add(email.lower())
+
+        if not VALID_STUDENTS:
+            print(f"Warning: No valid students found in {STUDENTS_FILE}. Quiz start may fail.")
 except FileNotFoundError:
     print(f"Error: {STUDENTS_FILE} not found. Quiz start will likely fail.")
     VALID_STUDENTS = set()

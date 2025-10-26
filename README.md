@@ -35,6 +35,11 @@ lan_quiz/     # project root directory
 │
 ├─ scores.jsonc  # submissions
 │
+├─ banks/          # New: All banks in one directory for cloud sync
+│  ├─ question_bank/  # Saved question sets
+│  ├─ scores_bank/    # Score archives
+│  └─ students_bank/  # Student lists
+│
 ├─ static/      # legacy frontend
 ├── index.html  # student UI
 ├── admin.html  # admin dashboard
@@ -399,7 +404,164 @@ The Students Bank allows you to save and restore different student lists (e.g., 
 - Maintain multiple student lists without manual file editing
 - Preview before loading to avoid mistakes
 
+## Cloud Sync for Banks
+
+QuizParty now supports cloud synchronization for all your banks (questions, scores, and students) using Git. This allows you to:
+
+- **Backup all banks** to GitHub, GitLab, or any Git repository
+- **Share banks** across multiple machines or with colleagues
+- **Version control** your quiz data with full history
+- **Sync automatically** from the admin dashboard
+
+### Setting Up Cloud Sync
+
+#### 1. Create a Git Repository
+
+Create a new private repository on GitHub or GitLab (recommended to keep it private for student data).
+
+**Example for GitHub:**
+
+- Go to <https://github.com/new>
+- Name: `quizparty-banks` (or any name you prefer)
+- Select **Private** repository
+- Do NOT initialize with README or .gitignore
+- Copy the repository URL (e.g., `https://github.com/yourusername/quizparty-banks.git`)
+
+#### 2. Generate a Personal Access Token
+
+For GitHub:
+
+- Go to <https://github.com/settings/tokens>
+- Click "Generate new token (classic)"
+- Name: `QuizParty Sync`
+- Expiration: Choose "No expiration" or set a long duration (tokens can expire!)
+- Select scope: **`repo`** (Full control of private repositories)
+- Generate and copy the token (you won't see it again!)
+
+For GitLab:
+
+- Go to <https://gitlab.com/-/profile/personal_access_tokens>
+- Name: `QuizParty Sync`
+- Select scope: `write_repository`
+- Create and copy the token
+
+**Important**: Keep your token secure and never commit it to Git!
+
+#### 3. Configure Environment Variables
+
+Edit your `.env` file and add:
+
+```sh
+# Git Cloud Sync Configuration
+BANKS_GIT_REMOTE=https://github.com/yourusername/quizparty-banks.git
+BANKS_GIT_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+Replace:
+
+- `yourusername/quizparty-banks.git` with your repository URL
+- `ghp_xxx...` with your personal access token
+
+**Note**: `BANKS_GIT_USERNAME` is optional and only used for Git commit author name. The token alone is sufficient for authentication.
+
+#### 4. Initialize and Sync
+
+Restart the server to load the new configuration:
+
+```sh
+# Stop the server (Ctrl+C) and restart
+uv run server.py
+```
+
+In the admin dashboard:
+
+1. Go to the **Archives card** (in the statistics section)
+2. Click **"☁️ Initialize Sync"** button at the bottom of the card (first time only)
+3. From now on, click **"☁️ Sync to Cloud"** to synchronize all changes
+4. The button shows the last commit timestamp for reference
+
+### How It Works
+
+- The `banks/` directory contains all three banks: `question_bank/`, `scores_bank/`, and `students_bank/`
+- This directory has its own Git repository, separate from the main codebase
+- When you sync:
+  1. **Pull**: Gets latest changes from the cloud
+  2. **Commit**: Saves your local changes
+  3. **Push**: Uploads to the cloud repository
+
+### Migration from Old Structure
+
+If you have existing banks in the old structure (`question_bank/`, `scores_bank/`, `students_bank/` at the root), you need to migrate them to the new `banks/` directory.
+
+**Automatic migration** (recommended):
+
+Use the provided migration scripts:
+
+```sh
+# macOS/Linux
+./migrate_banks.sh
+
+# Windows (PowerShell)
+.\migrate_banks.ps1
+```
+
+The scripts will:
+
+- Create the `banks/` directory if it doesn't exist
+- Move all files from old bank directories to `banks/question_bank/`, `banks/scores_bank/`, `banks/students_bank/`
+- Remove empty old directories
+- Warn you if files already exist in the destination
+
+**Manual migration**:
+
+If you prefer to migrate manually:
+
+```sh
+# macOS/Linux
+mkdir -p banks
+mv question_bank banks/
+mv scores_bank banks/
+mv students_bank banks/
+
+# Windows (PowerShell)
+New-Item -ItemType Directory -Force -Path banks
+Move-Item question_bank banks/
+Move-Item scores_bank banks/
+Move-Item students_bank banks/
+```
+
+After migration, restart the server. Your banks will now be in the correct location and ready for cloud sync.
+
+### Tips
+
+- **Regular syncing**: Click "Sync to Cloud" in the Archives card to keep your cloud backup up to date
+- **Multiple machines**: Set up the same repository on different computers to share banks
+- **Privacy**: Keep your repository private if it contains student data
+- **Token security**: Never commit your `.env` file or share your personal access token
+- **Conflict resolution**: If changes conflict, the latest cloud version takes precedence (pull first)
+- **Sync location**: The sync button is in the Archives card on the dashboard for easy access
+
 ## Troubleshooting
+
+### Cloud Sync Issues
+
+- **"Invalid username or token"**: Your GitHub token has expired or is invalid
+  - Generate a new token at <https://github.com/settings/tokens>
+  - Make sure to select the `repo` scope
+  - Update `BANKS_GIT_TOKEN` in your `.env` file
+  - Restart the server
+- **"Authentication failed"**:
+  - Verify your token is correct in the `.env` file
+  - Make sure the token hasn't expired (set "No expiration" when creating)
+  - Check that the repository URL is correct
+- **Sync button not showing**:
+  - Make sure `BANKS_GIT_REMOTE` and `BANKS_GIT_TOKEN` are set in `.env`
+  - Restart the server to load new environment variables
+  - Check browser console (F12) for error messages
+- **"Pull failed" or "Push failed"**:
+  - Check your internet connection
+  - Verify the repository exists and you have access
+  - Try manually: `cd banks && git remote -v` to see if remote is configured
 
 ### Email Issues
 
@@ -414,6 +576,10 @@ The Students Bank allows you to save and restore different student lists (e.g., 
 
 - **"Unknown student"**: The student email must be listed in `students.jsonc` exactly as typed
 - **Server restart required**: After editing `students.jsonc`, restart the server for changes to take effect
+- **Students file format error**: Make sure your `students.jsonc` uses one of the supported formats:
+  - Simple strings: `["email@example.com", ...]`
+  - Objects with email: `[{"email": "...", "group": "..."}, ...]`
+  - Groups: `[{"group": "...", "emails": [...]}, ...]`
 
 ### Score Issues
 
@@ -445,7 +611,7 @@ The Students Bank allows you to save and restore different student lists (e.g., 
 - [ ] Implement a feedback system for students
 - [ ] Add support for more question types (e.g., matching, fill-in-the-blank)
 - [ ] Use a database instead of JSONC files for better scalability
-- [ ] Add cloud backup support for scores, questions and students banks
+- [x] Add cloud backup support for scores, questions and students banks (Git-based sync implemented)
 
 ## License
 

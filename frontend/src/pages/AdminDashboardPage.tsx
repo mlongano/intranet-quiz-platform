@@ -1,7 +1,7 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchScores, fetchStudents, fetchAdminQuestions, fetchQuestionBankFiles, fetchScoresBankFiles, listStudentsBankFiles } from "../api";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { fetchScores, fetchStudents, fetchAdminQuestions, fetchQuestionBankFiles, fetchScoresBankFiles, listStudentsBankFiles, getGitSyncStatus, initGitSync, syncBanks } from "../api";
 
 export default function AdminRootPage() {
   const location = useLocation();
@@ -13,6 +13,9 @@ export default function AdminRootPage() {
   const [countdown, setCountdown] = useState(30);
   const [showPendingModal, setShowPendingModal] = useState(false);
   const [showSubmittedModal, setShowSubmittedModal] = useState(false);
+  const [showSyncModal, setShowSyncModal] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string>("");
+  const [syncError, setSyncError] = useState<string>("");
 
   // Validate password on mount
   useEffect(() => {
@@ -90,6 +93,78 @@ export default function AdminRootPage() {
     queryFn: () => listStudentsBankFiles(adminPassword),
     enabled: !!adminPassword && !isValidating,
   });
+
+  // Git sync status query
+  const { data: syncStatus, refetch: refetchSyncStatus, error: syncStatusError, isLoading: syncStatusLoading } = useQuery({
+    queryKey: ["gitSyncStatus", adminPassword],
+    queryFn: () => getGitSyncStatus(adminPassword),
+    enabled: !!adminPassword && !isValidating,
+    retry: false,
+  });
+
+  // Debug: Log sync status
+  useEffect(() => {
+    console.log('[Git Sync] Query status:', {
+      loading: syncStatusLoading,
+      data: syncStatus,
+      error: syncStatusError
+    });
+    if (syncStatus) {
+      console.log('[Git Sync] Status received:', syncStatus);
+    }
+    if (syncStatusError) {
+      console.error('[Git Sync] Status Error:', syncStatusError);
+    }
+  }, [syncStatus, syncStatusError, syncStatusLoading]);
+
+  // Git sync mutations
+  const initMutation = useMutation({
+    mutationFn: () => initGitSync(adminPassword),
+    onSuccess: (data) => {
+      setSyncMessage(data.message);
+      setSyncError("");
+      setShowSyncModal(true);
+      refetchSyncStatus();
+    },
+    onError: (error: any) => {
+      setSyncError(error.message || "Failed to initialize Git sync");
+      setSyncMessage("");
+      setShowSyncModal(true);
+    },
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: () => syncBanks(adminPassword, true),
+    onSuccess: (data) => {
+      setSyncMessage(data.message);
+      setSyncError("");
+      setShowSyncModal(true);
+      refetchSyncStatus();
+      // Refetch bank data after sync
+      queryClient.invalidateQueries({ queryKey: ["questionBankFiles"] });
+      queryClient.invalidateQueries({ queryKey: ["scoresBankFiles"] });
+      queryClient.invalidateQueries({ queryKey: ["studentsBankFiles"] });
+    },
+    onError: (error: any) => {
+      setSyncError(error.message || "Failed to sync banks");
+      setSyncMessage("");
+      setShowSyncModal(true);
+    },
+  });
+
+  const handleGitSync = () => {
+    if (!syncStatus?.configured) {
+      setSyncError("Cloud sync not configured. Please set BANKS_GIT_REMOTE, BANKS_GIT_USERNAME, and BANKS_GIT_TOKEN in your .env file.");
+      setShowSyncModal(true);
+      return;
+    }
+
+    if (!syncStatus?.initialized) {
+      initMutation.mutate();
+    } else {
+      syncMutation.mutate();
+    }
+  };
 
   // Show loading while validating
   if (isValidating) {
@@ -173,12 +248,14 @@ export default function AdminRootPage() {
               <h1 className="text-3xl font-bold">QuizParty Admin</h1>
               <p className="text-teal-100 text-sm mt-1">Quiz Management Dashboard</p>
             </div>
-            <button
-              onClick={() => navigate("/")}
-              className="px-4 py-2 bg-white text-teal-700 font-medium rounded-lg hover:bg-teal-50 transition-colors"
-            >
-              View Quiz
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={() => navigate("/")}
+                className="px-4 py-2 bg-white text-teal-700 font-medium rounded-lg hover:bg-teal-50 transition-colors"
+              >
+                View Quiz
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -268,44 +345,77 @@ export default function AdminRootPage() {
 
           <button
             onClick={() => navigateTo("/admin/bank")}
-            className="bg-white rounded-lg shadow-md p-6 border-l-4 border-orange-500 hover:shadow-lg transition-shadow text-left flex items-start justify-between cursor-pointer"
+            className="bg-white rounded-lg shadow-md p-6 border-l-4 border-orange-500 hover:shadow-lg transition-shadow text-left flex flex-col cursor-pointer"
           >
-            <div>
-              <p className="text-orange-600 text-base font-bold">Archives</p>
-              <p className="text-2xl font-bold text-gray-800 mt-1">
-                {(questionBankFiles?.files?.length || 0) + (scoresBankFiles?.files?.length || 0) + (studentsBankFiles?.files?.length || 0)}
-              </p>
-              <div className="text-gray-600 text-xs mt-2 space-y-1">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigateTo("/admin/bank");
-                  }}
-                  className="block hover:text-blue-600 hover:underline cursor-pointer"
-                >
-                  {questionBankFiles?.files?.length || 0} questions
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigateTo("/admin/scores-bank");
-                  }}
-                  className="block hover:text-green-600 hover:underline cursor-pointer"
-                >
-                  {scoresBankFiles?.files?.length || 0} scores
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigateTo("/admin/students-bank");
-                  }}
-                  className="block hover:text-purple-600 hover:underline cursor-pointer"
-                >
-                  {studentsBankFiles?.files?.length || 0} students
-                </button>
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <p className="text-orange-600 text-base font-bold">Archives</p>
+                <p className="text-2xl font-bold text-gray-800 mt-1">
+                  {(questionBankFiles?.files?.length || 0) + (scoresBankFiles?.files?.length || 0) + (studentsBankFiles?.files?.length || 0)}
+                </p>
+                <div className="text-gray-600 text-xs mt-2 space-y-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigateTo("/admin/bank");
+                    }}
+                    className="block hover:text-blue-600 hover:underline cursor-pointer"
+                  >
+                    {questionBankFiles?.files?.length || 0} questions
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigateTo("/admin/scores-bank");
+                    }}
+                    className="block hover:text-green-600 hover:underline cursor-pointer"
+                  >
+                    {scoresBankFiles?.files?.length || 0} scores
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigateTo("/admin/students-bank");
+                    }}
+                    className="block hover:text-purple-600 hover:underline cursor-pointer"
+                  >
+                    {studentsBankFiles?.files?.length || 0} students
+                  </button>
+                </div>
               </div>
+              <div className="text-orange-500 text-4xl">🗄️</div>
             </div>
-            <div className="text-orange-500 text-4xl">🗄️</div>
+
+            {/* Sync Button */}
+            {syncStatus?.configured && (
+              <div className="border-t border-orange-200 pt-3 mt-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleGitSync();
+                  }}
+                  disabled={initMutation.isPending || syncMutation.isPending}
+                  className="w-full px-3 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 text-white text-sm font-medium rounded-lg hover:from-teal-700 hover:to-cyan-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  title={syncStatus.initialized ? 'Sync banks to cloud' : 'Initialize cloud sync'}
+                >
+                  {(initMutation.isPending || syncMutation.isPending) ? (
+                    <>
+                      <span className="inline-block animate-spin">⟳</span>
+                      Syncing...
+                    </>
+                  ) : (
+                    <>
+                      ☁️ {syncStatus.initialized ? 'Sync to Cloud' : 'Initialize Sync'}
+                    </>
+                  )}
+                </button>
+                {syncStatus.initialized && syncStatus.last_commit && (
+                  <p className="text-xs text-gray-500 mt-2 text-center">
+                    Last: {syncStatus.last_commit}
+                  </p>
+                )}
+              </div>
+            )}
           </button>
         </div>
 
@@ -473,6 +583,69 @@ export default function AdminRootPage() {
               <button
                 onClick={() => setShowSubmittedModal(false)}
                 className="px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Git Sync Modal */}
+      {showSyncModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full overflow-hidden flex flex-col">
+            <div className={`${syncError ? 'bg-red-500' : 'bg-teal-500'} text-white px-6 py-4 flex justify-between items-center`}>
+              <h2 className="text-xl font-bold">
+                {syncError ? '❌ Sync Failed' : '✅ Sync Complete'}
+              </h2>
+              <button
+                onClick={() => setShowSyncModal(false)}
+                className="text-white hover:text-gray-100 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              {syncError ? (
+                <div className="text-red-700 bg-red-50 p-4 rounded-lg border border-red-200">
+                  <p className="font-semibold mb-2">Error:</p>
+                  <p className="whitespace-pre-wrap">{syncError}</p>
+                </div>
+              ) : (
+                <div className="text-teal-700 bg-teal-50 p-4 rounded-lg border border-teal-200">
+                  <p className="whitespace-pre-wrap">{syncMessage}</p>
+                </div>
+              )}
+              {syncStatus && (
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200 text-sm">
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Status:</span>
+                      <span className="font-medium">
+                        {syncStatus.initialized ? '✓ Initialized' : '○ Not initialized'}
+                      </span>
+                    </div>
+                    {syncStatus.last_commit && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Last commit:</span>
+                        <span className="font-medium text-xs">{syncStatus.last_commit}</span>
+                      </div>
+                    )}
+                    {syncStatus.remote_url && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Remote:</span>
+                        <span className="font-medium text-xs">{syncStatus.remote_url}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="bg-gray-50 px-6 py-4 flex justify-end border-t">
+              <button
+                onClick={() => setShowSyncModal(false)}
+                className={`px-6 py-2 ${syncError ? 'bg-red-500 hover:bg-red-600' : 'bg-teal-500 hover:bg-teal-600'} text-white rounded-lg transition-colors font-medium`}
               >
                 Close
               </button>

@@ -895,3 +895,75 @@ def api_preview_students_bank_file():
     except Exception as e:
         print(f"Error previewing students bank file: {e}")
         abort(500, description=f"Failed to preview file: {str(e)}")
+
+
+# ===========================
+# Git Sync Endpoints
+# ===========================
+
+@admin_bp.route('/admin/git-sync/status', methods=['POST'])
+def api_git_sync_status():
+    """Get Git sync configuration and status"""
+    print("\n[API] Git sync status request received")
+    password = request.json.get('password')
+    if password != ADMIN_PW:
+        print("[API] Git sync status: Authentication failed")
+        abort(403, description="Admin authentication failed.")
+
+    try:
+        from git_sync import get_sync_status
+        status = get_sync_status()
+        print(f"[API] Git sync status response: {status}")
+        return jsonify(status)
+    except Exception as e:
+        print(f"[API] Error getting Git sync status: {e}")
+        import traceback
+        traceback.print_exc()
+        abort(500, description=f"Failed to get sync status: {str(e)}")
+
+
+@admin_bp.route('/admin/git-sync/init', methods=['POST'])
+def api_git_sync_init():
+    """Initialize Git repository in banks directory"""
+    password = request.json.get('password')
+    if password != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    try:
+        from git_sync import init_git_repo
+        result = init_git_repo()
+        if result['success']:
+            return jsonify(result)
+        else:
+            abort(400, description=result['message'])
+    except Exception as e:
+        print(f"Error initializing Git sync: {e}")
+        abort(500, description=f"Failed to initialize: {str(e)}")
+
+
+@admin_bp.route('/admin/git-sync/sync', methods=['POST'])
+def api_git_sync():
+    """Sync banks with remote Git repository"""
+    print("\n[API] Git sync request received")
+    password = request.json.get('password')
+    if password != ADMIN_PW:
+        print("[API] Git sync: Authentication failed")
+        abort(403, description="Admin authentication failed.")
+
+    pull_first = request.json.get('pull_first', True)
+    print(f"[API] Starting sync (pull_first={pull_first})")
+
+    try:
+        from git_sync import sync_banks
+        result = sync_banks(pull_first=pull_first)
+        print(f"[API] Sync result: {result}")
+        if result['success']:
+            return jsonify(result)
+        else:
+            print(f"[API] Sync failed: {result['message']}")
+            abort(400, description=result['message'])
+    except Exception as e:
+        print(f"[API] Error syncing banks: {e}")
+        import traceback
+        traceback.print_exc()
+        abort(500, description=f"Failed to sync: {str(e)}")

@@ -78,8 +78,9 @@ Centralized API communication with TypeScript interfaces:
 - Score management and recalculation
 - Email sending (single and bulk)
 - Student list management (GET/PUT)
-- Bank file management (questions, scores, students)
-- Preview functionality for all bank types
+- **Bank file management (questions, scores, students)**
+- **Preview functionality for all bank types**
+- **Git cloud sync operations (status, init, sync)**
 
 ### State Management
 
@@ -143,7 +144,7 @@ pnpm lint
   - Current Quiz card - Shows quiz title, question count, links to editor
   - Submissions card - Auto-refreshes every 30s, shows submitted/pending counts
   - Students card - Shows enrolled count, links to management
-  - Archives card - Shows total with breakdown (questions/scores/students)
+  - Archives card - Shows total with breakdown (questions/scores/students) + Cloud Sync button
 - **Interactive Elements**:
   - All cards clickable for quick navigation
   - Submission counts link to modals showing student lists
@@ -153,6 +154,29 @@ pnpm lint
   - View list of students who haven't submitted
   - View list of students who have submitted
   - Color-coded themes (orange for pending, green for submitted)
+- **Cloud Sync Integration**:
+  - Sync button integrated into Archives card
+  - Shows sync status (Initialize/Sync to Cloud)
+  - Displays last commit timestamp
+  - Visual feedback during sync operations
+
+### Cloud Sync Features
+
+- **Git-based Synchronization**:
+  - Sync all three banks (questions, scores, students) to GitHub/GitLab
+  - Token-based authentication (secure, no password storage)
+  - Automatic commit with timestamps
+  - Pull-before-push workflow to prevent conflicts
+- **UI Integration**:
+  - Sync button in Archives card on dashboard
+  - Loading states with animated spinner
+  - Success/error modals with detailed feedback
+  - Last commit info display
+  - Configuration status indicators
+- **Smart Error Handling**:
+  - Detailed error messages for authentication failures
+  - Automatic retry for transient errors
+  - Clear instructions for token renewal
 
 ### Students Management
 
@@ -160,10 +184,12 @@ pnpm lint
   - Simple: `"email@example.com"`
   - Individual: `{ "email": "...", "group": "5CI" }`
   - Group: `{ "group": "5CI", "emails": ["...", "..."] }`
+  - Automatic parsing handles mixed formats in same file
 - **Live Preview**: Students grouped by class/section
 - **Email Validation**: Visual indicators (✓ valid, ✗ invalid)
 - **Bank Management**: Save/load different student lists
 - **Collapsible Format Guide**: Help section with examples
+- **Server-side Format Support**: Backend correctly parses all three formats
 
 ### Quiz Title Support
 
@@ -263,6 +289,20 @@ Filenames use local timezone with format:
 - Scores: `YYYY-MM-DD_HH-MM_risultati_title.jsonc`
 
 ## Troubleshooting
+
+### Cloud Sync Issues
+
+- **Sync button not visible**:
+  - Verify `BANKS_GIT_REMOTE` and `BANKS_GIT_TOKEN` are set in backend `.env`
+  - Restart the backend server
+  - Check browser console for API errors
+- **"Invalid username or token"**:
+  - GitHub token may have expired
+  - Generate new token at <https://github.com/settings/tokens>
+  - Update `.env` and restart server
+- **Sync fails silently**:
+  - Check backend server logs for detailed error messages
+  - Verify repository exists and is accessible
 
 ### Port Already in Use
 

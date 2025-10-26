@@ -13,9 +13,10 @@ wheels/
 quizzes/
 frontend/pnpm-workspace.yaml
 question*
-question_bank/
 *.bak
 students*
 .DS_Store
 scores*
 
+# Banks directory - synced separately with Git
+banks/
