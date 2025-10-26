@@ -71,6 +71,9 @@ export interface DetailedAnswer {
   raw_points: number;
   raw_student_answer: any;
   raw_correct_answer: any;
+  // Optional LLM evaluation fields (teacher-only)
+  llm_feedback?: string | null;
+  llm_verdict?: string | null;
 }
 
 export interface ScoreEntry {

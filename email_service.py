@@ -24,7 +24,7 @@ def is_valid_email(email: str) -> bool:
     return bool(re.match(pattern, email))
 
 
-def format_quiz_results_html(submission: dict, include_details: bool = True, subject: str = "Risultati del Quiz") -> str:
+def format_quiz_results_html(submission: dict, include_details: bool = True, subject: str = "Risultati del Quiz", show_admin_feedback: bool = False) -> str:
     """
     Format quiz submission data as HTML email content.
 
@@ -121,6 +121,14 @@ def format_quiz_results_html(submission: dict, include_details: bool = True, sub
             else:
                 correct_ans_str = str(correct_ans)
 
+            # Add LLM feedback/verdict only if explicitly allowed (admin view)
+            admin_feedback_html = ""
+            if show_admin_feedback:
+                llm_fb = answer.get('llm_feedback')
+                llm_vd = answer.get('llm_verdict')
+                if llm_fb or llm_vd:
+                    admin_feedback_html = f"<p><em>Feedback (teacher only):</em> {llm_vd or ''} - {llm_fb or ''}</p>"
+
             html += f"""
         <div class="question">
             <h3>Domanda {idx}</h3>
@@ -157,7 +165,7 @@ def format_quiz_results_html(submission: dict, include_details: bool = True, sub
     return html
 
 
-def send_quiz_result_email(student_email: str, submission: dict, custom_subject: Optional[str] = None, include_details: bool = True) -> tuple[bool, str]:
+def send_quiz_result_email(student_email: str, submission: dict, custom_subject: Optional[str] = None, include_details: bool = True, show_admin_feedback: bool = False) -> tuple[bool, str]:
     """
     Send quiz results to student via email.
 
@@ -201,7 +209,7 @@ def send_quiz_result_email(student_email: str, submission: dict, custom_subject:
         print(f"[EMAIL] Message created with subject: {msg['Subject']}")
 
         # Generate HTML content with or without details
-        html_content = format_quiz_results_html(submission, include_details, msg['Subject'])
+        html_content = format_quiz_results_html(submission, include_details, msg['Subject'], show_admin_feedback)
         html_part = MIMEText(html_content, 'html')
         msg.attach(html_part)
 

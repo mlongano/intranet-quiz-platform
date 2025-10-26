@@ -11,4 +11,5 @@ dependencies = [
     "python-dotenv>=1.1.0",
     "python-magic>=0.4.27",
     "waitress>=3.0.2",
+    "requests>=2.31.0",
 ]

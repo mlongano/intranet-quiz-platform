@@ -178,7 +178,12 @@ def api_submit():
     calc_results = grade(answers, plan, qbank)
 
     detailed_answers = format_detailed_answers(
-        plan, qbank_map, answers, calc_results.get('scores_per_question', [])
+        plan,
+        qbank_map,
+        answers,
+        calc_results.get('scores_per_question', []),
+        calc_results.get('feedbacks_per_question', []),
+        calc_results.get('verdicts_per_question', [])
     )
 
     scores.append({

@@ -856,6 +856,8 @@ def grade(answers: list, plan: dict, qbank: dict) -> dict:
     total = 0.0
     maximum = 0.0
     per_question_scores = []
+    per_question_feedbacks = []
+    per_question_verdicts = []
     qbank_map = {q['id']: q for q in qbank}
 
     for i, step in enumerate(plan.get('plan', [])):
@@ -865,6 +867,7 @@ def grade(answers: list, plan: dict, qbank: dict) -> dict:
         if not q_id or q_id not in qbank_map:
             print(f"Warning: Question ID '{q_id}' from plan step {i} not found in question bank.")
             per_question_scores.append(question_score) # Append 0 score for missing question
+            per_question_feedbacks.append(None)
             continue # Skip processing this step
 
         q = qbank_map[q_id]
@@ -882,9 +885,32 @@ def grade(answers: list, plan: dict, qbank: dict) -> dict:
 
         q_type = q.get('type')
         if q_type == 'open':
-            open_score_fraction = score_open(user_ans or '', q)
-            question_score = w * open_score_fraction
-        elif q_type == 'single':
+            import os
+            use_llm = os.getenv('USE_LLM_EVAL', '0') == '1'
+            llm_feedback = None
+            llm_verdict = None
+            if use_llm:
+                try:
+                    from llm_evaluator import evaluate_open_question
+                    correct_answers = q.get('acceptable') or q.get('keywords') or []
+                    llm_result = evaluate_open_question(q.get('text', ''), user_ans or '', correct_answers)
+                    open_score_fraction = float(llm_result.get('score', 0))
+                    question_score = w * open_score_fraction
+                    llm_feedback = llm_result.get('llm_feedback')
+                    llm_verdict = llm_result.get('verdict')
+                except Exception as e:
+                    print(f"LLM evaluation failed: {e}. Falling back to classic scoring.")
+                    open_score_fraction = score_open(user_ans or '', q)
+                    question_score = w * open_score_fraction
+            else:
+                open_score_fraction = score_open(user_ans or '', q)
+                question_score = w * open_score_fraction
+            per_question_feedbacks.append(llm_feedback)
+            per_question_verdicts.append(llm_verdict)
+        else:
+            per_question_feedbacks.append(None)
+            per_question_verdicts.append(None)
+        if q_type == 'single':
             original_correct_index = q.get('correct')
             shuffled_options = step.get('option_order', [])
             if original_correct_index is not None and isinstance(shuffled_options, list):
@@ -929,7 +955,9 @@ def grade(answers: list, plan: dict, qbank: dict) -> dict:
         'raw_points': round(total, 2),
         'max_points': maximum,
         'percent': round(total / maximum * 100, 2) if maximum else 0,
-        'scores_per_question': per_question_scores # Include the list of scores
+        'scores_per_question': per_question_scores, # Include the list of scores
+        'feedbacks_per_question': per_question_feedbacks,
+        'verdicts_per_question': per_question_verdicts
     }
 
 # --- Helper Functions for api_submit and others ---
@@ -1005,7 +1033,7 @@ def find_plan_by_quiz_id(quiz_id, folder_path):
             continue
     return None, None, None
 
-def format_detailed_answers(plan, qbank_map, answers, scores_list):
+def format_detailed_answers(plan, qbank_map, answers, scores_list, feedbacks_list=None, verdicts_list=None):
     """Formats answers for detailed storage."""
     detailed_answers = []
     plan_steps = plan.get('plan', [])
@@ -1021,6 +1049,12 @@ def format_detailed_answers(plan, qbank_map, answers, scores_list):
         question_text = "[Question not found]"
         question_image_path = None # <-- NEW: Store question image path
         points = scores_list[i] if i < len(scores_list) else 0
+        llm_feedback = None
+        llm_verdict = None
+        if feedbacks_list and i < len(feedbacks_list):
+            llm_feedback = feedbacks_list[i]
+        if verdicts_list and i < len(verdicts_list):
+            llm_verdict = verdicts_list[i]
         question_weight = 0
         correct_answer_raw = None
 
@@ -1083,6 +1117,8 @@ def format_detailed_answers(plan, qbank_map, answers, scores_list):
             "weight": question_weight,
             "points_awarded": points,
             "raw_points": points,
+            "llm_feedback": llm_feedback,
+            "llm_verdict": llm_verdict,
             "raw_student_answer": student_answer_raw,
             "raw_correct_answer": correct_answer_raw if question_detail else None,
             "option_order": shuffled_option_order,  # Save the shuffle order for recalculation

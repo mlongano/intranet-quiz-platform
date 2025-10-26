@@ -288,6 +288,23 @@ function SubmissionDetailView({
                   (Max: {questionWeight})
                 </span>
               </div>
+
+              {/* LLM Verdict and Feedback (teacher-only) */}
+              {(ans.llm_verdict || ans.llm_feedback) && (
+                <div className="ml-4 mt-2 bg-yellow-50 border border-yellow-200 p-3 rounded text-sm">
+                  <div className="font-semibold text-sm text-yellow-800 mb-1">LLM Evaluation</div>
+                  {ans.llm_verdict && (
+                    <div className="text-xs text-yellow-900 mb-1">
+                      <strong>Verdict:</strong> {String(ans.llm_verdict)}
+                    </div>
+                  )}
+                  {ans.llm_feedback && (
+                    <div className="text-xs text-yellow-900">
+                      <strong>Feedback:</strong> {String(ans.llm_feedback)}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
