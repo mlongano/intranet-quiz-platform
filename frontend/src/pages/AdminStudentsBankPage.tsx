@@ -21,6 +21,7 @@ function AdminStudentsBankPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [previewingFile, setPreviewingFile] = useState<string | null>(null);
   const [deleteConfirmFile, setDeleteConfirmFile] = useState<string | null>(null);
+  const [loadConfirmFile, setLoadConfirmFile] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -77,11 +78,13 @@ function AdminStudentsBankPage() {
       setMessage(data.message || `Loaded '${filename}' successfully.`);
       setError(null);
       setPreviewingFile(null);
+      setLoadConfirmFile(null);
       queryClient.invalidateQueries({ queryKey: ["adminStudents"] });
     },
     onError: (err) => {
       setError(`Load failed: ${err.message}`);
       setMessage(null);
+      setLoadConfirmFile(null);
     },
   });
 
@@ -155,13 +158,15 @@ function AdminStudentsBankPage() {
   });
 
   const handleLoad = (filename: string) => {
-    if (
-      window.confirm(
-        `Load '${filename}' from students bank? This will overwrite the current students list.`,
-      )
-    ) {
-      loadMutation.mutate(filename);
-    }
+    setLoadConfirmFile(filename);
+  };
+
+  const handleLoadConfirm = (filename: string) => {
+    loadMutation.mutate(filename);
+  };
+
+  const handleLoadCancel = () => {
+    setLoadConfirmFile(null);
   };
 
   const handleSave = () => {
@@ -315,13 +320,34 @@ function AdminStudentsBankPage() {
                       ? "Loading..."
                       : "Preview"}
                   </button>
-                  <button
-                    onClick={() => handleLoad(file)}
-                    disabled={loadMutation.isPending}
-                    className="px-3 py-1 bg-yellow-500 text-white text-sm rounded hover:bg-yellow-700 disabled:opacity-50"
-                  >
-                    {loadMutation.isPending ? "Loading..." : "Load"}
-                  </button>
+                  {/* Load Button with Inline Confirmation */}
+                  {loadConfirmFile === file ? (
+                    <span className="inline-flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded border border-yellow-300">
+                      <span className="text-sm text-gray-700 mr-1">Load?</span>
+                      <button
+                        onClick={() => handleLoadConfirm(file)}
+                        className="bg-yellow-600 text-white px-2 py-1 text-xs rounded hover:bg-yellow-700"
+                        disabled={loadMutation.isPending}
+                      >
+                        {loadMutation.isPending ? "Loading..." : "Yes"}
+                      </button>
+                      <button
+                        onClick={handleLoadCancel}
+                        className="bg-gray-500 text-white px-2 py-1 text-xs rounded hover:bg-gray-600"
+                        disabled={loadMutation.isPending}
+                      >
+                        No
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => handleLoad(file)}
+                      disabled={loadMutation.isPending || deleteMutation.isPending}
+                      className="px-3 py-1 bg-yellow-500 text-white text-sm rounded hover:bg-yellow-700 disabled:opacity-50"
+                    >
+                      Load
+                    </button>
+                  )}
                   {/* Delete Button with Inline Confirmation */}
                   {deleteConfirmFile === file ? (
                     <span className="inline-flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded border border-yellow-300">
@@ -405,15 +431,35 @@ function AdminStudentsBankPage() {
               >
                 Close
               </button>
-              <button
-                onClick={() => {
-                  handleClosePreview();
-                  handleLoad(previewingFile);
-                }}
-                className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-700"
-              >
-                Load This File
-              </button>
+              {loadConfirmFile === previewingFile ? (
+                <span className="inline-flex items-center gap-2 bg-yellow-50 px-3 py-2 rounded border border-yellow-300">
+                  <span className="text-sm text-gray-700">Load this file?</span>
+                  <button
+                    onClick={() => {
+                      handleClosePreview();
+                      handleLoadConfirm(previewingFile);
+                    }}
+                    className="bg-yellow-600 text-white px-3 py-1 text-sm rounded hover:bg-yellow-700"
+                    disabled={loadMutation.isPending}
+                  >
+                    {loadMutation.isPending ? "Loading..." : "Yes"}
+                  </button>
+                  <button
+                    onClick={handleLoadCancel}
+                    className="bg-gray-500 text-white px-3 py-1 text-sm rounded hover:bg-gray-600"
+                    disabled={loadMutation.isPending}
+                  >
+                    No
+                  </button>
+                </span>
+              ) : (
+                <button
+                  onClick={() => handleLoad(previewingFile)}
+                  className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-700"
+                >
+                  Load This File
+                </button>
+              )}
             </div>
           </div>
         </div>
