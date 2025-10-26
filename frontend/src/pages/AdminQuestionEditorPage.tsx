@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { parse, ParseError } from "jsonc-parser"; // Import parse from jsonc-parser
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchAdminQuestions, updateAdminQuestions, QuizData, Question, clearActiveQuizImages } from "../api"; // Import both QuizData and Question
+import { fetchAdminQuestions, updateAdminQuestions, QuizData, Question, clearActiveQuizImages, listQuizImages } from "../api"; // Import both QuizData and Question
 import { useLocation, useNavigate } from "react-router-dom";
 import QuestionDisplay from "../components/QuestionDisplay";
 import { ImagePicker } from "../components/ImagePicker";
@@ -63,6 +63,22 @@ const QuestionEditor: React.FC = () => {
     // placeholderData: (previousData) => previousData, // TanStack Query v5 syntax
     refetchOnWindowFocus: false, // Optional: disable refetch on window focus
   });
+
+  // --- Fetch Images List using useQuery ---
+  const { data: imagesData } = useQuery({
+    queryKey: ["quizImages", "questions.jsonc", adminPassword],
+    queryFn: () => {
+      if (!adminPassword) {
+        return Promise.reject(new Error("Password not available"));
+      }
+      return listQuizImages("questions.jsonc", adminPassword);
+    },
+    enabled: !!adminPassword,
+    staleTime: 30 * 1000, // Refetch every 30 seconds
+    refetchOnWindowFocus: false,
+  });
+
+  const imageCount = imagesData?.length || 0;
 
   // Effect to update the local JSON state when query data changes
   useEffect(() => {
@@ -142,6 +158,8 @@ const QuestionEditor: React.FC = () => {
     onSuccess: (data) => {
       setShowClearConfirm(false);
       showToast("success", data.message, 3000);
+      // Invalidate images query to update the count
+      queryClient.invalidateQueries({ queryKey: ["quizImages"] });
     },
     onError: (err) => {
       setShowClearConfirm(false);
@@ -427,7 +445,14 @@ const QuestionEditor: React.FC = () => {
             </button>
           </div>
         )}
-        <p>Total Questions: {lengthOfQuestions}</p>
+        <div className="flex items-center gap-4">
+          <p>Total Questions: {lengthOfQuestions}</p>
+          {imageCount > 0 && (
+            <p className="text-gray-600">
+              📷 Images: <span className="font-semibold">{imageCount}</span>
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Batch Weight Setting */}
@@ -528,7 +553,11 @@ const QuestionEditor: React.FC = () => {
             setCopiedPath(imagePath);
             setTimeout(() => setCopiedPath(null), 3000);
           }}
-          onClose={() => setShowImagePicker(false)}
+          onClose={() => {
+            setShowImagePicker(false);
+            // Invalidate images query when closing image picker (user may have uploaded/deleted images)
+            queryClient.invalidateQueries({ queryKey: ["quizImages"] });
+          }}
         />
       )}
 
