@@ -31,17 +31,29 @@ The frontend provides a comprehensive admin interface:
   - Pending/submitted students modals
   - Archive breakdown by type
   - Organized feature categories (Quiz/Results/Students Management)
+- **`AdminImagesPage`** - Image management interface:
+  - Drag-and-drop file upload
+  - Image gallery with grid layout
+  - Preview and delete functionality
+  - Quiz-specific image organization
+  - Support for PNG, JPG, JPEG, GIF, WEBP (max 5MB)
 - **`AdminScoresPage`** - View all submissions with:
   - Score table with quiz titles
-  - CSV export functionality
-  - Recalculate all scores
-  - Email individual or bulk results
+  - CSV export with smart filenames (date + quiz title)
+  - Recalculate all scores (with inline confirmation)
+  - Clear/restore scores (with inline confirmation)
+  - Email individual or bulk results (with inline validation)
   - Detailed submission view with score overrides
+  - No browser alerts - all confirmations inline
 - **`AdminQuestionEditorPage`** - JSONC editor with:
   - Live preview with answer highlighting
   - Batch weight operations
   - Format validation
   - Quiz title display
+  - **Integrated image picker** for questions and answers
+  - **Image count display** in header
+  - **Toast notifications** for all operations
+  - Clear all images with inline confirmation
 - **`AdminStudentsPage`** - Student list management:
   - JSONC editor with syntax highlighting
   - Live preview grouped by class/section
@@ -49,15 +61,19 @@ The frontend provides a comprehensive admin interface:
   - Support for three student formats (simple, individual, group)
   - Keyboard shortcuts (Ctrl/Cmd+S to save)
 - **`AdminBankManagerPage`** - Question bank management:
-  - Save/load quiz files
+  - Save/load quiz files (with images)
   - Preview question banks
+  - Delete quizzes with inline confirmation
   - Custom filename control with slugified titles
 - **`AdminScoresBankPage`** - Score archive management:
   - Save/load score files
+  - Delete scores with inline confirmation
   - Formatted preview of archived scores
-  - Custom filename control
+  - Custom filename control with slugified titles
 - **`AdminStudentsBankPage`** - Student list archive management:
   - Save/load student lists for different classes
+  - Delete student files with inline confirmation
+  - Load confirmation to prevent accidental overwrites
   - Preview students grouped by class
   - Email validation in preview
   - Quick switching between different student lists
@@ -68,6 +84,7 @@ Reusable components for the interface:
 
 - **`QuestionDisplay`** - Renders questions with markdown support and images
 - **`SubmissionDetailView`** - Detailed score view with override capability
+- **`ImagePicker`** - Reusable image selection component with thumbnails
 - **`LoadingSpinner`** - Loading state indicator
 - **`ErrorDisplay`** - Error message display
 
@@ -79,9 +96,20 @@ Centralized API communication with TypeScript interfaces:
 - Score management and recalculation
 - Email sending (single and bulk)
 - Student list management (GET/PUT)
+- **Image operations (upload, list, delete, clear all)**
 - **Bank file management (questions, scores, students)**
+- **Delete operations for all bank types**
 - **Preview functionality for all bank types**
 - **Git cloud sync operations (status, init, sync)**
+
+### Utilities (`lib/utils.ts`)
+
+Shared utility functions:
+
+- **`slugify(text)`** - Convert text to URL-safe slug format
+  - Used for generating consistent filenames across the app
+  - Removes accents, special characters, normalizes spacing
+  - Examples: "Java Quiz" → "java-quiz", "Test à l'école" → "test-a-lecole"
 
 ### State Management
 
@@ -138,6 +166,46 @@ pnpm lint
 ```
 
 ## Features Implemented
+
+### Image Management System
+
+- **Dedicated Image Management Page** (`/admin/images`):
+  - Drag-and-drop file upload interface
+  - Multi-file upload support
+  - Grid-based image gallery with previews
+  - Individual image deletion
+  - Clear all images functionality with confirmation
+  - File format validation (PNG, JPG, JPEG, GIF, WEBP)
+  - File size limit (5MB per image)
+  - Quiz-specific organization (images stored per quiz)
+- **Integrated Image Picker**:
+  - Embedded in question editor
+  - Thumbnail previews of available images
+  - Copy-to-clipboard functionality
+  - Real-time image list updates
+  - Image count display in editor header
+- **Backend Integration**:
+  - Images saved with quiz to bank (folder copied)
+  - Images loaded from bank with quiz (folder restored)
+  - Static file serving for image display
+  - Secure path validation
+
+### User Experience Improvements
+
+- **No Browser Alerts**:
+  - All `window.confirm` dialogs replaced with inline confirmations
+  - All `window.alert` replaced with toast notifications or inline errors
+  - Consistent UX across all admin pages
+- **Toast Notifications**:
+  - Color-coded messages (green=success, red=error, yellow=warning)
+  - Close button for dismissible notifications
+  - Auto-positioning and styling
+- **Inline Confirmations**:
+  - Delete operations show "Delete? Yes/No" panel
+  - Load operations show "Load? Yes/No" panel
+  - Clear operations show contextual confirmation
+  - Yellow background with clear action buttons
+  - Prevents accidental destructive actions
 
 ### Quiz Enable/Disable Control
 
@@ -220,24 +288,32 @@ pnpm lint
 ### File Management
 
 - Custom filename control with intelligent defaults
-- Preview functionality for both questions and scores
+- Preview functionality for all bank types (questions, scores, students)
 - Formatted score preview matching detail view
 - Automatic `.jsonc` extension handling
+- **Delete functionality** for all bank types with inline confirmation
+- **Smart filenames** with date prefix and slugified quiz titles
+  - Questions: `YYYY-MM-DD_HH-MM_quiz-title.jsonc`
+  - Scores: `YYYY-MM-DD_HH-MM_risultati_quiz-title.jsonc`
+  - CSV exports: `YYYY-MM-DD_quiz-title_scores.csv`
+- **Load confirmations** to prevent accidental overwrites (students bank)
 
 ### Score Management
 
 - Detailed submission review
 - Manual score override capability
-- Bulk operations (recalculate, email)
-- CSV export
+- Bulk operations (recalculate, clear, restore) with inline confirmations
+- CSV export with smart filenames (date + quiz title)
 - Visual indicators (✓, ⚠, ❌) for answer correctness
+- No browser alerts - all confirmations inline
 
 ### Email Integration
 
 - Individual result emails
 - Bulk email sending
-- Customizable subject lines
+- Customizable subject lines with inline validation
 - Optional detailed breakdowns
+- Email subject validation shown inline (no alerts)
 - Italian language support
 
 ## Technology Stack Details

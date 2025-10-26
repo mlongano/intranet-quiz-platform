@@ -11,6 +11,122 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.0] - 2025-10-26
+
+### Added
+
+#### Image Management System
+
+- **Image upload and management** for quiz questions and answer options
+- New `/admin/images` page with drag-and-drop file upload interface
+- Support for PNG, JPG, JPEG, GIF, and WEBP image formats (max 5MB per file)
+- Grid-based image gallery with preview and delete functionality
+- Quiz-specific image folders: `banks/question_bank/{quiz_basename}_images/`
+- Images automatically saved with quiz to bank (including image folder)
+- Images loaded from bank when quiz is restored
+- Backend API endpoints for image operations (`POST /api/admin/upload-images`, `GET /api/admin/list-images`, `DELETE /api/admin/delete-image`)
+- Image picker integrated into question editor with thumbnail previews
+- Image count display in question editor header
+- Clear all images functionality with inline confirmation
+- Static file serving for quiz images via Flask
+
+#### User Experience Improvements
+
+- **Replaced all browser alerts** (`window.confirm`, `window.alert`) with inline confirmation UI
+- Toast notification system with color-coded messages (success=green, error=red, warning=yellow)
+- Close buttons on toast notifications for dismissible messages
+- Inline confirmation panels for destructive actions (Delete? Yes/No buttons)
+- Visual feedback for all file operations (load, save, delete)
+- Consistent confirmation UX across all bank management pages
+
+#### Bank Management Enhancements
+
+- **Delete functionality** added to scores bank and students bank pages
+- Inline confirmation UI for delete operations (matching question bank pattern)
+- Load confirmation for students bank (prevents accidental overwrites)
+- Delete buttons with inline Yes/No confirmation in all bank pages
+- Email subject validation with inline error messages (no alerts)
+- Improved button states during async operations (Loading..., Deleting..., etc.)
+
+#### Admin Scores Page Improvements
+
+- **Inline confirmation UI** for dangerous operations:
+  - Recalculate all scores - "Re-grade all submissions?"
+  - Clear all scores - "Clear all scores?"
+  - Restore scores - "Restore from backup?"
+- Email subject validation in both single and bulk email modals
+- Inline error messages instead of browser alerts
+- **CSV export with smart filenames** - Uses slugified quiz title in format: `YYYY-MM-DD_quiz-title_scores.csv`
+
+#### Code Quality
+
+- **Centralized `slugify` utility function** in `frontend/src/lib/utils.ts`
+- Removed duplicate slugify implementations across multiple files
+- Consistent slug generation for filenames throughout the application
+- JSDoc documentation for utility functions
+
+### Changed
+
+- Admin password no longer required when navigating between admin pages (session preserved)
+- Image management integrated directly into question editor workflow
+- All confirmation dialogs now use inline UI components instead of browser modals
+- CSV export filenames now include date prefix and slugified quiz title
+- File upload validation errors shown inline instead of alerts
+
+### Fixed
+
+- Race conditions in file operations eliminated
+- Caching issues with file list refreshes resolved
+- Visual feedback for invalid file format uploads
+- Back button in image manager no longer requires password re-entry
+
+### Technical Details
+
+#### Backend (`utils.py`)
+
+- `delete_scores_from_bank(filename)` - Delete scores file with validation
+- `delete_students_from_bank(filename)` - Delete students file with validation
+- Image file handling with secure path validation
+- Static route configuration for image serving
+
+#### Backend (`routes/admin.py`)
+
+- `POST /api/admin/upload-images` - Multi-file upload with validation
+- `GET /api/admin/list-images` - List images for current quiz
+- `DELETE /api/admin/delete-image` - Delete single image with validation
+- `POST /api/admin/scores-bank/delete` - Delete scores file from bank
+- `POST /api/admin/students-bank/delete` - Delete students file from bank
+- `POST /api/admin/clear-quiz-images` - Clear all images for active quiz
+
+#### Frontend
+
+- **New Components**:
+  - `ImagePicker.tsx` - Reusable image selection component with thumbnails
+  - Toast notification system (inline, not a separate component)
+  
+- **New Pages**:
+  - `AdminImagesPage.tsx` - Dedicated image management interface
+  
+- **Updated API Functions** (`frontend/src/api.ts`):
+  - `uploadImages(files, password)` - Upload multiple images
+  - `listQuizImages(password)` - Get images for current quiz
+  - `deleteImage(filename, password)` - Delete single image
+  - `deleteScoresFromBank(filename, password)` - Delete scores file
+  - `deleteStudentsFromBank(filename, password)` - Delete students file
+  - `clearQuizImages(password)` - Delete all images for active quiz
+  
+- **New Utilities** (`frontend/src/lib/utils.ts`):
+  - `slugify(text)` - Convert text to URL-safe slug format
+
+- **UI Updates**:
+  - All bank management pages now have delete functionality with inline confirmations
+  - AdminScoresPage has inline confirmations for all dangerous operations
+  - Email modals show validation errors inline
+  - Question editor integrates ImagePicker component
+  - Image count display in editor header
+
+---
+
 ## [2.1.0] - 2025-10-26
 
 ### Added

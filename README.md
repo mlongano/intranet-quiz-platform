@@ -401,26 +401,42 @@ Access the admin panel at `/admin` with the password set in `.env`:
   - Click submission counts to view submitted/pending students
   - Students count with quick access to management
   - Archive overview with split counts (questions/scores/students)
+- **Image Management**: Dedicated image management system
+  - Upload images via drag-and-drop interface
+  - Support for PNG, JPG, JPEG, GIF, WEBP (max 5MB per file)
+  - Visual gallery with preview and delete functionality
+  - Quiz-specific image organization
+  - Images automatically saved/loaded with quiz from bank
+  - Clear all images with inline confirmation
+  - Integrated image picker in question editor
 - **View Scores**: See all submitted quiz results with timestamps and percentages
-- **Export CSV**: Export all scores to CSV format for external analysis
+- **Export CSV**: Export all scores to CSV format with smart filenames (date + quiz title)
 - **View Details**: Click any submission to see detailed question-by-question results
-- **Recalculate Scores**: Re-grade all submissions against updated question bank (useful if answers change)
+- **Recalculate Scores**: Re-grade all submissions against updated question bank (with inline confirmation)
+- **Clear/Restore Scores**: Clear all scores with backup, restore from backup (with inline confirmation)
 - **Send Emails**:
   - Send individual quiz results to specific students
   - Bulk send results to all students
-  - Customize email subject
+  - Customize email subject with inline validation
   - Choose to include or exclude detailed question-by-question breakdown
+  - No browser alerts - all errors shown inline
 - **Question Management**: Edit questions, answers, and weights via JSONC editor
+  - Integrated image picker for adding images to questions/answers
+  - Image count display in editor header
+  - Toast notifications for all operations
 - **Students Management**:
   - Edit student list via JSONC editor with live preview
   - Email validation with visual indicators
   - Support for simple emails, individual entries with groups, or group format
   - Preview students grouped by class/section
   - Save/load student lists from students bank for different classes
+  - Delete student files from bank with inline confirmation
 - **Bank Management**:
-  - **Question Bank**: Save/load question sets for different quizzes
-  - **Scores Bank**: Archive and restore quiz results
-  - **Students Bank**: Save/load student lists for different classes or years
+  - **Question Bank**: Save/load question sets for different quizzes with delete functionality
+  - **Scores Bank**: Archive and restore quiz results with delete functionality
+  - **Students Bank**: Save/load student lists with delete and load confirmations
+  - All bank operations use inline confirmations (no browser alerts)
+  - Smart filenames with date prefix and slugified quiz titles
 
 ### Automatic Features
 
@@ -709,6 +725,11 @@ After migration, restart the server. Your banks will now be in the correct locat
 - [x] Manage student list from the admin panel with group support and email validation
 - [x] Students bank for saving/loading different student lists
 - [x] Quiz enable/disable control for administrators (toggle in dashboard header)
+- [x] Image management system for questions and answers (upload, delete, integrated picker)
+- [x] Replace all browser alerts with inline confirmation UI and toast notifications
+- [x] Delete functionality for all bank types (questions, scores, students)
+- [x] Smart CSV export filenames with date and quiz title
+- [x] Centralized utility functions (slugify) for code reusability
 - [ ] Implement a timer for quizzes
 - [ ] Improve UI/UX design of the frontend
 - [ ] Improve error handling and user feedback throughout the app
