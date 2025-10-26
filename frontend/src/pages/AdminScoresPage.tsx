@@ -24,6 +24,10 @@ function AdminDashboardPage() {
   const [bulkEmailModal, setBulkEmailModal] = useState<boolean>(false);
   const [emailSubject, setEmailSubject] = useState<string>("");
   const [includeDetails, setIncludeDetails] = useState<boolean>(true);
+  const [showRecalculateConfirm, setShowRecalculateConfirm] = useState<boolean>(false);
+  const [showClearConfirm, setShowClearConfirm] = useState<boolean>(false);
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState<boolean>(false);
+  const [emailSubjectError, setEmailSubjectError] = useState<string | null>(null);
 
   // Fetch scores using the password
   const {
@@ -51,11 +55,13 @@ function AdminDashboardPage() {
       setRecalculateMessage(
         `✓ ${data.message}${data.errors.length > 0 ? ` Errors: ${data.errors.join(", ")}` : ""}`
       );
+      setShowRecalculateConfirm(false);
       // Invalidate and refetch scores
       queryClient.invalidateQueries({ queryKey: ["adminScores", adminPassword] });
     },
     onError: (err: Error) => {
       setRecalculateMessage(`✗ Failed to recalculate scores: ${err.message}`);
+      setShowRecalculateConfirm(false);
     },
   });
 
@@ -89,11 +95,13 @@ function AdminDashboardPage() {
     },
     onSuccess: (data) => {
       setRecalculateMessage(`✓ ${data.message}`);
+      setShowClearConfirm(false);
       // Invalidate and refetch scores
       queryClient.invalidateQueries({ queryKey: ["adminScores", adminPassword] });
     },
     onError: (err: Error) => {
       setRecalculateMessage(`✗ Failed to clear scores: ${err.message}`);
+      setShowClearConfirm(false);
     },
   });
 
@@ -105,11 +113,13 @@ function AdminDashboardPage() {
     },
     onSuccess: (data) => {
       setRecalculateMessage(`✓ ${data.message}`);
+      setShowRestoreConfirm(false);
       // Invalidate and refetch scores
       queryClient.invalidateQueries({ queryKey: ["adminScores", adminPassword] });
     },
     onError: (err: Error) => {
       setRecalculateMessage(`✗ Failed to restore scores: ${err.message}`);
+      setShowRestoreConfirm(false);
     },
   });
 
@@ -144,9 +154,10 @@ function AdminDashboardPage() {
   const handleConfirmSendEmail = () => {
     if (!emailModal) return;
     if (!emailSubject.trim()) {
-      alert("Please enter an email subject");
+      setEmailSubjectError("Please enter an email subject");
       return;
     }
+    setEmailSubjectError(null);
     setRecalculateMessage(null);
     sendSingleEmailMutation.mutate({
       studentEmail: emailModal.studentEmail,
@@ -157,10 +168,16 @@ function AdminDashboardPage() {
   };
 
   const handleRecalculateScores = () => {
-    if (window.confirm("This will re-grade all submissions against the current question bank. Continue?")) {
-      setRecalculateMessage(null);
-      recalculateMutation.mutate();
-    }
+    setShowRecalculateConfirm(true);
+  };
+
+  const handleConfirmRecalculate = () => {
+    setRecalculateMessage(null);
+    recalculateMutation.mutate();
+  };
+
+  const handleCancelRecalculate = () => {
+    setShowRecalculateConfirm(false);
   };
 
   const handleSendAllEmails = () => {
@@ -172,25 +189,38 @@ function AdminDashboardPage() {
 
   const handleConfirmSendAllEmails = () => {
     if (!emailSubject.trim()) {
-      alert("Please enter an email subject");
+      setEmailSubjectError("Please enter an email subject");
       return;
     }
+    setEmailSubjectError(null);
     setRecalculateMessage(null);
     sendAllEmailsMutation.mutate({ subject: emailSubject, includeDetails: includeDetails });
   };
 
   const handleClearScores = () => {
-    if (window.confirm("This will clear ALL scores and create a temporary backup. You can restore them using the Restore button. Continue?")) {
-      setRecalculateMessage(null);
-      clearScoresMutation.mutate();
-    }
+    setShowClearConfirm(true);
+  };
+
+  const handleConfirmClear = () => {
+    setRecalculateMessage(null);
+    clearScoresMutation.mutate();
+  };
+
+  const handleCancelClear = () => {
+    setShowClearConfirm(false);
   };
 
   const handleRestoreScores = () => {
-    if (window.confirm("This will restore scores from the temporary backup. Any current scores will be overwritten. Continue?")) {
-      setRecalculateMessage(null);
-      restoreScoresMutation.mutate();
-    }
+    setShowRestoreConfirm(true);
+  };
+
+  const handleConfirmRestore = () => {
+    setRecalculateMessage(null);
+    restoreScoresMutation.mutate();
+  };
+
+  const handleCancelRestore = () => {
+    setShowRestoreConfirm(false);
   };
 
   // --- CSV Export Function ---
@@ -319,13 +349,34 @@ function AdminDashboardPage() {
           >
             {sendAllEmailsMutation.isPending ? "Sending..." : "📧 Email All Results"}
           </button>
-          <button
-            onClick={handleRecalculateScores}
-            disabled={!scores || scores.length === 0 || recalculateMutation.isPending}
-            className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {recalculateMutation.isPending ? "Recalculating..." : "Recalculate All Scores"}
-          </button>
+          {/* Recalculate Button with Inline Confirmation */}
+          {showRecalculateConfirm ? (
+            <span className="inline-flex items-center gap-2 bg-yellow-50 px-3 py-2 rounded-md border border-yellow-300">
+              <span className="text-sm text-gray-700">Re-grade all submissions?</span>
+              <button
+                onClick={handleConfirmRecalculate}
+                className="bg-purple-600 text-white px-3 py-1 text-sm rounded hover:bg-purple-700"
+                disabled={recalculateMutation.isPending}
+              >
+                {recalculateMutation.isPending ? "Recalculating..." : "Yes"}
+              </button>
+              <button
+                onClick={handleCancelRecalculate}
+                className="bg-gray-500 text-white px-3 py-1 text-sm rounded hover:bg-gray-600"
+                disabled={recalculateMutation.isPending}
+              >
+                No
+              </button>
+            </span>
+          ) : (
+            <button
+              onClick={handleRecalculateScores}
+              disabled={!scores || scores.length === 0 || recalculateMutation.isPending}
+              className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Recalculate All Scores
+            </button>
+          )}
           <button
             onClick={handleExportCSV}
             disabled={!scores || scores.length === 0}
@@ -333,20 +384,62 @@ function AdminDashboardPage() {
           >
             Export to CSV
           </button>
-          <button
-            onClick={handleClearScores}
-            disabled={!scores || scores.length === 0 || clearScoresMutation.isPending}
-            className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {clearScoresMutation.isPending ? "Clearing..." : "🗑️ Clear All Scores"}
-          </button>
-          <button
-            onClick={handleRestoreScores}
-            disabled={restoreScoresMutation.isPending}
-            className="px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {restoreScoresMutation.isPending ? "Restoring..." : "↩️ Restore Scores"}
-          </button>
+          {/* Clear Scores Button with Inline Confirmation */}
+          {showClearConfirm ? (
+            <span className="inline-flex items-center gap-2 bg-yellow-50 px-3 py-2 rounded-md border border-yellow-300">
+              <span className="text-sm text-gray-700">Clear all scores?</span>
+              <button
+                onClick={handleConfirmClear}
+                className="bg-red-600 text-white px-3 py-1 text-sm rounded hover:bg-red-700"
+                disabled={clearScoresMutation.isPending}
+              >
+                {clearScoresMutation.isPending ? "Clearing..." : "Yes"}
+              </button>
+              <button
+                onClick={handleCancelClear}
+                className="bg-gray-500 text-white px-3 py-1 text-sm rounded hover:bg-gray-600"
+                disabled={clearScoresMutation.isPending}
+              >
+                No
+              </button>
+            </span>
+          ) : (
+            <button
+              onClick={handleClearScores}
+              disabled={!scores || scores.length === 0 || clearScoresMutation.isPending}
+              className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              🗑️ Clear All Scores
+            </button>
+          )}
+          {/* Restore Scores Button with Inline Confirmation */}
+          {showRestoreConfirm ? (
+            <span className="inline-flex items-center gap-2 bg-yellow-50 px-3 py-2 rounded-md border border-yellow-300">
+              <span className="text-sm text-gray-700">Restore from backup?</span>
+              <button
+                onClick={handleConfirmRestore}
+                className="bg-orange-600 text-white px-3 py-1 text-sm rounded hover:bg-orange-700"
+                disabled={restoreScoresMutation.isPending}
+              >
+                {restoreScoresMutation.isPending ? "Restoring..." : "Yes"}
+              </button>
+              <button
+                onClick={handleCancelRestore}
+                className="bg-gray-500 text-white px-3 py-1 text-sm rounded hover:bg-gray-600"
+                disabled={restoreScoresMutation.isPending}
+              >
+                No
+              </button>
+            </span>
+          ) : (
+            <button
+              onClick={handleRestoreScores}
+              disabled={restoreScoresMutation.isPending}
+              className="px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              ↩️ Restore Scores
+            </button>
+          )}
         </div>
       </div>
 
@@ -467,6 +560,11 @@ function AdminDashboardPage() {
             <p className="text-sm text-gray-600 mb-4">
               Sending to: <span className="font-medium">{emailModal.studentEmail}</span>
             </p>
+            {emailSubjectError && (
+              <div className="mb-4 p-3 bg-red-100 text-red-800 rounded-md text-sm">
+                {emailSubjectError}
+              </div>
+            )}
             <div className="mb-4">
               <label htmlFor="email-subject" className="block text-sm font-medium text-gray-700 mb-2">
                 Email Subject:
@@ -475,7 +573,10 @@ function AdminDashboardPage() {
                 id="email-subject"
                 type="text"
                 value={emailSubject}
-                onChange={(e) => setEmailSubject(e.target.value)}
+                onChange={(e) => {
+                  setEmailSubject(e.target.value);
+                  setEmailSubjectError(null);
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 placeholder="Enter email subject"
                 autoFocus
@@ -485,6 +586,7 @@ function AdminDashboardPage() {
                   } else if (e.key === 'Escape') {
                     setEmailModal(null);
                     setEmailSubject("");
+                    setEmailSubjectError(null);
                   }
                 }}
               />
@@ -505,6 +607,7 @@ function AdminDashboardPage() {
                 onClick={() => {
                   setEmailModal(null);
                   setEmailSubject("");
+                  setEmailSubjectError(null);
                 }}
                 className="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
               >
@@ -530,6 +633,11 @@ function AdminDashboardPage() {
             <p className="text-sm text-gray-600 mb-4">
               This will send emails to <span className="font-medium">{scores?.length || 0} students</span>
             </p>
+            {emailSubjectError && (
+              <div className="mb-4 p-3 bg-red-100 text-red-800 rounded-md text-sm">
+                {emailSubjectError}
+              </div>
+            )}
             <div className="mb-4">
               <label htmlFor="bulk-email-subject" className="block text-sm font-medium text-gray-700 mb-2">
                 Email Subject:
@@ -538,7 +646,10 @@ function AdminDashboardPage() {
                 id="bulk-email-subject"
                 type="text"
                 value={emailSubject}
-                onChange={(e) => setEmailSubject(e.target.value)}
+                onChange={(e) => {
+                  setEmailSubject(e.target.value);
+                  setEmailSubjectError(null);
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 placeholder="Enter email subject"
                 autoFocus
@@ -548,6 +659,7 @@ function AdminDashboardPage() {
                   } else if (e.key === 'Escape') {
                     setBulkEmailModal(false);
                     setEmailSubject("");
+                    setEmailSubjectError(null);
                   }
                 }}
               />
@@ -568,6 +680,7 @@ function AdminDashboardPage() {
                 onClick={() => {
                   setBulkEmailModal(false);
                   setEmailSubject("");
+                  setEmailSubjectError(null);
                 }}
                 className="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
               >
