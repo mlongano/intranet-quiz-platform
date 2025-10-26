@@ -1118,29 +1118,29 @@ def get_quiz_images_folder(quiz_filename):
 def upload_image_to_quiz(quiz_filename, image_file, original_filename):
     """
     Upload an image file for a specific quiz.
-    
+
     Args:
         quiz_filename: The quiz file name (e.g., "20251024_164801_5CI-TPSIT-Java_Thread.jsonc")
         image_file: File object (from Flask request.files)
         original_filename: Original filename of the uploaded image
-    
+
     Returns:
         dict: {"success": True, "path": "/banks/question_bank/...", "filename": "..."}
     """
     # Sanitize the filename
     safe_filename = sanitize_filename(original_filename)
-    
+
     # Get or create the quiz images folder
     images_folder = get_quiz_images_folder(quiz_filename)
     images_folder.mkdir(parents=True, exist_ok=True)
-    
+
     # Create full path for the image
     image_path = images_folder / safe_filename
-    
+
     # Check if file already exists
     if image_path.exists():
         raise Conflict(description=f"Image '{safe_filename}' already exists for this quiz")
-    
+
     # Save the file
     try:
         image_file.save(str(image_path))
@@ -1161,19 +1161,19 @@ def upload_image_to_quiz(quiz_filename, image_file, original_filename):
 def list_quiz_images(quiz_filename):
     """
     List all images for a specific quiz.
-    
+
     Args:
         quiz_filename: The quiz file name
-    
+
     Returns:
         list: Array of image info dicts with path, filename, size
     """
     try:
         images_folder = get_quiz_images_folder(quiz_filename)
-        
+
         if not images_folder.exists():
             return []
-        
+
         images = []
         for image_file in images_folder.iterdir():
             if image_file.is_file() and image_file.suffix.lower() in ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp']:
@@ -1185,7 +1185,7 @@ def list_quiz_images(quiz_filename):
                     "path": f"/{relative_path}",
                     "size": image_file.stat().st_size
                 })
-        
+
         return images
     except Exception as e:
         print(f"Error in list_quiz_images for '{quiz_filename}': {e}")
@@ -1197,20 +1197,20 @@ def list_quiz_images(quiz_filename):
 def delete_quiz_image(quiz_filename, image_filename):
     """
     Delete an image file from a quiz's images folder.
-    
+
     Args:
         quiz_filename: The quiz file name
         image_filename: The image filename to delete
-    
+
     Returns:
         dict: {"success": True, "message": "..."}
     """
     # Sanitize the image filename to prevent path traversal
     safe_image_filename = sanitize_filename(image_filename)
-    
+
     images_folder = get_quiz_images_folder(quiz_filename)
     image_path = images_folder / safe_image_filename
-    
+
     # Validate that the path is within the images folder
     try:
         image_path = image_path.resolve()
@@ -1219,11 +1219,11 @@ def delete_quiz_image(quiz_filename, image_filename):
             raise BadRequest(description="Invalid image path")
     except Exception:
         raise BadRequest(description="Invalid image path")
-    
+
     # Check if file exists
     if not image_path.exists():
         raise NotFound(description=f"Image '{image_filename}' not found")
-    
+
     # Delete the file
     try:
         image_path.unlink()

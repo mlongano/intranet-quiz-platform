@@ -158,7 +158,26 @@ def sync_banks(pull_first=True):
     }
 
     try:
-        # Pull remote changes first
+        # Check for local changes first
+        print(f"[Git Sync] Checking for local changes...")
+        status = _run_git_command(['status', '--porcelain'])
+        print(f"[Git Sync] Status output: {status if status else '(no changes)'}")
+
+        if status:
+            # Add all changes
+            print(f"[Git Sync] Adding all changes...")
+            _run_git_command(['add', '.'])
+
+            # Commit with timestamp BEFORE pulling
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            commit_message = f'Sync banks: {timestamp}'
+            print(f"[Git Sync] Committing with message: {commit_message}")
+            _run_git_command(['commit', '-m', commit_message])
+            details['committed'] = True
+            details['changes'] = status.split('\n')
+            print(f"[Git Sync] Commit successful ({len(details['changes'])} changes)")
+
+        # Pull remote changes after committing local changes
         if pull_first:
             try:
                 print(f"[Git Sync] Pulling from remote...")
@@ -172,25 +191,6 @@ def sync_banks(pull_first=True):
                 if 'couldn\'t find remote ref' not in error_msg and 'does not appear to be a git repository' not in error_msg:
                     return {'success': False, 'message': f'Pull failed: {str(e)}', 'details': details}
                 print(f"[Git Sync] Pull error ignored (remote branch may not exist yet)")
-
-        # Check for local changes
-        print(f"[Git Sync] Checking for local changes...")
-        status = _run_git_command(['status', '--porcelain'])
-        print(f"[Git Sync] Status output: {status if status else '(no changes)'}")
-
-        if status:
-            # Add all changes
-            print(f"[Git Sync] Adding all changes...")
-            _run_git_command(['add', '.'])
-
-            # Commit with timestamp
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            commit_message = f'Sync banks: {timestamp}'
-            print(f"[Git Sync] Committing with message: {commit_message}")
-            _run_git_command(['commit', '-m', commit_message])
-            details['committed'] = True
-            details['changes'] = status.split('\n')
-            print(f"[Git Sync] Commit successful ({len(details['changes'])} changes)")
 
         # Push to remote
         try:
