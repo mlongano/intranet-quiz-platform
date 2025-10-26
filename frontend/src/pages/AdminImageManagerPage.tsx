@@ -11,6 +11,7 @@ const AdminImageManagerPage: React.FC = () => {
 
   const [selectedQuizFile, setSelectedQuizFile] = useState<string>('');
   const [showImagePicker, setShowImagePicker] = useState(false);
+  const [notification, setNotification] = useState<string | null>(null);
 
   // Fetch available quiz files
   const { data: quizFilesData, isLoading } = useQuery({
@@ -20,6 +21,11 @@ const AdminImageManagerPage: React.FC = () => {
   });
 
   const quizFiles = quizFilesData?.files || [];
+
+  const showNotification = (message: string) => {
+    setNotification(message);
+    setTimeout(() => setNotification(null), 3000);
+  };
 
   if (!adminPassword) {
     return (
@@ -128,16 +134,38 @@ const AdminImageManagerPage: React.FC = () => {
           quizFilename={selectedQuizFile}
           password={adminPassword}
           onSelect={(imagePath) => {
-            // Just log for now - in a real implementation you might want to copy to clipboard
-            console.log('Selected image:', imagePath);
-            alert(`Image path copied to clipboard:\n${imagePath}`);
             navigator.clipboard.writeText(imagePath);
+            showNotification(`Image path copied to clipboard: ${imagePath}`);
           }}
           onClose={() => {
             setShowImagePicker(false);
             setSelectedQuizFile('');
           }}
         />
+      )}
+
+      {/* Notification Toast */}
+      {notification && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            backgroundColor: '#28a745',
+            color: 'white',
+            padding: '16px 24px',
+            borderRadius: '8px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            zIndex: 2000,
+            maxWidth: '400px',
+            animation: 'slideIn 0.3s ease-out',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '20px' }}>✓</span>
+            <span style={{ wordBreak: 'break-all' }}>{notification}</span>
+          </div>
+        </div>
       )}
     </div>
   );
