@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchAdminQuestions, updateAdminQuestions, QuizData, Question } from "../api"; // Import both QuizData and Question
 import { useLocation, useNavigate } from "react-router-dom";
 import QuestionDisplay from "../components/QuestionDisplay";
+import { ImagePicker } from "../components/ImagePicker";
 
 const QuestionEditor: React.FC = () => {
   const location = useLocation();
@@ -18,6 +19,8 @@ const QuestionEditor: React.FC = () => {
   const [lengthOfQuestions, setLengthOfQuestions] = useState<number>(0);
   const [commonWeight, setCommonWeight] = useState<string>("1");
   const [showPreview, setShowPreview] = useState<boolean>(false);
+  const [showImagePicker, setShowImagePicker] = useState<boolean>(false);
+  const [copiedPath, setCopiedPath] = useState<string | null>(null);
   // Local state for user feedback messages not directly tied to query status
   const [userMessage, setUserMessage] = useState<{
     type: "success" | "error";
@@ -391,6 +394,14 @@ const QuestionEditor: React.FC = () => {
         >
           {showPreview ? "Hide Preview" : "Preview All Questions"}
         </button>
+        <button
+          onClick={() => setShowImagePicker(true)}
+          disabled={!adminPassword || !quizTitle}
+          className="bg-orange-500 hover:bg-orange-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
+          title={!quizTitle ? "Save quiz first to manage images" : "Manage quiz images"}
+        >
+          📷 Manage Images
+        </button>
         <p>Total Questions: {lengthOfQuestions}</p>
       </div>
 
@@ -481,6 +492,58 @@ const QuestionEditor: React.FC = () => {
 
       {/* Optional persistent processing indicator */}
       {isProcessing && <div className="mt-2 text-blue-600">Processing...</div>}
+
+      {/* Image Picker Modal */}
+      {showImagePicker && adminPassword && questionsData && (
+        <ImagePicker
+          quizFilename={`questions.jsonc`}
+          password={adminPassword}
+          onSelect={(imagePath) => {
+            navigator.clipboard.writeText(imagePath);
+            setCopiedPath(imagePath);
+            setTimeout(() => setCopiedPath(null), 3000);
+          }}
+          onClose={() => setShowImagePicker(false)}
+        />
+      )}
+
+      {/* Copied Path Notification */}
+      {copiedPath && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            backgroundColor: '#28a745',
+            color: 'white',
+            padding: '16px 24px',
+            borderRadius: '8px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            zIndex: 2000,
+            maxWidth: '500px',
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '20px' }}>✓</span>
+              <strong>Image path copied!</strong>
+            </div>
+            <div style={{
+              fontSize: '14px',
+              wordBreak: 'break-all',
+              fontFamily: 'monospace',
+              backgroundColor: 'rgba(0,0,0,0.2)',
+              padding: '8px',
+              borderRadius: '4px'
+            }}>
+              {copiedPath}
+            </div>
+            <div style={{ fontSize: '12px', opacity: 0.9 }}>
+              Paste this path in the JSON editor for "question_image" or option "image" fields
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

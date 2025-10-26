@@ -371,25 +371,25 @@ def load_quiz_from_bank(filename: str):
 
     warning_message = None
 
-    # Validate JSON format only
+    # Load and validate JSON format
     try:
         with source_path.open(encoding='utf-8') as f:
-            data = json.load(f)
+            quiz_data = json.load(f)
 
             # Check if it's the old format or missing required fields
-            if not isinstance(data, dict):
+            if not isinstance(quiz_data, dict):
                 warning_message = (
                     f"Warning: '{filename}' uses old array format. "
                     f"Please convert to new format with 'title' and 'questions' fields. "
                     f"The file was loaded but may not work correctly."
                 )
-            elif 'questions' not in data:
+            elif 'questions' not in quiz_data:
                 warning_message = (
                     f"Warning: '{filename}' is missing 'questions' field. "
                     f"Expected format: {{\"title\": \"Quiz Title\", \"questions\": [...]}}. "
                     f"The file was loaded but may not work correctly."
                 )
-            elif not isinstance(data.get('questions'), list):
+            elif not isinstance(quiz_data.get('questions'), list):
                 warning_message = (
                     f"Warning: '{filename}' has invalid 'questions' field (must be an array). "
                     f"The file was loaded but may not work correctly."
@@ -406,7 +406,55 @@ def load_quiz_from_bank(filename: str):
             shutil.copy2(target_path, backup_file)
             print(f"Backed up current {QUEST_FILE} to {backup_file}")
 
-        shutil.copy2(source_path, target_path)
+        # Check if there are images to copy
+        source_images_folder = get_quiz_images_folder(filename)
+        target_images_folder = get_quiz_images_folder(QUEST_FILE)
+
+        images_copied = False
+        if source_images_folder.exists() and source_images_folder.is_dir():
+            # Backup existing images folder if it exists
+            if target_images_folder.exists():
+                backup_images_folder = Path(str(target_images_folder) + '.bak')
+                if backup_images_folder.exists():
+                    shutil.rmtree(backup_images_folder)
+                shutil.move(str(target_images_folder), str(backup_images_folder))
+                print(f"Backed up current images to {backup_images_folder}")
+
+            # Copy images folder from bank to active quiz location
+            try:
+                shutil.copytree(source_images_folder, target_images_folder)
+                images_copied = True
+                print(f"Copied images from '{source_images_folder}' to '{target_images_folder}'")
+
+                # Update image paths in the quiz data to point to new location
+                source_basename = Path(filename).stem
+                target_basename = Path(QUEST_FILE).stem
+                old_path_prefix = f"/banks/question_bank/{source_basename}_images/"
+                new_path_prefix = f"/banks/question_bank/{target_basename}_images/"
+
+                # Update image paths in questions
+                if 'questions' in quiz_data:
+                    for question in quiz_data['questions']:
+                        # Update question image
+                        if 'question_image' in question and question['question_image']:
+                            if question['question_image'].startswith(old_path_prefix):
+                                question['question_image'] = question['question_image'].replace(old_path_prefix, new_path_prefix)
+
+                        # Update option images
+                        if 'options' in question and isinstance(question['options'], list):
+                            for option in question['options']:
+                                if isinstance(option, dict) and 'image' in option and option['image']:
+                                    if option['image'].startswith(old_path_prefix):
+                                        option['image'] = option['image'].replace(old_path_prefix, new_path_prefix)
+
+                print(f"Updated image paths from '{old_path_prefix}' to '{new_path_prefix}'")
+            except Exception as e:
+                print(f"Warning: Error copying images: {e}")
+                # Don't fail the whole operation if image copy fails
+
+        # Save the quiz file with updated paths
+        with target_path.open('w', encoding='utf-8') as f:
+            json.dump(quiz_data, f, indent=2)
         print(f"Copied '{filename}' from '{QUESTION_BANK_FOLDER}' to '{QUEST_FILE}'.")
 
         # Invalidate the cache to force reload of the new file
@@ -440,19 +488,66 @@ def save_quiz_to_bank(filename: str):
     if target_path.exists():
         raise Conflict(description=f"File '{safe_filename}' already exists in '{QUESTION_BANK_FOLDER}'.")
 
-    # Optional: Basic validation of the source file content before saving
+    # Load and validate the source file content
     try:
         with source_path.open(encoding='utf-8') as f:
-            json.load(f) # Just load to check if it's valid JSON
+            quiz_data = json.load(f)
     except ValueError:
         raise InternalServerError(description=f"Current file '{QUEST_FILE}' is not a valid JSONC format.")
     except Exception as e:
         raise InternalServerError(description=f"Error reading current file '{QUEST_FILE}': {e}")
 
+    # Check if there are images to copy
+    source_images_folder = get_quiz_images_folder(QUEST_FILE)
+    target_images_folder = get_quiz_images_folder(safe_filename)
+
+    images_copied = False
+    if source_images_folder.exists() and source_images_folder.is_dir():
+        # Copy images folder to new location
+        try:
+            if target_images_folder.exists():
+                print(f"Warning: Target images folder '{target_images_folder}' already exists")
+            else:
+                shutil.copytree(source_images_folder, target_images_folder)
+                images_copied = True
+                print(f"Copied images from '{source_images_folder}' to '{target_images_folder}'")
+
+            # Update image paths in the quiz data to point to new location
+            if images_copied:
+                source_basename = Path(QUEST_FILE).stem
+                target_basename = Path(safe_filename).stem
+                old_path_prefix = f"/banks/question_bank/{source_basename}_images/"
+                new_path_prefix = f"/banks/question_bank/{target_basename}_images/"
+
+                # Update image paths in questions
+                if 'questions' in quiz_data:
+                    for question in quiz_data['questions']:
+                        # Update question image
+                        if 'question_image' in question and question['question_image']:
+                            if question['question_image'].startswith(old_path_prefix):
+                                question['question_image'] = question['question_image'].replace(old_path_prefix, new_path_prefix)
+
+                        # Update option images
+                        if 'options' in question and isinstance(question['options'], list):
+                            for option in question['options']:
+                                if isinstance(option, dict) and 'image' in option and option['image']:
+                                    if option['image'].startswith(old_path_prefix):
+                                        option['image'] = option['image'].replace(old_path_prefix, new_path_prefix)
+
+                print(f"Updated image paths from '{old_path_prefix}' to '{new_path_prefix}'")
+        except Exception as e:
+            print(f"Warning: Error copying images: {e}")
+            # Don't fail the whole operation if image copy fails
+
+    # Save the quiz file with updated paths
     try:
-        shutil.copy2(source_path, target_path)
+        with target_path.open('w', encoding='utf-8') as f:
+            json.dump(quiz_data, f, indent=2)
         print(f"Saved '{QUEST_FILE}' to '{target_path}'.")
     except Exception as e:
+        # Cleanup: remove copied images if file save fails
+        if images_copied and target_images_folder.exists():
+            shutil.rmtree(target_images_folder)
         print(f"Error saving quiz to bank: {e}")
         raise InternalServerError(description=f"Error copying file to bank: {e}")
 
