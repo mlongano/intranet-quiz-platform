@@ -368,10 +368,18 @@ def load_questions(filename: str = QUEST_FILE):
 
             # Validate format: must be object with 'questions' array
             if not isinstance(data, dict):
-                raise ValueError(f"Invalid format in {file_path.name}: Top-level must be an object with 'title' and 'questions' fields")
+                raise ValueError(
+                    f"Invalid format in '{file_path.name}': File uses old array format. "
+                    f"Please convert to new format with 'title' and 'questions' fields. "
+                    f"Example: {{\"title\": \"Quiz Title\", \"questions\": [...]}}. "
+                    f"You can edit the file in the question editor or manually update it."
+                )
 
             if 'questions' not in data:
-                raise ValueError(f"Invalid format in {file_path.name}: Missing 'questions' field")
+                raise ValueError(
+                    f"Invalid format in '{file_path.name}': Missing 'questions' field. "
+                    f"Expected format: {{\"title\": \"Quiz Title\", \"questions\": [...]}}"
+                )
 
             if not isinstance(data['questions'], list):
                 raise ValueError(f"Invalid format in {file_path.name}: 'questions' field must be an array")
