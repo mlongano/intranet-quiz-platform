@@ -164,12 +164,19 @@ def manage_questions():
 
     if request.method == 'POST':
         try:
-            quiz_data = load_questions()
-            return jsonify(quiz_data)  # Return the whole object with title and questions
-        except Exception:
-            abort(404)
-            # Handle potential errors from load_questions (e.g., file not found)
-            # raise InternalServerError(description=f"Failed to load questions: {e}")
+            # Load in lenient mode to allow editing of invalid format files
+            quiz_data = load_questions(lenient=True)
+            return jsonify(quiz_data)  # Return the whole object with title, questions, and optionally warning
+        except BadRequest as e:
+            # Return detailed validation error to client
+            return jsonify({'error': e.description or str(e)}), 400
+        except NotFound as e:
+            return jsonify({'error': e.description or 'Questions file not found'}), 404
+        except InternalServerError as e:
+            return jsonify({'error': e.description or 'Internal server error'}), 500
+        except Exception as e:
+            print(f"Error loading questions: {e}")
+            return jsonify({'error': f'Failed to load questions: {str(e)}'}), 500
 
     if request.method == 'PUT':
          # Validate the new format
@@ -228,13 +235,25 @@ def api_load_from_bank():
         abort(400, description="Missing filename in request body.")
 
     try:
-        load_quiz_from_bank(filename)
-        return jsonify({"success": True, "message": f"Successfully loaded '{filename}' into active quiz."})
-    except (NotFound, BadRequest, InternalServerError) as e:
-         abort(e.code, description=e.description) if e.code else abort(500, description="Internal server error loading quiz from bank.")
+        warning = load_quiz_from_bank(filename)
+        response = {
+            "success": True,
+            "message": f"Successfully loaded '{filename}' into active quiz."
+        }
+        if warning:
+            response["warning"] = warning
+        return jsonify(response)
+    except BadRequest as e:
+        # Return detailed validation error to client
+        return jsonify({'error': e.description or str(e)}), 400
+    except NotFound as e:
+        return jsonify({'error': e.description or 'File not found'}), 404
+    except InternalServerError as e:
+        print(f"Internal error loading quiz from bank '{filename}': {e}")
+        return jsonify({'error': e.description or 'Internal server error'}), 500
     except Exception as e:
         print(f"Error loading from bank: {e}")
-        abort(500, description="Internal server error loading quiz from bank.")
+        return jsonify({'error': f'Internal server error loading quiz from bank: {str(e)}'}), 500
 
 @admin_bp.route('/admin/bank/save', methods=['POST'])
 def api_save_to_bank():
@@ -275,11 +294,17 @@ def api_preview_bank_file():
         # Use the updated load_questions function to read the file from the bank
         file_content = load_questions(filename=filename)
         return jsonify(file_content)
-    except (NotFound, BadRequest, InternalServerError) as e:
-         abort(e.code, description=e.description) if e.code else abort(500, description="Internal server error previewing bank file.")
+    except BadRequest as e:
+        # Return detailed validation error to client
+        return jsonify({'error': e.description or str(e)}), 400
+    except NotFound as e:
+        return jsonify({'error': e.description or 'File not found'}), 404
+    except InternalServerError as e:
+        print(f"Internal error previewing bank file '{filename}': {e}")
+        return jsonify({'error': e.description or 'Internal server error'}), 500
     except Exception as e:
         print(f"Error previewing bank file '{filename}': {e}")
-        abort(500, description="Internal server error previewing bank file.")
+        return jsonify({'error': f'Internal server error previewing bank file: {str(e)}'}), 500
 
 
 # --- NEW Admin Endpoints for Scores Bank Management ---

@@ -27,6 +27,13 @@ STUDENTS_BANK_FOLDER = os.path.join(BANKS_BASE, 'students_bank') # Students bank
 _questions_cache = None
 _questions_mtime = 0
 
+def invalidate_questions_cache():
+    """Invalidates the questions cache, forcing a reload on next access."""
+    global _questions_cache, _questions_mtime
+    _questions_cache = None
+    _questions_mtime = 0
+    print("Questions cache invalidated")
+
 # --- Load Admin Password from Environment Variable ---
 ADMIN_PW = os.getenv('ADMIN_PW') # <-- Get password from environment
 if not ADMIN_PW:
@@ -271,19 +278,41 @@ def list_question_bank_files():
     return sorted(quiz_files) # Return sorted list of filenames
 
 def load_quiz_from_bank(filename: str):
-    """Overwrites QUEST_FILE with the content of the specified file from the question_bank."""
+    """Overwrites QUEST_FILE with the content of the specified file from the question_bank.
+    Returns a warning message if the file format is invalid, otherwise returns None."""
     source_path = Path(QUESTION_BANK_FOLDER) / filename
     target_path = Path(QUEST_FILE)
 
     if not source_path.exists() or not source_path.is_file():
          raise NotFound(description=f"Quiz file '{filename}' not found in '{QUESTION_BANK_FOLDER}'.")
 
-    # Optional: Basic validation of the source file content before copying
+    warning_message = None
+
+    # Validate JSON format only
     try:
         with source_path.open(encoding='utf-8') as f:
-            json.load(f) # Just load to check if it's valid JSON
-    except ValueError:
-        raise BadRequest(description=f"File '{filename}' is not a valid JSONC format.")
+            data = json.load(f)
+
+            # Check if it's the old format or missing required fields
+            if not isinstance(data, dict):
+                warning_message = (
+                    f"Warning: '{filename}' uses old array format. "
+                    f"Please convert to new format with 'title' and 'questions' fields. "
+                    f"The file was loaded but may not work correctly."
+                )
+            elif 'questions' not in data:
+                warning_message = (
+                    f"Warning: '{filename}' is missing 'questions' field. "
+                    f"Expected format: {{\"title\": \"Quiz Title\", \"questions\": [...]}}. "
+                    f"The file was loaded but may not work correctly."
+                )
+            elif not isinstance(data.get('questions'), list):
+                warning_message = (
+                    f"Warning: '{filename}' has invalid 'questions' field (must be an array). "
+                    f"The file was loaded but may not work correctly."
+                )
+    except ValueError as e:
+        raise BadRequest(description=f"File '{filename}' is not valid JSON: {e}")
     except Exception as e:
         raise InternalServerError(description=f"Error reading source file '{filename}': {e}")
 
@@ -296,6 +325,11 @@ def load_quiz_from_bank(filename: str):
 
         shutil.copy2(source_path, target_path)
         print(f"Copied '{filename}' from '{QUESTION_BANK_FOLDER}' to '{QUEST_FILE}'.")
+
+        # Invalidate the cache to force reload of the new file
+        invalidate_questions_cache()
+
+        return warning_message
     except Exception as e:
         print(f"Error loading quiz from bank: {e}")
         raise InternalServerError(description=f"Error copying file from bank: {e}")
@@ -340,8 +374,14 @@ def save_quiz_to_bank(filename: str):
         raise InternalServerError(description=f"Error copying file to bank: {e}")
 
 
-def load_questions(filename: str = QUEST_FILE):
-    """Reads and returns the JSON content of a specified file with caching for default file."""
+def load_questions(filename: str = QUEST_FILE, lenient: bool = False):
+    """Reads and returns the JSON content of a specified file with caching for default file.
+
+    Args:
+        filename: Path to the questions file
+        lenient: If True, returns raw data even if format is invalid (for editing).
+                 Returns dict with 'data' (raw content) and 'warning' (error message if any).
+    """
     global _questions_cache, _questions_mtime
 
     # Use cache only for the main QUEST_FILE
@@ -366,23 +406,40 @@ def load_questions(filename: str = QUEST_FILE):
         with file_path.open(encoding='utf-8') as f:
             data = json.load(f)
 
+            validation_error = None
+
             # Validate format: must be object with 'questions' array
             if not isinstance(data, dict):
-                raise ValueError(
+                validation_error = (
                     f"Invalid format in '{file_path.name}': File uses old array format. "
                     f"Please convert to new format with 'title' and 'questions' fields. "
                     f"Example: {{\"title\": \"Quiz Title\", \"questions\": [...]}}. "
                     f"You can edit the file in the question editor or manually update it."
                 )
+                if not lenient:
+                    raise ValueError(validation_error)
+                # In lenient mode, convert old array format to new format for editing
+                if isinstance(data, list):
+                    data = {'title': '', 'questions': data}
+                else:
+                    data = {'title': '', 'questions': []}
 
-            if 'questions' not in data:
-                raise ValueError(
+            if validation_error is None and 'questions' not in data:
+                validation_error = (
                     f"Invalid format in '{file_path.name}': Missing 'questions' field. "
                     f"Expected format: {{\"title\": \"Quiz Title\", \"questions\": [...]}}"
                 )
+                if not lenient:
+                    raise ValueError(validation_error)
+                # In lenient mode, add empty questions array
+                data['questions'] = []
 
-            if not isinstance(data['questions'], list):
-                raise ValueError(f"Invalid format in {file_path.name}: 'questions' field must be an array")
+            if validation_error is None and not isinstance(data.get('questions'), list):
+                validation_error = f"Invalid format in {file_path.name}: 'questions' field must be an array"
+                if not lenient:
+                    raise ValueError(validation_error)
+                # In lenient mode, reset to empty array
+                data['questions'] = []
 
             questions = data['questions']
             title = data.get('title', None)
@@ -403,8 +460,12 @@ def load_questions(filename: str = QUEST_FILE):
                 'questions': questions
             }
 
-            # Update cache for main file
-            if filename == QUEST_FILE:
+            # In lenient mode, add warning if there was a validation error
+            if lenient and validation_error:
+                result['warning'] = validation_error
+
+            # Update cache for main file (only cache valid data, not lenient mode)
+            if filename == QUEST_FILE and not lenient:
                 _questions_cache = result
                 _questions_mtime = file_path.stat().st_mtime
                 print(f"Cached questions from '{QUEST_FILE}'")
@@ -475,6 +536,10 @@ def save_questions(data):
                     with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
                         json.dump(save_data, f, indent=2)
                     os.replace(temp_path, QUEST_FILE)  # Atomic on POSIX
+
+                    # Invalidate cache after successful save
+                    invalidate_questions_cache()
+
                 except Exception as e:
                     if os.path.exists(temp_path):
                         os.unlink(temp_path)

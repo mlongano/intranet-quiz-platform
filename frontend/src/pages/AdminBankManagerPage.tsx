@@ -1,5 +1,5 @@
 // frontend/src/pages/AdminBankManagerPage.tsx
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
@@ -26,13 +26,15 @@ function AdminBankManagerPage() {
 
   const [saveFilename, setSaveFilename] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [previewingFile, setPreviewingFile] = useState<string | null>(null); // State to track which file is being previewed
+  const [justLoadedFile, setJustLoadedFile] = useState(false); // Track if we just loaded a file to avoid clearing messages
 
   const queryClient = useQueryClient(); // Get Query Client instance
 
   // --- Fetch current quiz data to get the title ---
-  const { data: currentQuizData } = useQuery<QuizData, Error>({
+  const { data: currentQuizData, error: questionsError } = useQuery<QuizData, Error>({
     queryKey: ["adminQuestions", adminPassword],
     queryFn: () => {
       if (!adminPassword) {
@@ -42,7 +44,23 @@ function AdminBankManagerPage() {
     },
     enabled: !!adminPassword,
     staleTime: 5 * 60 * 1000,
+    retry: false, // Don't retry on error
   });
+
+  // Handle questionsError changes - ignore error if we just loaded a file
+  useEffect(() => {
+    if (questionsError && justLoadedFile) {
+      // Suppress the questions error when we just loaded a file
+      // The load operation's warning/message should remain visible
+      console.log("Questions query error suppressed after file load:", questionsError.message);
+      // Reset the flag after a brief delay
+      const timer = setTimeout(() => setJustLoadedFile(false), 2000);
+      return () => clearTimeout(timer);
+    } else if (!questionsError && justLoadedFile) {
+      // Questions loaded successfully after file load
+      setJustLoadedFile(false);
+    }
+  }, [questionsError, justLoadedFile]);
 
   // Slugify function to match backend implementation
   const slugify = (text: string): string => {
@@ -97,8 +115,7 @@ function AdminBankManagerPage() {
         // If no password, we can't fetch. Throwing will set isError state.
         throw new Error("Admin password not available.");
       }
-      setMessage(null); // Clear messages on new fetch attempt
-      setError(null); // Clear previous errors
+      // Don't clear messages here - let mutations handle message lifecycle
       return fetchQuestionBankFiles(adminPassword); // Call your API function
     },
     enabled: !!adminPassword, // Only run this query if adminPassword exists
@@ -113,15 +130,26 @@ function AdminBankManagerPage() {
         throw new Error("Admin password not available."); // Should not happen if button is disabled
       }
       setError(null); // Clear errors before mutation
+      setWarning(null); // Clear warnings before mutation
       setMessage(null); // Clear messages before mutation
+      console.log("Loading quiz from bank:", filename);
       return loadQuizFromBank(filename, adminPassword); // Call your API function
     },
+    retry: false, // Don't retry on error
     onSuccess: (data) => {
+      console.log("Load success, response:", data);
+      setJustLoadedFile(true); // Mark that we just loaded a file
+      if (data.warning) {
+        // Show warning if present
+        console.log("Setting warning:", data.warning);
+        setWarning(data.warning);
+      }
       setMessage(data.message || "File loaded successfully!");
       // Invalidate query for the active questions so it refetches with the new data
       queryClient.invalidateQueries({ queryKey: ["adminQuestions"] });
     },
     onError: (err: any) => {
+      console.error("Load error:", err);
       setError(`Failed to load file: ${err.message}`);
     },
     onSettled: () => {
@@ -138,6 +166,7 @@ function AdminBankManagerPage() {
         throw new Error("Admin password not available."); // Should not happen if button is disabled
       }
       setError(null); // Clear errors before mutation
+      setWarning(null); // Clear warnings before mutation
       setMessage(null); // Clear messages before mutation
       return saveQuizToBank(filename_suffix, adminPassword); // Call your API function
     },
@@ -166,9 +195,7 @@ function AdminBankManagerPage() {
         // This query should only run when previewingFile and password exist
         throw new Error("Preview file or password not available.");
       }
-      // Clear previous preview errors/messages when starting a new preview
-      setError(null);
-      setMessage(null);
+      // Don't clear messages here - preview is informational and shouldn't affect load/save messages
       return fetchPreviewBankFile(previewingFile, adminPassword); // Call the new API function
     },
     enabled: !!previewingFile && !!adminPassword, // Only enabled when a file is selected for preview AND password is available
@@ -203,9 +230,13 @@ function AdminBankManagerPage() {
     if (previewingFile === filename) {
       setPreviewingFile(null); // Hide preview if already showing for this file
       setError(null); // Clear any preview errors
+      setWarning(null); // Clear any warnings
       setMessage(null); // Clear messages
     } else {
       setPreviewingFile(filename); // Set the file to preview, which enables the preview query
+      setError(null); // Clear any errors
+      setWarning(null); // Clear any warnings
+      setMessage(null); // Clear messages
       // The query will automatically run because `enabled` becomes true
     }
   };
@@ -258,6 +289,22 @@ function AdminBankManagerPage() {
             : currentError.message || "An unknown error occurred."}
         </div>
       )}
+
+      {/* Display questions loading error */}
+      {questionsError && !currentError && !justLoadedFile && (
+        <div className="text-red-500 mb-4">
+          Error loading current quiz: {questionsError.message}
+        </div>
+      )}
+
+      {/* Display any warnings */}
+      {warning && (
+        <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4">
+          <p className="font-bold">Warning</p>
+          <p>{warning}</p>
+        </div>
+      )}
+
       {/* Display any success messages */}
       {message && <div className="text-green-500 mb-4">{message}</div>}
 

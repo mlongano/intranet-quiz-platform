@@ -57,12 +57,22 @@ const QuestionEditor: React.FC = () => {
   useEffect(() => {
     if (questionsData) {
       setQuestionsJson(JSON.stringify(questionsData, null, 2));
-      //setUserMessage(null); // Clear message on successful load/update
-      setUserMessage({
-        type: "success",
-        text: "Questions loaded successfully",
-      });
-      setTimeout(() => setUserMessage(null), 2000);
+
+      // Check if there's a warning about invalid format
+      if (questionsData.warning) {
+        setUserMessage({
+          type: "error",
+          text: questionsData.warning,
+        });
+        // Don't auto-clear warning messages - they're important
+      } else {
+        setUserMessage({
+          type: "success",
+          text: "Questions loaded successfully",
+        });
+        setTimeout(() => setUserMessage(null), 2000);
+      }
+
       setLengthOfQuestions(questionsData.questions?.length || 0);
     } else if (!isLoadingQuestions && adminPassword) {
       // Handle case where data is null/undefined after loading finishes (e.g., if API returns empty successfully)

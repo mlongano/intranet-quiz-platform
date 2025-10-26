@@ -54,6 +54,7 @@ export type Answer = number | number[] | string | null;
 export interface QuizData {
   title?: string;
   questions: Question[];
+  warning?: string; // Optional warning when file has invalid format but is loaded in lenient mode
 }
 
 // Define Score type based on scores.jsonc structure + detailed answers
@@ -90,6 +91,7 @@ export interface QuestionBankFilesResponse {
 export interface BankOperationResponse {
   success: boolean;
   message: string; // Message from the backend (e.g., filename on save)
+  warning?: string; // Optional warning message (e.g., for invalid format)
 }
 
 // --- NEW: Response shapes for scores bank management ---
