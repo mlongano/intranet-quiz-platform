@@ -371,7 +371,6 @@ export async function fetchPreviewBankFile(
   filename: string,
   password: string,
 ): Promise<Question[]> {
-  // Expecting an array of Question objects
   const response = await fetch(`${API_BASE}/admin/bank/preview`, {
     method: "POST", // Based on backend
     headers: {
@@ -379,7 +378,9 @@ export async function fetchPreviewBankFile(
     },
     body: JSON.stringify({ filename: filename, pw: password }), // Send filename and password
   });
-  return handleResponse<Question[]>(response);
+  const quizData = await handleResponse<QuizData>(response);
+  // Backend returns QuizData with {title, questions}, but we only need the questions array
+  return quizData.questions;
 }
 
 // --- NEW Admin Functions for Scores Bank Management ---

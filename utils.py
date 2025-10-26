@@ -118,6 +118,8 @@ def format_image_url(image_path):
              # Remove leading slash if present to avoid //
             clean_path = image_path.lstrip('/')
             return f"/{IMAGES_FOLDER}/{clean_path}"
+        # If already properly formatted or is http URL, return as-is
+        return image_path
     return None # Return None if no valid path
 
 
