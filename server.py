@@ -66,22 +66,32 @@ def serve_react_app(path):
 #
 def get_local_ip_addresses():
     """Get all local IP addresses for the machine."""
-    addresses = []
+    addresses = ['127.0.0.1']  # Always include localhost
+
     try:
-        # Get hostname
-        hostname = socket.gethostname()
-        # Get all addresses associated with the hostname
-        for info in socket.getaddrinfo(hostname, None):
-            addr = info[4][0]
-            # Filter out IPv6 link-local and loopback
-            if ':' not in addr and addr not in addresses and not addr.startswith('127.'):
-                addresses.append(addr)
+        # Method 1: Try to connect to a remote address to get local IP
+        # This doesn't actually send data, just determines routing
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            # Connect to Google's public DNS (doesn't send data)
+            s.connect(('8.8.8.8', 80))
+            local_ip = s.getsockname()[0]
+            if local_ip and local_ip not in addresses and not local_ip.startswith('127.'):
+                addresses.append(local_ip)
+        finally:
+            s.close()
     except Exception:
         pass
 
-    # Always include localhost
-    if '127.0.0.1' not in addresses:
-        addresses.insert(0, '127.0.0.1')
+    try:
+        # Method 2: Get hostname-based addresses as fallback
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            addr = info[4][0]
+            if addr not in addresses and not addr.startswith('127.'):
+                addresses.append(addr)
+    except Exception:
+        pass
 
     return addresses
 
