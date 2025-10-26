@@ -31,6 +31,7 @@ function AdminBankManagerPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [previewingFile, setPreviewingFile] = useState<string | null>(null); // State to track which file is being previewed
   const [justLoadedFile, setJustLoadedFile] = useState(false); // Track if we just loaded a file to avoid clearing messages
+  const [deleteConfirmFile, setDeleteConfirmFile] = useState<string | null>(null); // Track which file is being confirmed for deletion
 
   const queryClient = useQueryClient(); // Get Query Client instance
 
@@ -196,11 +197,13 @@ function AdminBankManagerPage() {
       return deleteQuizFromBank(filename, adminPassword);
     },
     onSuccess: (data, filename) => {
+      setDeleteConfirmFile(null); // Close confirmation
       setMessage(data.message || `File '${filename}' deleted successfully!`);
       // Refetch the list of bank files after deleting
       queryClient.invalidateQueries({ queryKey: ["questionBankFiles"] });
     },
     onError: (err: any) => {
+      setDeleteConfirmFile(null); // Close confirmation on error
       setError(`Failed to delete file: ${err.message}`);
     },
   });
@@ -265,10 +268,8 @@ function AdminBankManagerPage() {
   };
 
   const handleDeleteClick = (filename: string) => {
-    // Confirm before deleting
-    if (window.confirm(`Are you sure you want to delete '${filename}'? This action cannot be undone.`)) {
-      deleteFileMutation.mutate(filename);
-    }
+    // Show confirmation UI instead of alert
+    setDeleteConfirmFile(filename);
   };
 
   // --- Determine loading/error states combined ---
@@ -407,16 +408,33 @@ function AdminBankManagerPage() {
                         ? "Loading..."
                         : "Load"}
                     </button>
-                    <button
-                      onClick={() => handleDeleteClick(filename)}
-                      className="bg-red-500 text-white p-1 text-sm rounded disabled:bg-gray-400"
-                      disabled={isLoading || !adminPassword}
-                    >
-                      {deleteFileMutation.isPending &&
-                        deleteFileMutation.variables === filename
-                        ? "Deleting..."
-                        : "Delete"}
-                    </button>
+                    {deleteConfirmFile === filename ? (
+                      <span className="inline-flex gap-1 items-center bg-red-50 px-2 py-1 rounded border border-red-300">
+                        <span className="text-red-700 text-xs font-semibold">Delete?</span>
+                        <button
+                          onClick={() => deleteFileMutation.mutate(filename)}
+                          className="bg-red-600 text-white px-2 py-0.5 text-xs rounded disabled:bg-gray-400"
+                          disabled={deleteFileMutation.isPending}
+                        >
+                          {deleteFileMutation.isPending ? "Deleting..." : "Yes"}
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirmFile(null)}
+                          className="bg-gray-500 text-white px-2 py-0.5 text-xs rounded disabled:bg-gray-400"
+                          disabled={deleteFileMutation.isPending}
+                        >
+                          No
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleDeleteClick(filename)}
+                        className="bg-red-500 text-white p-1 text-sm rounded disabled:bg-gray-400"
+                        disabled={isLoading || !adminPassword}
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </div>
                 {/* --- Preview Area --- */}
