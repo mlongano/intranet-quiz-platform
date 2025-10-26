@@ -784,6 +784,338 @@ For a **school/classroom environment**, we recommend **Option 1 (Systemd + Nginx
 
 **Option 3 (Docker)** is ideal if you're already using containers or need easy portability.
 
+---
+
+## Adding HTTPS/SSL for LAN Deployment
+
+For secure connections (HTTPS) on your local network, you have two main options:
+
+### Option A: Self-Signed Certificate (Easiest for LAN)
+
+Best for isolated classroom/school networks where you control all client devices.
+
+#### 1. Generate Self-Signed Certificate
+
+```bash
+# Create directory for certificates
+sudo mkdir -p /etc/ssl/quizparty
+cd /etc/ssl/quizparty
+
+# Generate private key and certificate (valid for 365 days)
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout quizparty.key \
+  -out quizparty.crt \
+  -subj "/C=IT/ST=YourState/L=YourCity/O=YourSchool/CN=quiz.local"
+
+# Set proper permissions
+sudo chmod 600 quizparty.key
+sudo chmod 644 quizparty.crt
+```
+
+**Alternative with Subject Alternative Names (for multiple hostnames/IPs):**
+
+```bash
+# Create OpenSSL config file
+sudo nano /etc/ssl/quizparty/openssl.cnf
+```
+
+Add the following content (adjust IPs and names to match your setup):
+
+```ini
+[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+req_extensions = v3_req
+
+[dn]
+C=IT
+ST=YourState
+L=YourCity
+O=YourSchool
+CN=quiz.local
+
+[v3_req]
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = quiz.local
+DNS.2 = quiz
+DNS.3 = localhost
+IP.1 = 192.168.1.100
+IP.2 = 127.0.0.1
+```
+
+```bash
+# Generate certificate with config
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout /etc/ssl/quizparty/quizparty.key \
+  -out /etc/ssl/quizparty/quizparty.crt \
+  -config /etc/ssl/quizparty/openssl.cnf \
+  -extensions v3_req
+```
+
+#### 2. Update Nginx Configuration
+
+```bash
+sudo nano /etc/nginx/sites-available/quizparty
+```
+
+Replace the content with:
+
+```nginx
+# Redirect HTTP to HTTPS
+server {
+    listen 80;
+    server_name quiz.local 192.168.1.100;  # Add your server IP
+    return 301 https://$server_name$request_uri;
+}
+
+# HTTPS server
+server {
+    listen 443 ssl http2;
+    server_name quiz.local 192.168.1.100;  # Add your server IP
+
+    # SSL certificate
+    ssl_certificate /etc/ssl/quizparty/quizparty.crt;
+    ssl_certificate_key /etc/ssl/quizparty/quizparty.key;
+
+    # SSL configuration (modern security settings)
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384';
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # Increase upload size for images
+    client_max_body_size 10M;
+
+    location / {
+        proxy_pass http://127.0.0.1:5001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_header_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # Serve static files directly
+    location /static/ {
+        alias /opt/quizparty/static/;
+        expires 1d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location /banks/ {
+        alias /opt/quizparty/banks/;
+        expires 1d;
+    }
+}
+```
+
+```bash
+# Test and restart Nginx
+sudo nginx -t
+sudo systemctl restart nginx
+
+# Update firewall to allow HTTPS
+sudo ufw allow 443/tcp
+sudo ufw allow from 192.168.1.0/24 to any port 443
+```
+
+#### 3. Distribute Certificate to Client Devices
+
+Students will see a browser warning since the certificate is self-signed. You have two options:
+
+##### Option 3a: Click Through Warning (Quick but annoying)
+
+- Students click "Advanced" → "Proceed to quiz.local (unsafe)"
+- Must be done once per browser/device
+
+##### Option 3b: Install Certificate on All Devices (Best UX)
+
+**For Windows:**
+
+```powershell
+# Copy quizparty.crt to students' machines, then:
+# 1. Double-click the certificate file
+# 2. Click "Install Certificate"
+# 3. Select "Local Machine" → Next
+# 4. Choose "Place all certificates in the following store"
+# 5. Click "Browse" → Select "Trusted Root Certification Authorities"
+# 6. Click OK → Next → Finish
+```
+
+**For macOS:**
+
+```bash
+# Copy quizparty.crt to students' machines, then:
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain quizparty.crt
+```
+
+**For Linux (Ubuntu/Debian):**
+
+```bash
+# Copy quizparty.crt to students' machines, then:
+sudo cp quizparty.crt /usr/local/share/ca-certificates/quizparty.crt
+sudo update-ca-certificates
+```
+
+**For iOS/iPadOS:**
+
+1. Email or AirDrop the `.crt` file to devices
+2. Open the file → Install profile
+3. Go to Settings → General → About → Certificate Trust Settings
+4. Enable full trust for the certificate
+
+**For Android:**
+
+1. Copy `.crt` file to device
+2. Settings → Security → Install from storage
+3. Select the certificate file
+
+---
+
+### Option B: Let's Encrypt with Local DNS (More Complex but Trusted)
+
+This requires setting up a local DNS server and having a real domain name. Best for schools with IT infrastructure.
+
+#### Prerequisites
+
+- A domain name you own (e.g., `school.edu`)
+- Local DNS server (dnsmasq or similar)
+- Port 80/443 accessible from your LAN
+
+#### 1. Setup Local DNS
+
+```bash
+# Install dnsmasq
+sudo apt install dnsmasq -y
+
+# Configure dnsmasq
+sudo nano /etc/dnsmasq.conf
+```
+
+Add:
+
+```text
+address=/quiz.school.edu/192.168.1.100  # Your server IP
+```
+
+```bash
+sudo systemctl restart dnsmasq
+
+# Configure students' devices to use this DNS server
+# Point their DNS to your server IP (192.168.1.100)
+```
+
+#### 2. Get Let's Encrypt Certificate (using DNS challenge)
+
+```bash
+# Install certbot
+sudo apt install certbot python3-certbot-nginx -y
+
+# Request certificate (requires DNS TXT record access)
+sudo certbot certonly --manual --preferred-challenges dns -d quiz.school.edu
+
+# Follow prompts to add DNS TXT records to your domain
+# Certbot will verify ownership and issue certificate
+```
+
+#### 3. Update Nginx to Use Let's Encrypt Certificate
+
+```bash
+sudo nano /etc/nginx/sites-available/quizparty
+```
+
+Update SSL certificate paths:
+
+```nginx
+```
+
+Update SSL certificate paths:
+
+```nginx
+ssl_certificate /etc/letsencrypt/live/quiz.school.edu/fullchain.pem;
+ssl_certificate_key /etc/letsencrypt/live/quiz.school.edu/privkey.pem;
+```
+
+#### 4. Setup Auto-Renewal
+
+```bash
+# Test renewal
+sudo certbot renew --dry-run
+
+# Certbot installs auto-renewal via systemd timer
+sudo systemctl status certbot.timer
+```
+
+---
+
+### Option C: mkcert (Development Tool - Easy but Requires Installation on All Devices)
+
+Best for development or small deployments where you can install mkcert on all machines.
+
+#### 1. Install mkcert on Server
+
+```bash
+# Install mkcert
+sudo apt install libnss3-tools -y
+wget https://github.com/FiloSottile/mkcert/releases/latest/download/mkcert-v*-linux-amd64
+sudo mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
+sudo chmod +x /usr/local/bin/mkcert
+
+# Install local CA
+mkcert -install
+
+# Generate certificate
+cd /etc/ssl/quizparty
+sudo mkcert -key-file quizparty.key -cert-file quizparty.crt quiz.local 192.168.1.100 localhost 127.0.0.1
+```
+
+#### 2. Install mkcert CA on Student Devices
+
+```bash
+# Get the CA certificate
+cat "$(mkcert -CAROOT)/rootCA.pem"
+
+# Copy this certificate to all student devices and install it
+# (Follow same installation steps as Option A, Option 3b)
+```
+
+---
+
+### Testing HTTPS Setup
+
+```bash
+# Test certificate
+openssl s_client -connect quiz.local:443 -showcerts
+
+# Check Nginx SSL configuration
+sudo nginx -t
+
+# View SSL certificate details
+openssl x509 -in /etc/ssl/quizparty/quizparty.crt -text -noout
+
+# Test from another machine
+curl -k https://192.168.1.100  # -k to skip certificate verification
+```
+
+### Recommendations
+
+| Method | Best For | Pros | Cons |
+|--------|----------|------|------|
+| **Self-Signed** | Isolated classroom networks | Easy, no external dependencies | Browser warnings unless cert installed on all devices |
+| **Let's Encrypt** | Schools with domain + IT staff | Trusted by browsers | Requires domain name, DNS setup, more complex |
+| **mkcert** | Development, small deployments | Easy to use, trusted locally | Requires tool installation on all devices |
+
+**For most school scenarios, we recommend Self-Signed Certificate (Option A, Option 3b)** - generate once, install on all school devices via MDM or manual installation, then it works seamlessly for all students.
+
 ## Features
 
 ### Student Features
