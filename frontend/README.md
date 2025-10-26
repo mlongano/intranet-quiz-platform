@@ -24,6 +24,7 @@ The frontend provides a comprehensive admin interface:
 
 - **`AdminLoginPage`** - Password-protected admin access
 - **`AdminDashboardPage`** - Modern dashboard with real-time statistics:
+  - **Quiz enable/disable toggle** in header for instant control
   - Interactive statistics cards (clickable for navigation)
   - Current quiz overview
   - Auto-refreshing submissions tracker (30-second interval)
@@ -137,6 +138,24 @@ pnpm lint
 ```
 
 ## Features Implemented
+
+### Quiz Enable/Disable Control
+
+- **Toggle Switch in Dashboard Header**:
+  - Visual toggle with green (enabled) / red (disabled) color states
+  - Smooth animations for state transitions
+  - Real-time updates without page reload
+  - Silent operation (no modal popup on success)
+- **Student-Facing UI**:
+  - Warning banner on start page when quiz is disabled
+  - Disabled form inputs prevent quiz start attempts
+  - Full-page "Quiz Disabled" message with friendly icon
+  - Back to home navigation option
+- **Backend Integration**:
+  - API endpoints: `GET/POST /api/admin/quiz-status`
+  - Quiz status persisted in `quiz_status.jsonc` file
+  - `/api/start` endpoint checks status before allowing quiz
+  - Status query via React Query for real-time sync
 
 ### Dashboard Enhancements
 

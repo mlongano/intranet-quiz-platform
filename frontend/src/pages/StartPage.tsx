@@ -1,8 +1,8 @@
 // frontend/src/pages/StartPage.tsx (with Tailwind)
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useMutation } from "@tanstack/react-query";
-import { startQuiz } from "../api";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { startQuiz, getQuizStatus } from "../api";
 
 // Key needs to be accessible here too, or imported from a constants file
 const QUIZ_STORAGE_KEY = "quiz_state";
@@ -21,6 +21,13 @@ function StartPage() {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  // Check quiz status
+  const { data: quizStatus, isLoading: isStatusLoading } = useQuery({
+    queryKey: ["quizStatus"],
+    queryFn: () => getQuizStatus(),
+    refetchOnWindowFocus: false,
+  });
 
   const startMutation = useMutation({
     mutationFn: startQuiz,
@@ -69,6 +76,22 @@ function StartPage() {
           return today.toLocaleDateString("it-IT");
         })()}
       </h1>
+
+      {/* Quiz Status Warning */}
+      {!isStatusLoading && quizStatus && !quizStatus.enabled && (
+        <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 rounded-lg">
+          <div className="flex items-start">
+            <div className="flex-shrink-0 text-2xl mr-3">🚫</div>
+            <div>
+              <h3 className="text-red-800 font-semibold mb-1">Quiz Currently Disabled</h3>
+              <p className="text-red-700 text-sm">
+                The quiz is currently disabled by the administrator. You cannot start the quiz at this time.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <label className="block">
           <span className="text-red-950-700">Name / ID:</span>
@@ -76,15 +99,15 @@ function StartPage() {
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            disabled={startMutation.isPending}
+            disabled={startMutation.isPending || (quizStatus && !quizStatus.enabled)}
             required
-            className="mt-1 p-2 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+            className="mt-1 p-2 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
             placeholder="Enter your identifier"
           />
         </label>
         <button
           type="submit"
-          disabled={startMutation.isPending}
+          disabled={startMutation.isPending || (quizStatus && !quizStatus.enabled)}
           className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {startMutation.isPending ? "Starting..." : "Start quiz"}

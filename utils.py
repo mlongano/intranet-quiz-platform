@@ -15,6 +15,7 @@ load_dotenv()
 QUEST_FILE = 'questions.jsonc'
 SCORE_FILE = 'scores.jsonc'
 STUDENTS_FILE = 'students.jsonc'
+QUIZ_STATUS_FILE = 'quiz_status.jsonc'
 QUIZ_FOLDER = 'quizzes'
 IMAGES_FOLDER = 'images'
 BANKS_BASE = 'banks' # NEW: Base directory for all banks
@@ -845,3 +846,76 @@ def save_students_to_bank(filename: str):
     except Exception as e:
         print(f"Error saving students to bank: {e}")
         raise InternalServerError(description=f"Error copying file to bank: {e}")
+
+
+# --- Quiz Status Management ---
+
+def load_quiz_status():
+    """
+    Loads the quiz enabled/disabled status from QUIZ_STATUS_FILE.
+    Returns a dict with 'enabled' boolean field.
+    If file doesn't exist, creates it with enabled=True (default).
+    """
+    status_path = Path(QUIZ_STATUS_FILE)
+
+    # If file doesn't exist, create it with default enabled state
+    if not status_path.exists():
+        default_status = {"enabled": True}
+        try:
+            with status_path.open('w', encoding='utf-8') as f:
+                json.dump(default_status, f, indent=2)
+            print(f"Created {QUIZ_STATUS_FILE} with default enabled=True")
+            return default_status
+        except Exception as e:
+            print(f"Error creating quiz status file: {e}")
+            # Return default status even if file creation fails
+            return default_status
+
+    # Load existing status
+    try:
+        with status_path.open(encoding='utf-8') as f:
+            status = json.load(f)
+
+        # Validate the status structure
+        if not isinstance(status, dict) or 'enabled' not in status:
+            print(f"Warning: Invalid quiz status format in {QUIZ_STATUS_FILE}, resetting to enabled=True")
+            status = {"enabled": True}
+            save_quiz_status(status)
+
+        return status
+    except json.JSONLibraryException as e:
+        print(f"Error parsing {QUIZ_STATUS_FILE}: {e}")
+        raise InternalServerError(description=f"Quiz status file is corrupted: {e}")
+    except Exception as e:
+        print(f"Error reading {QUIZ_STATUS_FILE}: {e}")
+        raise InternalServerError(description=f"Error reading quiz status: {e}")
+
+
+def save_quiz_status(status):
+    """
+    Saves the quiz status to QUIZ_STATUS_FILE.
+    Expected format: {"enabled": boolean}
+    """
+    if not isinstance(status, dict) or 'enabled' not in status:
+        raise BadRequest(description="Invalid status format. Expected: {'enabled': boolean}")
+
+    if not isinstance(status['enabled'], bool):
+        raise BadRequest(description="'enabled' field must be a boolean")
+
+    status_path = Path(QUIZ_STATUS_FILE)
+
+    try:
+        # Use atomic write with temp file for safety
+        temp_fd, temp_path = tempfile.mkstemp(dir='.', suffix='.tmp')
+        try:
+            with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
+                json.dump(status, f, indent=2)
+            os.replace(temp_path, str(status_path))  # Atomic on POSIX
+            print(f"Updated quiz status: enabled={status['enabled']}")
+        except Exception as e:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise e
+    except Exception as e:
+        print(f"Error saving quiz status: {e}")
+        raise InternalServerError(description=f"Error saving quiz status: {e}")

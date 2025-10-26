@@ -20,6 +20,8 @@ from utils import (
     list_students_bank_files, # NEW import for students bank
     load_students_from_bank,  # NEW import for students bank
     save_students_to_bank,    # NEW import for students bank
+    load_quiz_status,         # NEW import for quiz status
+    save_quiz_status,         # NEW import for quiz status
 )
 
 # Import email service
@@ -895,6 +897,48 @@ def api_preview_students_bank_file():
     except Exception as e:
         print(f"Error previewing students bank file: {e}")
         abort(500, description=f"Failed to preview file: {str(e)}")
+
+
+# ===========================
+# Quiz Status Endpoints
+# ===========================
+
+@admin_bp.route('/admin/quiz-status', methods=['GET'])
+def api_get_quiz_status():
+    """Get the current quiz enabled/disabled status (public endpoint, no auth required)"""
+    try:
+        status = load_quiz_status()
+        return jsonify(status)
+    except Exception as e:
+        print(f"Error getting quiz status: {e}")
+        abort(500, description=f"Failed to get quiz status: {str(e)}")
+
+
+@admin_bp.route('/admin/quiz-status', methods=['POST'])
+def api_set_quiz_status():
+    """Set the quiz enabled/disabled status (requires admin authentication)"""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    enabled = data.get('enabled')
+    if enabled is None:
+        abort(400, description="Missing 'enabled' field in request body.")
+
+    if not isinstance(enabled, bool):
+        abort(400, description="'enabled' field must be a boolean.")
+
+    try:
+        status = {"enabled": enabled}
+        save_quiz_status(status)
+        return jsonify({"success": True, "message": f"Quiz {'enabled' if enabled else 'disabled'} successfully.", "status": status})
+    except (BadRequest, InternalServerError) as e:
+        abort(e.code if hasattr(e, 'code') else 500, description=e.description if hasattr(e, 'description') else str(e))
+    except Exception as e:
+        print(f"Error setting quiz status: {e}")
+        abort(500, description=f"Failed to set quiz status: {str(e)}")
 
 
 # ===========================

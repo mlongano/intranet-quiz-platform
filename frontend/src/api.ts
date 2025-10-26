@@ -681,3 +681,46 @@ export async function syncBanks(password: string, pullFirst: boolean = true): Pr
   });
   return handleResponse<GitSyncResult>(response);
 }
+
+
+/**
+ * Quiz Status Types and Functions
+ */
+export interface QuizStatus {
+  enabled: boolean;
+}
+
+/**
+ * Get the current quiz enabled/disabled status (public endpoint).
+ */
+export async function getQuizStatus(): Promise<QuizStatus> {
+  const response = await fetch(`${API_BASE}/admin/quiz-status`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+  return handleResponse<QuizStatus>(response);
+}
+
+/**
+ * Set the quiz enabled/disabled status (requires admin password).
+ */
+export async function setQuizStatus(enabled: boolean, password: string): Promise<{
+  success: boolean;
+  message: string;
+  status: QuizStatus;
+}> {
+  const response = await fetch(`${API_BASE}/admin/quiz-status`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ enabled, pw: password }),
+  });
+  return handleResponse<{
+    success: boolean;
+    message: string;
+    status: QuizStatus;
+  }>(response);
+}

@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { resumeQuiz, submitQuiz, Question, Answer } from "../api";
+import { resumeQuiz, submitQuiz, Question, Answer, getQuizStatus } from "../api";
 import QuestionDisplay from "../components/QuestionDisplay"; // Assume this is created
 // Assume these helper components exist
 // import ErrorDisplay from '../components/ErrorDisplay';
@@ -49,6 +49,14 @@ function QuizPage() {
   };
 
   console.log("Try to prevent selection and context menu");
+
+  // --- Check Quiz Status ---
+  const { data: quizStatusData, isLoading: isStatusLoading } = useQuery({
+    queryKey: ["quizStatus"],
+    queryFn: () => getQuizStatus(),
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
 
   // --- Data Fetching ---
   const {
@@ -218,7 +226,29 @@ function QuizPage() {
   };
 
   // --- Render Logic ---
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading || isStatusLoading) return <LoadingSpinner />;
+
+  // Check if quiz is disabled
+  if (quizStatusData && !quizStatusData.enabled) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full text-center">
+          <div className="text-6xl mb-4">🚫</div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-4">Quiz Disabled</h2>
+          <p className="text-gray-600 mb-6">
+            The quiz is currently disabled by the administrator. Please check back later or contact your instructor.
+          </p>
+          <button
+            onClick={() => navigate("/")}
+            className="px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors font-medium"
+          >
+            Back to Home
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Use queryError directly if available
   if (isError)
     return (

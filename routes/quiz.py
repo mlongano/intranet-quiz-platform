@@ -17,6 +17,7 @@ from utils import (
     load_scores,
     save_scores,
     load_questions,
+    load_quiz_status,
     grade,
     load_quiz_plan_by_student,
     validate_submission_data,
@@ -87,6 +88,16 @@ def api_start():
     student = data.get('name', '').strip()[:60].lower()
     if not student:
         abort(400, 'missing name')
+
+    # Check if quiz is enabled
+    try:
+        quiz_status = load_quiz_status()
+        if not quiz_status.get('enabled', True):
+            return jsonify(error="Quiz is currently disabled by the administrator"), 403
+    except Exception as e:
+        print(f"Error checking quiz status: {e}")
+        # If we can't read status, allow quiz to proceed (fail-open)
+        pass
 
     if VALID_STUDENTS and student not in VALID_STUDENTS: # Check if VALID_STUDENTS is populated
         return jsonify(error="Unknown student"), 403

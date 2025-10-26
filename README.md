@@ -287,6 +287,11 @@ now the frontend is served by the `server.py`
 
 Access the admin panel at `/admin` with the password set in `.env`:
 
+- **Quiz Control**: Enable/disable quiz access for students
+  - Toggle switch in dashboard header for quick access
+  - Visual green (enabled) / red (disabled) indicator
+  - Prevents students from starting or accessing quizzes when disabled
+  - Friendly message shown to students when quiz is disabled
 - **Dashboard**: Modern overview with real-time statistics
   - Clickable statistics cards for quick navigation
   - Current quiz info with question count
@@ -601,6 +606,7 @@ After migration, restart the server. Your banks will now be in the correct locat
   (uses slugified title for filenames)
 - [x] Manage student list from the admin panel with group support and email validation
 - [x] Students bank for saving/loading different student lists
+- [x] Quiz enable/disable control for administrators (toggle in dashboard header)
 - [ ] Implement a timer for quizzes
 - [ ] Improve UI/UX design of the frontend
 - [ ] Improve error handling and user feedback throughout the app

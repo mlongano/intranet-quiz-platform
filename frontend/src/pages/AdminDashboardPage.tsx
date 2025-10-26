@@ -1,7 +1,7 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { fetchScores, fetchStudents, fetchAdminQuestions, fetchQuestionBankFiles, fetchScoresBankFiles, listStudentsBankFiles, getGitSyncStatus, initGitSync, syncBanks } from "../api";
+import { fetchScores, fetchStudents, fetchAdminQuestions, fetchQuestionBankFiles, fetchScoresBankFiles, listStudentsBankFiles, getGitSyncStatus, initGitSync, syncBanks, getQuizStatus, setQuizStatus } from "../api";
 
 export default function AdminRootPage() {
   const location = useLocation();
@@ -94,6 +94,13 @@ export default function AdminRootPage() {
     enabled: !!adminPassword && !isValidating,
   });
 
+  // Quiz status query
+  const { data: quizStatus, refetch: refetchQuizStatus } = useQuery({
+    queryKey: ["quizStatus"],
+    queryFn: () => getQuizStatus(),
+    enabled: !!adminPassword && !isValidating,
+  });
+
   // Git sync status query
   const { data: syncStatus, refetch: refetchSyncStatus, error: syncStatusError, isLoading: syncStatusLoading } = useQuery({
     queryKey: ["gitSyncStatus", adminPassword],
@@ -147,6 +154,21 @@ export default function AdminRootPage() {
     },
     onError: (error: any) => {
       setSyncError(error.message || "Failed to sync banks");
+      setSyncMessage("");
+      setShowSyncModal(true);
+    },
+  });
+
+  // Quiz status mutation
+  const toggleQuizStatusMutation = useMutation({
+    mutationFn: (enabled: boolean) => setQuizStatus(enabled, adminPassword),
+    onSuccess: () => {
+      // Just refetch the status to update the UI
+      refetchQuizStatus();
+    },
+    onError: (error: any) => {
+      // Only show error if toggle fails
+      setSyncError(error.message || "Failed to update quiz status");
       setSyncMessage("");
       setShowSyncModal(true);
     },
@@ -248,7 +270,27 @@ export default function AdminRootPage() {
               <h1 className="text-3xl font-bold">QuizParty Admin</h1>
               <p className="text-teal-100 text-sm mt-1">Quiz Management Dashboard</p>
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-3 items-center">
+              {/* Quiz Status Toggle */}
+              <div className="flex items-center gap-3 bg-white/10 backdrop-blur-sm rounded-lg px-4 py-2 border border-white/20">
+                <span className="text-sm font-medium">Quiz Status:</span>
+                <button
+                  onClick={() => toggleQuizStatusMutation.mutate(!quizStatus?.enabled)}
+                  disabled={toggleQuizStatusMutation.isPending}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-teal-700 disabled:opacity-50 disabled:cursor-not-allowed ${quizStatus?.enabled ? 'bg-green-500' : 'bg-red-500'
+                    }`}
+                  title={quizStatus?.enabled ? 'Quiz is enabled - Click to disable' : 'Quiz is disabled - Click to enable'}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${quizStatus?.enabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                  />
+                </button>
+                <span className={`text-sm font-semibold ${quizStatus?.enabled ? 'text-green-200' : 'text-red-200'}`}>
+                  {quizStatus?.enabled ? 'Enabled' : 'Disabled'}
+                </span>
+              </div>
+
               <button
                 onClick={() => navigate("/")}
                 className="px-4 py-2 bg-white text-teal-700 font-medium rounded-lg hover:bg-teal-50 transition-colors"
