@@ -17,6 +17,7 @@ import {
   fetchAdminQuestions,
   QuizData,
 } from "../api"; // Assuming api.ts is in src/
+import { slugify } from "../lib/utils";
 
 // Define the name of the scores bank folder for display purposes
 const SCORES_BANK_FOLDER = "scores_bank"; // Or import if defined elsewhere
@@ -48,20 +49,6 @@ function AdminScoresBankPage() {
     enabled: !!adminPassword,
     staleTime: 5 * 60 * 1000,
   });
-
-  // Slugify function to match backend implementation
-  const slugify = (text: string): string => {
-    return text
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '') // Remove accents
-      .toLowerCase()
-      .trim()
-      .replace(/\s+/g, '-') // Replace spaces with hyphens
-      .replace(/[^\w-]+/g, '') // Remove non-word chars except hyphens
-      .replace(/--+/g, '-') // Replace multiple hyphens with single hyphen
-      .replace(/^-+/, '') // Trim hyphens from start
-      .replace(/-+$/, ''); // Trim hyphens from end
-  };
 
   // Generate default filename based on current quiz title
   const defaultFilename = useMemo(() => {

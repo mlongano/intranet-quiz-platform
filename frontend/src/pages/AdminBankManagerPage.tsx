@@ -16,7 +16,8 @@ import {
   Question, // Import the Question type for preview content
   fetchAdminQuestions,
   QuizData,
-} from "../api"; // Assuming api.ts is in src/
+} from "../api";
+import { slugify } from "../lib/utils"; // Assuming api.ts is in src/
 
 function AdminBankManagerPage() {
   // RETRIEVE PASSWORD USING useLocation STATE AS PER YOUR CODE'S PATTERN (NOTE: INSECURE)
@@ -63,20 +64,6 @@ function AdminBankManagerPage() {
       setJustLoadedFile(false);
     }
   }, [questionsError, justLoadedFile]);
-
-  // Slugify function to match backend implementation
-  const slugify = (text: string): string => {
-    return text
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '') // Remove accents
-      .toLowerCase()
-      .trim()
-      .replace(/\s+/g, '-') // Replace spaces with hyphens
-      .replace(/[^\w-]+/g, '') // Remove non-word chars except hyphens
-      .replace(/--+/g, '-') // Replace multiple hyphens with single hyphen
-      .replace(/^-+/, '') // Trim hyphens from start
-      .replace(/-+$/, ''); // Trim hyphens from end
-  };
 
   // Generate default filename based on current quiz title
   const defaultFilename = useMemo(() => {

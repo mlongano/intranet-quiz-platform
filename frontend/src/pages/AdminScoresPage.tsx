@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom"; // Import useNavigate
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchScores, ScoreEntry, recalculateAllScores, sendResultEmail, sendAllResultEmails, clearScores, restoreScores } from "../api"; // Import API and type
+import { slugify } from "../lib/utils";
 // Assume helper components exist
 import LoadingSpinner from "../components/LoadingSpinner";
 import ErrorDisplay from "../components/ErrorDisplay";
@@ -234,6 +235,18 @@ function AdminDashboardPage() {
       return;
     }
 
+    // Generate filename based on quiz title if available
+    const quizTitle = scores.every(s => s.quiz_title === scores[0].quiz_title)
+      ? scores[0].quiz_title
+      : null;
+
+    const now = new Date();
+    const datePrefix = now.toISOString().split('T')[0]; // YYYY-MM-DD format
+
+    const filename = quizTitle
+      ? `${datePrefix}_${slugify(quizTitle)}_scores.csv`
+      : `${datePrefix}_quiz_scores_export.csv`;
+
     // Define CSV Columns and Header (Timestamp, Student ID, Score)
     const maxScore = scores[0].max_points;
     const header = [
@@ -283,7 +296,7 @@ function AdminDashboardPage() {
       // Feature detection
       const url = URL.createObjectURL(blob);
       link.setAttribute("href", url);
-      link.setAttribute("download", "quiz_scores_export.csv");
+      link.setAttribute("download", filename);
       link.style.visibility = "hidden";
       document.body.appendChild(link);
       link.click();
