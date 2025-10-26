@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { parse, ParseError } from "jsonc-parser"; // Import parse from jsonc-parser
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchAdminQuestions, updateAdminQuestions, QuizData, Question } from "../api"; // Import both QuizData and Question
+import { fetchAdminQuestions, updateAdminQuestions, QuizData, Question, clearActiveQuizImages } from "../api"; // Import both QuizData and Question
 import { useLocation, useNavigate } from "react-router-dom";
 import QuestionDisplay from "../components/QuestionDisplay";
 import { ImagePicker } from "../components/ImagePicker";
@@ -21,11 +21,19 @@ const QuestionEditor: React.FC = () => {
   const [showPreview, setShowPreview] = useState<boolean>(false);
   const [showImagePicker, setShowImagePicker] = useState<boolean>(false);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
-  // Local state for user feedback messages not directly tied to query status
-  const [userMessage, setUserMessage] = useState<{
-    type: "success" | "error";
+  const [showClearConfirm, setShowClearConfirm] = useState<boolean>(false);
+  // Toast notification state
+  const [toast, setToast] = useState<{
+    type: "success" | "error" | "warning";
     text: string;
   } | null>(null);
+
+  const showToast = useCallback((type: "success" | "error" | "warning", text: string, duration = 3000) => {
+    setToast({ type, text });
+    if (duration > 0) {
+      setTimeout(() => setToast(null), duration);
+    }
+  }, []);
 
   const queryClient = useQueryClient();
 
@@ -63,17 +71,9 @@ const QuestionEditor: React.FC = () => {
 
       // Check if there's a warning about invalid format
       if (questionsData.warning) {
-        setUserMessage({
-          type: "error",
-          text: questionsData.warning,
-        });
-        // Don't auto-clear warning messages - they're important
+        showToast("warning", questionsData.warning, 0); // Don't auto-clear warnings
       } else {
-        setUserMessage({
-          type: "success",
-          text: "Questions loaded successfully",
-        });
-        setTimeout(() => setUserMessage(null), 2000);
+        showToast("success", "Questions loaded successfully", 2000);
       }
 
       setLengthOfQuestions(questionsData.questions?.length || 0);
@@ -81,7 +81,7 @@ const QuestionEditor: React.FC = () => {
       // Handle case where data is null/undefined after loading finishes (e.g., if API returns empty successfully)
       setQuestionsJson(JSON.stringify({ title: "", questions: [] }, null, 2)); // Set to empty quiz data
     }
-  }, [questionsData, isLoadingQuestions, adminPassword]);
+  }, [questionsData, isLoadingQuestions, adminPassword, showToast]);
 
   // Extract quiz title from the current data
   const quizTitle = useMemo(() => {
@@ -115,23 +115,44 @@ const QuestionEditor: React.FC = () => {
       // Invalidate the questions query cache to trigger a refetch
       queryClient.invalidateQueries({ queryKey: queryKey });
       // Set success message from API response or a default one
-      setUserMessage({
-        type: "success",
-        text: data.message || "Questions saved successfully!",
-      });
-      setTimeout(() => setUserMessage(null), 2000);
+      showToast("success", data.message || "Questions saved successfully!", 2000);
       // Optionally clear local JSON or rely on refetch to update it
     },
     onError: (err) => {
       // Error message is handled via isSaveError/saveError state
-      setUserMessage({ type: "error", text: `Save failed: ${err.message}` });
+      showToast("error", `Save failed: ${err.message}`);
+    },
+  });
+
+  // --- Clear Active Quiz Images using useMutation ---
+  const {
+    mutate: clearImagesMutation,
+    isPending: isClearingImages,
+  } = useMutation<
+    { success: boolean; message: string; deleted_count: number },
+    Error,
+    void
+  >({
+    mutationFn: () => {
+      if (!adminPassword) {
+        return Promise.reject(new Error("Password not available"));
+      }
+      return clearActiveQuizImages(adminPassword);
+    },
+    onSuccess: (data) => {
+      setShowClearConfirm(false);
+      showToast("success", data.message, 3000);
+    },
+    onError: (err) => {
+      setShowClearConfirm(false);
+      showToast("error", `Failed to clear images: ${err.message}`, 3000);
     },
   });
 
   // --- Event Handlers ---
   const handleSaveChanges = useCallback(() => {
     if (!questionsJson.trim()) {
-      setUserMessage({ type: "error", text: "Cannot save empty content." });
+      showToast("error", "Cannot save empty content.");
       return;
     }
 
@@ -146,10 +167,7 @@ const QuestionEditor: React.FC = () => {
 
       if (errors.length > 0) {
         console.log("JSON parsing errors:", errors);
-        setUserMessage({
-          type: "error",
-          text: `Invalid JSON format: ${JSON.stringify(errors, null, 2)}`,
-        });
+        showToast("error", `Invalid JSON format: ${JSON.stringify(errors, null, 2)}`);
         return;
       }
 
@@ -168,17 +186,13 @@ const QuestionEditor: React.FC = () => {
 
       // Backend performs more detailed validation
     } catch (parseError: any) {
-      setUserMessage({
-        type: "error",
-        text: `Invalid JSON format: ${parseError.message}`,
-      });
+      showToast("error", `Invalid JSON format: ${parseError.message}`);
       return;
     }
 
-    setUserMessage(null); // Clear previous messages before saving
     setLengthOfQuestions(parsedData.questions.length);
     saveQuestionsMutation(parsedData); // Trigger the mutation
-  }, [questionsJson, saveQuestionsMutation]);
+  }, [questionsJson, saveQuestionsMutation, showToast]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -202,10 +216,7 @@ const QuestionEditor: React.FC = () => {
   const handleSetAllWeights = () => {
     const weightValue = parseFloat(commonWeight);
     if (isNaN(weightValue) || weightValue < 0) {
-      setUserMessage({
-        type: "error",
-        text: "Please enter a valid non-negative number for the weight.",
-      });
+      showToast("error", "Please enter a valid non-negative number for the weight.");
       return;
     }
 
@@ -214,18 +225,12 @@ const QuestionEditor: React.FC = () => {
 
       // Validate format
       if (Array.isArray(currentData)) {
-        setUserMessage({
-          type: "error",
-          text: "Cannot apply weights: Old array format is no longer supported. Please use: {\"title\": \"Quiz Title\", \"questions\": [...]}",
-        });
+        showToast("error", "Cannot apply weights: Old array format is no longer supported. Please use: {\"title\": \"Quiz Title\", \"questions\": [...]}");
         return;
       }
 
       if (!currentData.questions || !Array.isArray(currentData.questions)) {
-        setUserMessage({
-          type: "error",
-          text: "Cannot apply weights: Invalid format. Missing 'questions' array.",
-        });
+        showToast("error", "Cannot apply weights: Invalid format. Missing 'questions' array.");
         return;
       }
 
@@ -235,16 +240,9 @@ const QuestionEditor: React.FC = () => {
       }));
 
       setQuestionsJson(JSON.stringify(currentData, null, 2));
-      setUserMessage({
-        type: "success",
-        text: `All question weights set to ${weightValue}. Remember to save.`,
-      });
-      setTimeout(() => setUserMessage(null), 3000);
+      showToast("success", `All question weights set to ${weightValue}. Remember to save.`, 3000);
     } catch (parseError: any) {
-      setUserMessage({
-        type: "error",
-        text: `Cannot apply weights: Invalid JSON format - ${parseError.message}`,
-      });
+      showToast("error", `Cannot apply weights: Invalid JSON format - ${parseError.message}`);
     }
   };
 
@@ -306,13 +304,13 @@ const QuestionEditor: React.FC = () => {
   const isProcessing = isLoadingQuestions || isSaving || isFetchingQuestions;
 
   // --- Render Logic ---
-  if (adminPassword === null && !userMessage) {
+  if (adminPassword === null && !toast) {
     return <div>Loading editor...</div>;
   }
 
   // Display error if password prompt was cancelled/failed
-  if (userMessage?.type === "error" && adminPassword === null) {
-    return <div className="text-red-500 font-bold p-4">{userMessage.text}</div>;
+  if (toast?.type === "error" && adminPassword === null) {
+    return <div className="text-red-500 font-bold p-4">{toast.text}</div>;
   }
 
   // Display general loading indicator if fetching for the first time
@@ -340,7 +338,7 @@ const QuestionEditor: React.FC = () => {
         {quizTitle && <span className="text-gray-600 font-normal"> - {quizTitle}</span>}
       </h2>
 
-      {/* Error/Success Messages */}
+      {/* Error/Success Messages - Keep persistent errors visible */}
       {/* Display loading errors */}
       {isLoadError && (
         <div
@@ -360,15 +358,6 @@ const QuestionEditor: React.FC = () => {
             Save failed: {saveError?.message || "Unknown error"}
           </div>
         )}
-      {/* Display success/user messages */}
-      {userMessage && (
-        <div
-          className={`border px-4 py-3 rounded relative mb-4 ${userMessage.type === "success" ? "bg-green-100 border-green-400 text-green-700" : "bg-yellow-100 border-yellow-400 text-yellow-700"}`}
-          role="alert"
-        >
-          {userMessage.text}
-        </div>
-      )}
 
       {/* Action Buttons */}
       <div className="flex flex-wrap gap-4 mb-4">
@@ -402,6 +391,42 @@ const QuestionEditor: React.FC = () => {
         >
           📷 Manage Images
         </button>
+        {!showClearConfirm ? (
+          <button
+            onClick={() => setShowClearConfirm(true)}
+            disabled={isClearingImages || !adminPassword}
+            className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
+            title="Clear all images from active quiz folder"
+          >
+            🗑️ Clear Images
+          </button>
+        ) : (
+          <div className="flex gap-2 items-center bg-red-50 px-3 py-2 rounded border border-red-300">
+            <div className="flex flex-col gap-1">
+              <span className="text-red-700 text-sm font-semibold">Clear all active quiz images?</span>
+              <span className="text-red-600 text-xs">
+                Deletes all images in questions_images/. Bank quiz images are NOT affected.
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                clearImagesMutation();
+                setShowClearConfirm(false);
+              }}
+              disabled={isClearingImages}
+              className="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded text-sm disabled:opacity-50 whitespace-nowrap"
+            >
+              {isClearingImages ? "Clearing..." : "Yes, Clear"}
+            </button>
+            <button
+              onClick={() => setShowClearConfirm(false)}
+              disabled={isClearingImages}
+              className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-1 px-3 rounded text-sm disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
         <p>Total Questions: {lengthOfQuestions}</p>
       </div>
 
@@ -541,6 +566,51 @@ const QuestionEditor: React.FC = () => {
             <div style={{ fontSize: '12px', opacity: 0.9 }}>
               Paste this path in the JSON editor for "question_image" or option "image" fields
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            backgroundColor: toast.type === 'success' ? '#28a745' : toast.type === 'error' ? '#dc3545' : '#ffc107',
+            color: 'white',
+            padding: '16px 24px',
+            borderRadius: '8px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            zIndex: 2000,
+            maxWidth: '500px',
+            animation: 'slideIn 0.3s ease-out',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+            <span style={{ fontSize: '20px', flexShrink: 0 }}>
+              {toast.type === 'success' ? '✓' : toast.type === 'error' ? '✕' : '⚠'}
+            </span>
+            <span style={{ wordBreak: 'break-word', flex: 1 }}>{toast.text}</span>
+            <button
+              onClick={() => setToast(null)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'white',
+                cursor: 'pointer',
+                fontSize: '20px',
+                padding: '0',
+                lineHeight: '1',
+                opacity: 0.8,
+                flexShrink: 0,
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+              onMouseLeave={(e) => e.currentTarget.style.opacity = '0.8'}
+              title="Close"
+            >
+              ×
+            </button>
           </div>
         </div>
       )}

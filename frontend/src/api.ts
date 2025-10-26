@@ -885,3 +885,19 @@ export async function deleteImage(
   return handleResponse<{ success: boolean; message: string }>(response);
 }
 
+/**
+ * Clear all images from the active quiz images folder.
+ */
+export async function clearActiveQuizImages(
+  password: string
+): Promise<{ success: boolean; message: string; deleted_count: number }> {
+  const response = await fetch(`${API_BASE}/admin/images/clear-active`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ password }),
+  });
+  return handleResponse<{ success: boolean; message: string; deleted_count: number }>(response);
+}
+

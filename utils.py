@@ -1331,3 +1331,44 @@ def delete_quiz_image(quiz_filename, image_filename):
     except Exception as e:
         print(f"Error deleting image: {e}")
         raise InternalServerError(description=f"Error deleting image: {e}")
+
+
+def clear_active_quiz_images():
+    """
+    Clear all images in the active quiz images folder (questions_images).
+    This is useful to clean up unused images that accumulate over time.
+
+    Returns:
+        dict: {"success": True, "message": "...", "deleted_count": int}
+    """
+    images_folder = get_quiz_images_folder(QUEST_FILE)
+
+    if not images_folder.exists():
+        return {
+            "success": True,
+            "message": "No images folder to clear",
+            "deleted_count": 0
+        }
+
+    try:
+        # Count files before deletion
+        image_files = [f for f in images_folder.iterdir() if f.is_file()]
+        count = len(image_files)
+
+        # Delete all files in the folder
+        for image_file in image_files:
+            try:
+                image_file.unlink()
+                print(f"Deleted: {image_file.name}")
+            except Exception as e:
+                print(f"Warning: Could not delete {image_file.name}: {e}")
+
+        print(f"Cleared {count} images from {images_folder}")
+        return {
+            "success": True,
+            "message": f"Deleted {count} image(s) from active quiz folder",
+            "deleted_count": count
+        }
+    except Exception as e:
+        print(f"Error clearing images: {e}")
+        raise InternalServerError(description=f"Error clearing images: {e}")

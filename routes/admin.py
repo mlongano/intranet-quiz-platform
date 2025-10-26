@@ -1175,3 +1175,20 @@ def api_delete_quiz_image():
     except Exception as e:
         print(f"Error deleting image: {e}")
         abort(500, description=f"Error deleting image: {str(e)}")
+
+
+@admin_bp.route('/admin/images/clear-active', methods=['POST'])
+def api_clear_active_quiz_images():
+    """Clear all images from the active quiz images folder"""
+    data = request.get_json(silent=True) or {}
+    password = data.get('password')
+    if password != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    try:
+        from utils import clear_active_quiz_images
+        result = clear_active_quiz_images()
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error clearing active quiz images: {e}")
+        abort(500, description=f"Error clearing images: {str(e)}")
