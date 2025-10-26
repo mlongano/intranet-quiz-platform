@@ -346,6 +346,24 @@ export async function saveQuizToBank(
 }
 
 /**
+ * Deletes a quiz file from the question_bank.
+ * Requires admin password and the filename to delete.
+ */
+export async function deleteQuizFromBank(
+  filename: string,
+  password: string,
+): Promise<BankOperationResponse> {
+  const response = await fetch(`${API_BASE}/admin/bank/delete`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ filename: filename, pw: password }),
+  });
+  return handleResponse<BankOperationResponse>(response);
+}
+
+/**
  * Fetches the content (questions) of a specific file in the question_bank for preview.
  * Requires admin password and the filename to preview.
  */

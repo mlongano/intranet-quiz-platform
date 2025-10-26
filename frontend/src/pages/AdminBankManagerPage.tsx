@@ -9,6 +9,7 @@ import {
   fetchQuestionBankFiles,
   loadQuizFromBank,
   saveQuizToBank,
+  deleteQuizFromBank, // New import for delete
   fetchPreviewBankFile, // We'll add this new API function next
   BankOperationResponse,
   QuestionBankFilesResponse,
@@ -182,6 +183,28 @@ function AdminBankManagerPage() {
     },
   });
 
+  // --- Mutation for Deleting a file from the bank ---
+  const deleteFileMutation = useMutation<BankOperationResponse, Error, string>({
+    // Specify types: result, error, variables (filename)
+    mutationFn: (filename: string) => {
+      if (!adminPassword) {
+        throw new Error("Admin password not available.");
+      }
+      setError(null); // Clear errors before mutation
+      setWarning(null); // Clear warnings before mutation
+      setMessage(null); // Clear messages before mutation
+      return deleteQuizFromBank(filename, adminPassword);
+    },
+    onSuccess: (data, filename) => {
+      setMessage(data.message || `File '${filename}' deleted successfully!`);
+      // Refetch the list of bank files after deleting
+      queryClient.invalidateQueries({ queryKey: ["questionBankFiles"] });
+    },
+    onError: (err: any) => {
+      setError(`Failed to delete file: ${err.message}`);
+    },
+  });
+
   // --- Query for Previewing a file from the bank (triggered on demand) ---
   const {
     data: previewData,
@@ -241,17 +264,26 @@ function AdminBankManagerPage() {
     }
   };
 
+  const handleDeleteClick = (filename: string) => {
+    // Confirm before deleting
+    if (window.confirm(`Are you sure you want to delete '${filename}'? This action cannot be undone.`)) {
+      deleteFileMutation.mutate(filename);
+    }
+  };
+
   // --- Determine loading/error states combined ---
   const isLoading =
     isLoadingFiles ||
     loadFileMutation.isPending ||
     saveFileMutation.isPending ||
+    deleteFileMutation.isPending ||
     isLoadingPreview;
   const currentError =
     error ||
     filesError ||
     loadFileMutation.error ||
     saveFileMutation.error ||
+    deleteFileMutation.error ||
     previewError;
 
   return (
@@ -367,13 +399,23 @@ function AdminBankManagerPage() {
                     </button>
                     <button
                       onClick={() => handleLoadClick(filename)}
-                      className="bg-yellow-500 text-white p-1 text-sm rounded disabled:bg-gray-400"
+                      className="bg-yellow-500 text-white p-1 text-sm rounded mr-2 disabled:bg-gray-400"
                       disabled={isLoading || !adminPassword}
                     >
                       {loadFileMutation.isPending &&
                         loadFileMutation.variables === filename
                         ? "Loading..."
                         : "Load"}
+                    </button>
+                    <button
+                      onClick={() => handleDeleteClick(filename)}
+                      className="bg-red-500 text-white p-1 text-sm rounded disabled:bg-gray-400"
+                      disabled={isLoading || !adminPassword}
+                    >
+                      {deleteFileMutation.isPending &&
+                        deleteFileMutation.variables === filename
+                        ? "Deleting..."
+                        : "Delete"}
                     </button>
                   </div>
                 </div>

@@ -374,6 +374,30 @@ def save_quiz_to_bank(filename: str):
         raise InternalServerError(description=f"Error copying file to bank: {e}")
 
 
+def delete_quiz_from_bank(filename: str):
+    """Deletes a specified quiz file from the question_bank."""
+    if not filename:
+        raise BadRequest(description="Filename is required.")
+
+    # Basic sanitization - remove path separators and dangerous characters
+    safe_filename = filename.replace('/', '_').replace('\\', '_').replace('..', '_')
+
+    file_path = Path(QUESTION_BANK_FOLDER) / safe_filename
+
+    if not file_path.exists():
+        raise NotFound(description=f"File '{safe_filename}' not found in '{QUESTION_BANK_FOLDER}'.")
+
+    if not file_path.is_file():
+        raise BadRequest(description=f"'{safe_filename}' is not a file.")
+
+    try:
+        file_path.unlink()  # Delete the file
+        print(f"Deleted '{safe_filename}' from '{QUESTION_BANK_FOLDER}'.")
+    except Exception as e:
+        print(f"Error deleting quiz from bank: {e}")
+        raise InternalServerError(description=f"Error deleting file from bank: {e}")
+
+
 def load_questions(filename: str = QUEST_FILE, lenient: bool = False):
     """Reads and returns the JSON content of a specified file with caching for default file.
 

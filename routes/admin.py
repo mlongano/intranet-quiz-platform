@@ -17,6 +17,7 @@ from utils import (
     list_question_bank_files, # New function
     load_quiz_from_bank,      # New function
     save_quiz_to_bank,
+    delete_quiz_from_bank,    # New function for deleting
     list_students_bank_files, # NEW import for students bank
     load_students_from_bank,  # NEW import for students bank
     save_students_to_bank,    # NEW import for students bank
@@ -277,6 +278,30 @@ def api_save_to_bank():
     except Exception as e:
         print(f"Error saving to bank: {e}")
         abort(500, description="Internal server error saving quiz to bank.")
+
+@admin_bp.route('/admin/bank/delete', methods=['POST'])
+def api_delete_from_bank():
+    """Deletes a specified quiz file from the question_bank."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    filename = data.get('filename')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403) # Forbidden
+    if not filename:
+        abort(400, description="Missing filename in request body.")
+
+    try:
+        delete_quiz_from_bank(filename)
+        return jsonify({"success": True, "message": f"Successfully deleted '{filename}' from bank."})
+    except NotFound as e:
+        return jsonify({'error': e.description or 'File not found'}), 404
+    except InternalServerError as e:
+        print(f"Internal error deleting quiz from bank '{filename}': {e}")
+        return jsonify({'error': e.description or 'Internal server error'}), 500
+    except Exception as e:
+        print(f"Error deleting from bank: {e}")
+        return jsonify({'error': f'Internal server error deleting quiz from bank: {str(e)}'}), 500
 
 @admin_bp.route('/admin/bank/preview', methods=['POST'])
 def api_preview_bank_file():
