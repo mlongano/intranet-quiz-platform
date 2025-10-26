@@ -103,16 +103,16 @@ $("#start-btn").onclick = async () => {
           resumeQuiz(data.quiz_id); // Resume needs the ID
         } else {
           // Already completed or other conflict
-          showError(data.error || "Quiz start conflict.");
+          showError(data.error || "Conflitto nell'avvio del quiz.");
           intro.hidden = false;
         }
       } else if (resp.status === 403) {
         // Forbidden
-        showError(data.error || "Unknown student.");
+        showError(data.error || "Email non riconosciuta.");
         intro.hidden = false;
       } else {
         // Other errors (400, 500, etc.)
-        showError(`Failed to start quiz: ${data.error || resp.statusText}`);
+        showError(`Impossibile avviare il quiz: ${data.error || resp.statusText}`);
         intro.hidden = false;
       }
       studentName = null; // Clear name on failure
@@ -124,7 +124,7 @@ $("#start-btn").onclick = async () => {
     // Verify or set student name from response
     if (quiz.student && quiz.student !== studentName) {
       console.warn(
-        "Student name mismatch during start:",
+        "Email non corrispondente tra client e server: ",
         studentName,
         quiz.student,
       );
@@ -143,7 +143,7 @@ $("#start-btn").onclick = async () => {
     renderQuestion();
   } catch (e) {
     // Catch network errors or JSON parsing errors
-    showError(`Cannot reach server or process response: ${e.message}`);
+    showError(`Impossibile raggiungere il server o elaborare la risposta: ${e.message}`);
     intro.hidden = false;
     studentName = null; // Clear name on failure
   }
@@ -168,7 +168,7 @@ $("#next-btn").onclick = () => {
 function renderQuestion() {
   // Ensure quiz and questions exist
   if (!quiz || !quiz.questions || current >= quiz.questions.length) {
-    showError("Error: Quiz data is missing or invalid.");
+    showError("Errore: I dati del quiz sono mancanti o non validi.");
     quizSec.hidden = true; // Hide quiz section if data is bad
     return;
   }
@@ -271,9 +271,9 @@ async function submitQuiz() {
   nextBtn.textContent = "Submitting…";
 
   if (!studentName) {
-    showError("Error: Student identifier is missing. Cannot submit.");
+    showError("Errore: L'identificatore dello studente è mancante. Impossibile inviare.");
     nextBtn.disabled = false; // Re-enable button
-    nextBtn.textContent = "Next";
+    nextBtn.textContent = "Avanti";
     return;
   }
 
@@ -293,10 +293,10 @@ async function submitQuiz() {
     console.log("Grading result:", result);
   } catch (e) {
     // Display the error message from POST helper in the error section
-    showError(`Submission failed: ${e.message}`);
+    showError(`Impossibile inviare: ${e.message}`);
     // Re-enable button
     nextBtn.disabled = false;
-    nextBtn.textContent = "Next";
+    nextBtn.textContent = "Avanti";
     // Do not automatically proceed or clear state on error
   }
 }
@@ -387,7 +387,7 @@ function resumeQuiz(resume_quiz_id) {
       renderQuestion();
     })
     .catch((err) => {
-      showError(`Could not resume quiz: ${err.message}`);
+      showError(`Non è stato possibile riprendere il quiz: ${err.message}`);
       localStorage.removeItem(KEY); // Clear invalid state
       studentName = null;
       // Show intro again

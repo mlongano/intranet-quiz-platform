@@ -101,6 +101,16 @@ export interface ScoresBankFilesResponse {
 
 const API_BASE = "/api"; // Or configure as needed
 
+/**
+ * Get basic quiz information (title and question count) - Public endpoint
+ */
+export async function getQuizInfo(): Promise<{ title: string; question_count: number }> {
+  const response = await fetch(`${API_BASE}/quiz-info`, {
+    method: "GET",
+  });
+  return handleResponse<{ title: string; question_count: number }>(response);
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let errorMsg = `Request failed: ${response.status} ${response.statusText}`;

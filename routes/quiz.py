@@ -30,6 +30,19 @@ from utils import (
 
 quiz_bp = Blueprint('quiz', __name__, url_prefix='/api')
 
+@quiz_bp.route('/quiz-info', methods=['GET'])
+def api_quiz_info():
+    """Public endpoint to get basic quiz information (title only)"""
+    try:
+        quiz_data = load_questions()
+        return jsonify({
+            'title': quiz_data.get('title', 'Quiz'),
+            'question_count': len(quiz_data.get('questions', []))
+        })
+    except Exception as e:
+        print(f"Error loading quiz info: {e}")
+        return jsonify({'title': 'Quiz', 'question_count': 0})
+
 def build_quiz_plan(qbank):
     """Init the quiz_id and the quiz paln"""
     quiz_plan_steps = []
@@ -100,11 +113,11 @@ def api_start():
         pass
 
     if VALID_STUDENTS and student not in VALID_STUDENTS: # Check if VALID_STUDENTS is populated
-        return jsonify(error="Unknown student"), 403
+        return jsonify(error="Email non riconosciuta"), 403
 
     scores = load_scores()
     if any(rec.get('student') == student for rec in scores):
-        return jsonify(error="You have already completed the quiz"), 409
+        return jsonify(error="Hai già completato il quiz"), 409
 
     student_plan_path = Path(QUIZ_FOLDER) / f'{safe_id(student)}.json'
     if student_plan_path.exists():
