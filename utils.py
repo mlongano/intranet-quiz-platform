@@ -130,7 +130,8 @@ def format_image_url(image_path):
     """Prepends the base image route if the path is valid."""
     if image_path and isinstance(image_path, str):
         # Simple check to avoid adding prefix multiple times or to absolute URLs
-        if not image_path.startswith(f"/{IMAGES_FOLDER}/") and not image_path.startswith("http"):
+        # Allow paths starting with /images/ or /banks/ (for quiz-specific images)
+        if not image_path.startswith(f"/{IMAGES_FOLDER}/") and not image_path.startswith("/banks/") and not image_path.startswith("http"):
              # Remove leading slash if present to avoid //
             clean_path = image_path.lstrip('/')
             return f"/{IMAGES_FOLDER}/{clean_path}"
