@@ -60,7 +60,7 @@ const AdminImageManagerPage: React.FC = () => {
       <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1>Image Manager</h1>
         <button
-          onClick={() => navigate('/admin', { state: { adminPassword } })}
+          onClick={() => navigate('/admin/dashboard', { state: { adminPassword } })}
           style={{
             padding: '10px 20px',
             backgroundColor: '#6c757d',
