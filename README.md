@@ -375,6 +375,415 @@ Now the backend serves both the API and the frontend at `http://localhost:5001`.
 - The server will display all available addresses when it starts
 - Students on the same network can access using your local IP (e.g., `http://192.168.1.100:5001`)
 
+## Production Deployment on Ubuntu 22.04
+
+For production use in a classroom/school environment, here are three deployment options:
+
+### Option 1: Systemd Service with Nginx (Recommended)
+
+This is the most robust solution for a school environment with automatic restart, proper logging, and production-grade performance.
+
+#### 1. Install System Dependencies
+
+```bash
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install Python 3.12 (or latest)
+sudo apt install python3.12 python3.12-venv python3-pip -y
+
+# Install Node.js 20+ (for building frontend)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install nodejs -y
+
+# Install pnpm
+npm install -g pnpm
+
+# Install nginx (for production serving)
+sudo apt install nginx -y
+```
+
+#### 2. Setup Application
+
+```bash
+# Clone/copy your application
+cd /opt
+sudo git clone https://github.com/your-username/your-repo.git quizparty
+cd quizparty
+
+# Set proper ownership
+sudo chown -R $USER:$USER /opt/quizparty
+
+# Install uv (Python package manager)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install Python dependencies
+uv venv
+source .venv/bin/activate
+uv pip install flask werkzeug python-dotenv
+
+# Build frontend
+cd frontend
+pnpm install
+pnpm run build
+cd ..
+
+# Create .env file
+nano .env
+# Add your configuration:
+# ADMIN_PW=your_secure_password
+# SMTP_SERVER=smtp.gmail.com (if using email)
+# SMTP_PORT=587
+# SMTP_USER=your_email@gmail.com
+# SMTP_PASSWORD=your_app_password
+# etc.
+
+# Create students.jsonc and questions.jsonc files
+```
+
+#### 3. Create Systemd Service
+
+```bash
+# Create service file
+sudo nano /etc/systemd/system/quizparty.service
+```
+
+Add the following content:
+
+```ini
+[Unit]
+Description=QuizParty Quiz Application
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/quizparty
+Environment="PATH=/opt/quizparty/.venv/bin"
+ExecStart=/opt/quizparty/.venv/bin/python server.py
+Restart=always
+RestartSec=10
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Logging
+StandardOutput=append:/var/log/quizparty/access.log
+StandardError=append:/var/log/quizparty/error.log
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# Create log directory
+sudo mkdir -p /var/log/quizparty
+sudo chown www-data:www-data /var/log/quizparty
+
+# Set proper permissions
+sudo chown -R www-data:www-data /opt/quizparty
+
+# Enable and start service
+sudo systemctl daemon-reload
+sudo systemctl enable quizparty
+sudo systemctl start quizparty
+sudo systemctl status quizparty
+```
+
+#### 4. Configure Nginx as Reverse Proxy
+
+```bash
+sudo nano /etc/nginx/sites-available/quizparty
+```
+
+Add the following configuration:
+
+```nginx
+server {
+    listen 80;
+    server_name quiz.local;  # or your server IP/domain
+
+    # Increase upload size for images
+    client_max_body_size 10M;
+
+    location / {
+        proxy_pass http://127.0.0.1:5001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket support (for future features)
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_header_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # Serve static files directly (optional optimization)
+    location /static/ {
+        alias /opt/quizparty/static/;
+        expires 1d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location /banks/ {
+        alias /opt/quizparty/banks/;
+        expires 1d;
+    }
+}
+```
+
+```bash
+# Enable site
+sudo ln -s /etc/nginx/sites-available/quizparty /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+#### 5. Firewall Configuration
+
+```bash
+# Allow HTTP traffic only from local network
+sudo ufw allow 80/tcp
+sudo ufw allow from 192.168.1.0/24 to any port 80  # Adjust subnet to your network
+sudo ufw enable
+sudo ufw status
+```
+
+#### 6. Management Commands
+
+```bash
+# View live logs
+sudo journalctl -u quizparty -f
+
+# Restart service
+sudo systemctl restart quizparty
+
+# Stop service
+sudo systemctl stop quizparty
+
+# Check status
+sudo systemctl status quizparty
+
+# View last 100 log lines
+sudo journalctl -u quizparty -n 100
+```
+
+---
+
+### Option 2: Screen Session (Quick Setup)
+
+For quick testing or temporary classroom use without full systemd setup:
+
+```bash
+# Install screen
+sudo apt install screen -y
+
+# Navigate to application directory
+cd /path/to/quizparty
+
+# Activate virtual environment
+source .venv/bin/activate
+
+# Start app in screen session
+screen -S quizparty
+python server.py
+
+# Detach from screen: Press Ctrl+A, then D
+# The app continues running in the background
+
+# To reattach later
+screen -r quizparty
+
+# To list all screen sessions
+screen -ls
+
+# To kill the session
+screen -S quizparty -X quit
+```
+
+**Note**: This method won't auto-restart on failure or survive system reboots. Good for testing only.
+
+---
+
+### Option 3: Docker Deployment
+
+If you prefer containerization:
+
+#### 1. Create Dockerfile
+
+Create a `Dockerfile` in the project root:
+
+```dockerfile
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install Node.js for building frontend
+RUN apt-get update && apt-get install -y curl && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    npm install -g pnpm && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Copy application files
+COPY . .
+
+# Build frontend
+RUN cd frontend && pnpm install && pnpm run build && cd ..
+
+# Install Python dependencies
+RUN pip install --no-cache-dir uv && \
+    uv venv && \
+    uv pip install flask werkzeug python-dotenv
+
+# Create necessary directories
+RUN mkdir -p banks/question_bank banks/scores_bank banks/students_bank
+
+EXPOSE 5001
+
+# Run with virtual environment
+CMD [".venv/bin/python", "server.py"]
+```
+
+#### 2. Create docker-compose.yml
+
+```yaml
+version: '3.8'
+
+services:
+  quizparty:
+    build: .
+    container_name: quizparty
+    ports:
+      - "80:5001"  # Map container port 5001 to host port 80
+    volumes:
+      # Persist data directories
+      - ./banks:/app/banks
+      - ./scores.jsonc:/app/scores.jsonc
+      - ./students.jsonc:/app/students.jsonc
+      - ./questions.jsonc:/app/questions.jsonc
+      - ./quiz_status.jsonc:/app/quiz_status.jsonc
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - quizparty-network
+
+networks:
+  quizparty-network:
+    driver: bridge
+```
+
+#### 3. Deploy with Docker
+
+```bash
+# Install Docker and Docker Compose
+sudo apt update
+sudo apt install docker.io docker-compose -y
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER
+# Log out and back in for group changes to take effect
+
+# Build and start container
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop container
+docker-compose down
+
+# Restart container
+docker-compose restart
+
+# Rebuild after code changes
+docker-compose up -d --build
+```
+
+---
+
+### Production Best Practices
+
+Regardless of deployment method:
+
+1. **Security**:
+   - Use strong admin password in `.env`
+   - Restrict firewall to local network only
+   - Keep system and dependencies updated
+   - Never commit `.env` file to git
+
+2. **Backups**:
+
+   ```bash
+   # Create backup script
+   sudo nano /usr/local/bin/backup-quizparty.sh
+   ```
+
+   ```bash
+   #!/bin/bash
+   BACKUP_DIR="/backups/quizparty"
+   DATE=$(date +%Y%m%d_%H%M%S)
+   mkdir -p $BACKUP_DIR
+   tar -czf $BACKUP_DIR/quizparty_$DATE.tar.gz -C /opt/quizparty banks/ scores.jsonc students.jsonc questions.jsonc
+   # Keep only last 30 days of backups
+   find $BACKUP_DIR -name "quizparty_*.tar.gz" -mtime +30 -delete
+   ```
+
+   ```bash
+   sudo chmod +x /usr/local/bin/backup-quizparty.sh
+   # Add to crontab (daily at 2 AM)
+   sudo crontab -e
+   # Add line: 0 2 * * * /usr/local/bin/backup-quizparty.sh
+   ```
+
+3. **Monitoring**:
+
+   ```bash
+   # Check service health
+   sudo systemctl status quizparty
+
+   # Monitor resource usage
+   sudo apt install htop -y
+   htop
+   ```
+
+4. **Log Rotation**:
+
+   ```bash
+   sudo nano /etc/logrotate.d/quizparty
+   ```
+
+   ```
+   /var/log/quizparty/*.log {
+       daily
+       rotate 7
+       compress
+       delaycompress
+       missingok
+       notifempty
+       create 0640 www-data www-data
+   }
+   ```
+
+### Recommended Choice
+
+For a **school/classroom environment**, we recommend **Option 1 (Systemd + Nginx)** because:
+
+- ✅ Automatic restart on failure
+- ✅ Starts automatically on system boot
+- ✅ Better performance (Nginx handles static files efficiently)
+- ✅ Proper logging and monitoring
+- ✅ Easy to manage and troubleshoot
+- ✅ Production-ready and stable
+- ✅ No additional overhead (unlike Docker)
+
+**Option 2 (Screen)** is best for quick testing or temporary use.
+
+**Option 3 (Docker)** is ideal if you're already using containers or need easy portability.
+
 ## Features
 
 ### Student Features
