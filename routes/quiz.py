@@ -1,7 +1,7 @@
 # routes/quiz.py
 import commentjson as json
 from flask import Blueprint, request, jsonify, abort
-from werkzeug.exceptions import NotFound, InternalServerError
+from werkzeug.exceptions import NotFound, InternalServerError, HTTPException, BadRequest
 from pathlib import Path
 import datetime
 import uuid
@@ -71,6 +71,10 @@ def build_questions(qbank):
             random.shuffle(option_order)
             # --- Process options (string or object) ---
             for i in option_order:
+                # Defensive: skip indices that are out of range (could happen if bank changed)
+                if i is None or not isinstance(i, int) or i < 0 or i >= len(q_options):
+                    print(f"Warning: option index {i} out of range for question {q.get('id')}, skipping.")
+                    continue
                 original_option = q_options[i]
                 if isinstance(original_option, dict):
                     # Option is an object: format image path, keep text
@@ -132,8 +136,17 @@ def api_start():
             print(f"Error reading existing plan {student_plan_path}: {e}")
 
     # --- Create new quiz ---
-    quiz_data = load_questions() # Can raise InternalServerError
-    qbank = quiz_data['questions']
+    try:
+        quiz_data = load_questions() # Can raise NotFound/BadRequest/InternalServerError
+        qbank = quiz_data['questions']
+    except HTTPException as e:
+        # Known HTTP errors: return JSON with proper status code
+        print(f"Error loading questions for start: {e}")
+        return jsonify(error=str(e.description)), e.code
+    except Exception as e:
+        # Unexpected errors
+        print(f"Unexpected error loading questions for start: {e}")
+        return jsonify(error="Internal server error while loading quiz data"), 500
     quiz_title = quiz_data.get('title')
     random.shuffle(qbank)
     quiz_id, quiz_plan_steps = build_quiz_plan(qbank)
@@ -167,8 +180,15 @@ def api_submit():
     """Handles submission, grades, saves detailed score, and deletes plan."""
     data = request.get_json(silent=True) or {}
     quiz_id, student_id, answers = validate_submission_data(data)
-    plan = load_quiz_plan_by_student(student_id) # Handles NotFound, InternalServerError
-    quiz_data = load_questions() # Handles InternalServerError
+    try:
+        plan = load_quiz_plan_by_student(student_id) # Handles NotFound, InternalServerError
+        quiz_data = load_questions() # Handles InternalServerError
+    except HTTPException as e:
+        print(f"Error preparing submission handling: {e}")
+        return jsonify(error=str(e.description)), e.code
+    except Exception as e:
+        print(f"Unexpected error preparing submission handling: {e}")
+        return jsonify(error="Internal server error"), 500
     qbank = quiz_data['questions']
     quiz_title = quiz_data.get('title')
     scores = load_scores()
@@ -223,8 +243,15 @@ def api_resume(quiz_id):
     if not found_student_id:
         raise InternalServerError(description=f"Plan file for quiz '{quiz_id}' is missing student identifier.")
 
-    quiz_data = load_questions() # Can raise InternalServerError
-    qbank = quiz_data['questions']
+    try:
+        quiz_data = load_questions() # Can raise InternalServerError
+        qbank = quiz_data['questions']
+    except HTTPException as e:
+        print(f"Error loading questions for resume: {e}")
+        return jsonify(error=str(e.description)), e.code
+    except Exception as e:
+        print(f"Unexpected error loading questions for resume: {e}")
+        return jsonify(error="Internal server error while loading quiz data"), 500
 
     qbank_map = {q['id']: q for q in qbank}
     stripped = []
@@ -242,6 +269,10 @@ def api_resume(quiz_id):
             q_options = q.get('options', [])
             # --- Process options (string or object) ---
             for i in step_option_order:
+                # Defensive bounds-check: skip invalid indices
+                if i is None or not isinstance(i, int) or i < 0 or i >= len(q_options):
+                    print(f"Warning: resume - option index {i} out of range for question {q.get('id')}, skipping.")
+                    continue
                 original_option = q_options[i]
                 if isinstance(original_option, dict):
                     # Option is an object: format image path, keep text
