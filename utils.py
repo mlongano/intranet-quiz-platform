@@ -36,12 +36,15 @@ def invalidate_questions_cache():
 
 # --- Load Admin Password from Environment Variable ---
 ADMIN_PW = os.getenv('ADMIN_PW') # <-- Get password from environment
+print(f"[UTILS] Loading ADMIN_PW from environment...")
 if not ADMIN_PW:
-    print("Error: ADMIN_PW environment variable not set.")
+    print("[UTILS] ✗ Error: ADMIN_PW environment variable not set.")
     print("Please create a .env file in the project root with ADMIN_PW='your_password'")
     # Decide how to handle this: exit or raise an exception
     raise EnvironmentError("ADMIN_PW environment variable is required but not set.")
     #import sys; sys.exit(1)
+else:
+    print(f"[UTILS] ✓ ADMIN_PW loaded successfully (length: {len(ADMIN_PW)}, value: {'*' * len(ADMIN_PW)})")
 
 
 os.makedirs(QUIZ_FOLDER, exist_ok=True) # Ensure QUIZ_FOLDER exists

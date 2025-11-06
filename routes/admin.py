@@ -33,9 +33,22 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/api')
 @admin_bp.route('/scores', methods=['POST'])
 def api_scores():
     data = request.get_json(silent=True) or {}
+    provided_pw = data.get('pw', '')
+    
+    # Debug logging for password verification
+    print(f"[AUTH] Admin login attempt")
+    print(f"[AUTH] Password provided length: {len(provided_pw)}")
+    print(f"[AUTH] Expected password length: {len(ADMIN_PW)}")
+    print(f"[AUTH] Provided password (masked): {'*' * len(provided_pw)}")
+    print(f"[AUTH] Expected password (masked): {'*' * len(ADMIN_PW)}")
+    print(f"[AUTH] Passwords match: {provided_pw == ADMIN_PW}")
+    
     # Consider using werkzeug.security.check_password_hash for real password checking
-    if data.get('pw') != ADMIN_PW:
+    if provided_pw != ADMIN_PW:
+        print(f"[AUTH] ✗ Authentication FAILED - Password mismatch")
         abort(403) # Forbidden
+    
+    print(f"[AUTH] ✓ Authentication SUCCESS")
     scores = []
     try:
         scores = load_scores()
