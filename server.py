@@ -3,7 +3,38 @@ from flask import Flask, send_from_directory, abort
 import os
 import socket
 from waitress import serve
+from dotenv import load_dotenv
 
+# Load environment variables from .env file
+env_file_path = os.path.join(os.path.dirname(__file__), '.env')
+print("=" * 60)
+print("ENVIRONMENT CONFIGURATION CHECK")
+print("=" * 60)
+print(f"Looking for .env file at: {env_file_path}")
+if os.path.exists(env_file_path):
+    print(f"✓ .env file found")
+    load_dotenv(env_file_path)
+    print(f"✓ .env file loaded")
+else:
+    print(f"✗ WARNING: .env file NOT found")
+    print(f"  Attempting to load from environment variables...")
+
+# Check if ADMIN_PW is set
+admin_pw = os.getenv('ADMIN_PW')
+if admin_pw:
+    print(f"✓ ADMIN_PW is set (value: {'*' * len(admin_pw)})")
+else:
+    print(f"✗ ERROR: ADMIN_PW is NOT set!")
+    print(f"  The application will fail to start.")
+
+# Check other important variables
+use_llm = os.getenv('USE_LLM_EVAL', '0')
+print(f"  USE_LLM_EVAL: {use_llm}")
+if use_llm == '1':
+    llm_provider = os.getenv('LLM_PROVIDER', 'not set')
+    print(f"  LLM_PROVIDER: {llm_provider}")
+print("=" * 60)
+print()
 
 # Import Blueprints
 from routes.quiz import quiz_bp
