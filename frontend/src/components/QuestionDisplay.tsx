@@ -164,7 +164,7 @@ function QuestionDisplay({
           remarkPlugins={[remarkGfm]}
           rehypePlugins={[
             rehypeSanitize,
-            [rehypePrism, { showLineNumbers: true }]
+            [rehypePrism as any, { showLineNumbers: true }]
           ]}
           components={{
             pre: ({ children, ...props }: any) => {
@@ -251,7 +251,7 @@ function QuestionDisplay({
                       remarkPlugins={[remarkGfm]}
                       rehypePlugins={[
                         rehypeSanitize,
-                        [rehypePrism, { showLineNumbers: true }]
+                        [rehypePrism as any, { showLineNumbers: true }]
                       ]}
                       components={optionMarkdownComponents}
                     >
