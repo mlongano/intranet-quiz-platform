@@ -3,7 +3,8 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { resumeQuiz, submitQuiz, Question, Answer, getQuizStatus } from "../api";
-import QuestionDisplay from "../components/QuestionDisplay"; // Assume this is created
+import React, { Suspense } from "react";
+const QuestionDisplay = React.lazy(() => import("../components/QuestionDisplay"));
 // Assume these helper components exist
 // import ErrorDisplay from '../components/ErrorDisplay';
 // import LoadingSpinner from '../components/LoadingSpinner';
@@ -277,12 +278,14 @@ function QuizPage() {
         <ErrorDisplay message={localError} />
 
         <div className="bg-white p-6 rounded shadow-md border border-gray-200 select-none">
-          {/* Assume QuestionDisplay component handles rendering */}
-          <QuestionDisplay
-            question={currentQuestion}
-            currentAnswer={answers[currentQuestionIndex]}
-            onAnswerChange={handleAnswerChange}
-          />
+          <Suspense fallback={<div className="p-4">Loading question…</div>}>
+            <QuestionDisplay
+              question={currentQuestion}
+              currentAnswer={answers[currentQuestionIndex]}
+              onAnswerChange={handleAnswerChange}
+              disableCopy={true}
+            />
+          </Suspense>
         </div>
 
         <div className="mt-6 flex justify-end">

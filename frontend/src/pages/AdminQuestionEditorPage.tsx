@@ -1,13 +1,14 @@
 // frontend/src/components/QuestionEditorPage.tsx (React Query Version)
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { parse, ParseError } from "jsonc-parser"; // Import parse from jsonc-parser
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchAdminQuestions, updateAdminQuestions, QuizData, Question, clearActiveQuizImages, listQuizImages } from "../api"; // Import both QuizData and Question
 import { useLocation, useNavigate } from "react-router-dom";
-import QuestionDisplay from "../components/QuestionDisplay";
+const QuestionDisplay = React.lazy(() => import("../components/QuestionDisplay"));
 import { ImagePicker } from "../components/ImagePicker";
+const JsonSafeField = React.lazy(() => import("../components/JsonSafeField"));
 
 const QuestionEditor: React.FC = () => {
   const location = useLocation();
@@ -503,6 +504,13 @@ const QuestionEditor: React.FC = () => {
         spellCheck="false"
       />
 
+      {/* Helper: JSON-safe generator + Markdown preview (lazy-loaded) */}
+      <div className="mt-4">
+        <Suspense fallback={<div className="p-4 bg-gray-100 rounded">Loading helper...</div>}>
+          <JsonSafeField />
+        </Suspense>
+      </div>
+
       {/* Preview Area */}
       {showPreview && (
         <div className="mt-6 p-4 border rounded bg-white">
@@ -515,28 +523,30 @@ const QuestionEditor: React.FC = () => {
               {previewParsed.error}
             </div>
           ) : null}
-          {(() => {
-            const qs = previewParsed.qs;
-            if (!qs) return null;
-            if (qs.length === 0)
-              return <div className="text-gray-600">No questions to preview.</div>;
-            return (
-              <div className="space-y-6">
-                {qs.map((q, idx) => (
-                  <div key={q.id ?? idx} className="p-4 border rounded">
-                    <div className="mb-2 text-sm text-gray-600">ID: {String(q.id)}</div>
-                    <QuestionDisplay
-                      question={q as Question}
-                      currentAnswer={null}
-                      onAnswerChange={() => { }}
-                      readOnly
-                      highlightIndices={getHighlightIndices(q)}
-                    />
-                  </div>
-                ))}
-              </div>
-            );
-          })()}
+          <Suspense fallback={<div className="p-4 bg-gray-100 rounded">Loading preview…</div>}>
+            {(() => {
+              const qs = previewParsed.qs;
+              if (!qs) return null;
+              if (qs.length === 0)
+                return <div className="text-gray-600">No questions to preview.</div>;
+              return (
+                <div className="space-y-6">
+                  {qs.map((q, idx) => (
+                    <div key={q.id ?? idx} className="p-4 border rounded">
+                      <div className="mb-2 text-sm text-gray-600">ID: {String(q.id)}</div>
+                      <QuestionDisplay
+                        question={q as Question}
+                        currentAnswer={null}
+                        onAnswerChange={() => { }}
+                        readOnly
+                        highlightIndices={getHighlightIndices(q)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </Suspense>
         </div>
       )}
 

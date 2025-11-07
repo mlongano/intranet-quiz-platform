@@ -12,6 +12,8 @@ interface Props {
   onAnswerChange: (answer: Answer) => void;
   readOnly?: boolean; // If true, disable inputs and don't change answers
   highlightIndices?: number[]; // Indices to visually highlight (e.g., correct answers)
+  // If true, also disable copy/context menu/selection (used in live quiz view)
+  disableCopy?: boolean;
 }
 
 function QuestionDisplay({
@@ -20,6 +22,7 @@ function QuestionDisplay({
   onAnswerChange,
   readOnly = false,
   highlightIndices = [],
+  disableCopy = false,
 }: Props) {
   // Custom markdown component sizes for options
   const optionMarkdownComponents: Components = {
@@ -86,7 +89,16 @@ function QuestionDisplay({
       )}
 
       {/* Render question text as Markdown */}
-      <div className="text-lg font-medium mb-4">
+      <div
+        className="text-lg font-medium mb-4"
+        onCopy={(e) => {
+          if (disableCopy) e.preventDefault();
+        }}
+        onContextMenu={(e) => {
+          if (disableCopy) e.preventDefault();
+        }}
+        style={disableCopy ? { userSelect: "none", WebkitUserSelect: "none" } : undefined}
+      >
         <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
           {question.text || ""}
         </ReactMarkdown>
@@ -135,7 +147,17 @@ function QuestionDisplay({
                     }
                     disabled={readOnly}
                   />
-                  <label htmlFor={inputId} className="ml-3 flex-1 text-gray-800">
+                  <label
+                    htmlFor={inputId}
+                    className="ml-3 flex-1 text-gray-800"
+                    onCopy={(e) => {
+                      if (disableCopy) e.preventDefault();
+                    }}
+                    onContextMenu={(e) => {
+                      if (disableCopy) e.preventDefault();
+                    }}
+                    style={disableCopy ? { userSelect: "none", WebkitUserSelect: "none" } : undefined}
+                  >
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       rehypePlugins={[rehypeSanitize]}

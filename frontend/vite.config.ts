@@ -19,10 +19,10 @@ export default defineConfig({
             if (id.match(/\/node_modules\/(react|react-dom|scheduler)\//)) {
               return 'react-vendor';
             }
-            
+
             // Router
             if (id.includes('react-router-dom')) return 'router';
-            
+
             // React Query
             if (id.includes('@tanstack/react-query') && !id.includes('devtools')) {
               return 'query';
