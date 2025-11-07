@@ -54,6 +54,9 @@ importers:
       '@tanstack/react-query-devtools':
         specifier: ^5.74.6
         version: 5.74.6(@tanstack/react-query@5.74.4(react@19.1.0))(react@19.1.0)
+      '@types/prismjs':
+        specifier: ^1.26.5
+        version: 1.26.5
       '@types/react':
         specifier: ^19.0.10
         version: 19.1.2

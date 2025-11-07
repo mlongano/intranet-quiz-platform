@@ -1,11 +1,12 @@
 // frontend/src/components/QuestionDisplay.tsx (New file - basic structure)
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
 import rehypePrism from "rehype-prism-plus";
 import { Question, Answer, OptionObject } from "../api"; // Import types
+import Prism from "prismjs";
 
 // Import Prism theme and line numbers
 import "prismjs/themes/prism-coy.css";
@@ -30,6 +31,20 @@ function QuestionDisplay({
   highlightIndices = [],
   disableCopy = false,
 }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Re-run Prism highlighting when question changes
+  useEffect(() => {
+    if (containerRef.current) {
+      // Use a small delay to ensure DOM is fully rendered
+      const timeoutId = setTimeout(() => {
+        Prism.highlightAllUnder(containerRef.current!);
+      }, 0);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [question.id, question.text, question.options]);
+
   // Custom markdown component sizes for options
   const optionMarkdownComponents: Components = {
     h1: (props: any) => (
@@ -105,7 +120,7 @@ function QuestionDisplay({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" ref={containerRef}>
       {/* --- NEW: Display question image --- */}
       {question.question_image && (
         <img

@@ -1,8 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypePrism from "rehype-prism-plus";
 import rehypeSanitize from "rehype-sanitize";
+import Prism from "prismjs";
 // Prism theme (choose one available in prismjs/themes)
 import "prismjs/themes/prism-coy.css";
 // Prism line numbers plugin CSS
@@ -19,12 +20,20 @@ import "prismjs/plugins/line-numbers/prism-line-numbers";
  */
 export default function JsonSafeField() {
   const [input, setInput] = useState<string>("");
+  const previewRef = useRef<HTMLDivElement>(null);
 
   const jsonValue = useMemo(() => {
     try {
       return JSON.stringify(input);
     } catch {
       return "";
+    }
+  }, [input]);
+
+  // Re-run Prism highlighting when input changes
+  useEffect(() => {
+    if (previewRef.current) {
+      Prism.highlightAllUnder(previewRef.current);
     }
   }, [input]);
 
@@ -63,7 +72,10 @@ export default function JsonSafeField() {
           />
           <div className="mt-2">
             <label className="block text-xs font-medium text-gray-700">Preview (Markdown)</label>
-            <div className="mt-1 p-3 border rounded bg-white max-h-48 overflow-auto prose prose-sm max-w-none">
+            <div
+              ref={previewRef}
+              className="mt-1 p-3 border rounded bg-white max-h-48 overflow-auto prose prose-sm max-w-none"
+            >
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 rehypePlugins={[
