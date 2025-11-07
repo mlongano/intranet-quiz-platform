@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -34,16 +34,42 @@ import "prismjs/components/prism-sql";
  */
 export default function JsonSafeField() {
   const [input, setInput] = useState<string>("");
+  const [jsonInput, setJsonInput] = useState<string>("");
   const previewRef = useRef<HTMLDivElement>(null);
   const [copyStatus, setCopyStatus] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
 
-  const jsonValue = useMemo(() => {
+  // When input (raw) changes, update JSON output
+  useEffect(() => {
     try {
-      return JSON.stringify(input);
+      const result = JSON.stringify(input);
+      setJsonInput(result);
     } catch {
-      return "";
+      // Ignore stringify errors
     }
   }, [input]);
+
+  // When JSON input changes manually, try to parse and update raw input
+  const handleJsonChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newJson = e.target.value;
+    setJsonInput(newJson);
+
+    try {
+      // Try to parse the JSON string
+      const parsed = JSON.parse(newJson);
+
+      // Check if it's actually a string (the expected format)
+      if (typeof parsed === 'string') {
+        setInput(parsed);
+        setParseError(null);
+      } else {
+        setParseError('JSON value should be a string (quoted text)');
+      }
+    } catch {
+      // Invalid JSON - show error but don't update input
+      setParseError('Invalid JSON format');
+    }
+  };
 
   // Re-run Prism highlighting when input changes
   useEffect(() => {
@@ -145,36 +171,38 @@ export default function JsonSafeField() {
 
   return (
     <div className="p-4 bg-white rounded shadow">
-      <h3 className="font-semibold mb-2">JSON-safe text generator</h3>
-      <p className="text-sm text-gray-600 mb-3">Incolla qui la domanda o il blocco di testo (Markdown / code). Verrà generato il valore JSON valido (con escape di newline e virgolette).</p>
+      <h3 className="font-semibold mb-2">JSON-safe text generator (bidirectional)</h3>
+      <p className="text-sm text-gray-600 mb-3">
+        Edit either side: paste raw text to get JSON, or paste JSON to get raw text.
+        Changes sync automatically.
+      </p>
 
       {/* Copy Status Message */}
       {copyStatus && (
         <div className={`mb-3 p-2 rounded text-sm ${copyStatus.type === 'success'
-            ? 'bg-green-100 text-green-800 border border-green-300'
-            : 'bg-red-100 text-red-800 border border-red-300'
+          ? 'bg-green-100 text-green-800 border border-green-300'
+          : 'bg-red-100 text-red-800 border border-red-300'
           }`}>
           {copyStatus.message}
         </div>
       )}
 
-      <label className="block text-xs font-medium text-gray-700">Input (raw)</label>
-      <textarea
-        className="w-full border rounded p-2 mt-1 mb-3 font-mono"
-        rows={8}
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        placeholder={`Scrivi o incolla la domanda con blocchi di codice qui...`}
-      />
+      {/* Parse Error Message */}
+      {parseError && (
+        <div className="mb-3 p-2 rounded text-sm bg-yellow-100 text-yellow-800 border border-yellow-300">
+          ⚠️ {parseError}
+        </div>
+      )}
 
       <div className="flex items-start gap-3">
         <div style={{ flex: 1 }}>
-          <label className="block text-xs font-medium text-gray-700">Output (JSON value)</label>
+          <label className="block text-xs font-medium text-gray-700">Input (raw Markdown/text)</label>
           <textarea
-            className="w-full border rounded p-2 mt-1 mb-2 font-mono bg-gray-50"
+            className="w-full border rounded p-2 mt-1 mb-3 font-mono text-sm"
             rows={8}
-            readOnly
-            value={jsonValue}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={`Scrivi o incolla la domanda con blocchi di codice qui...`}
           />
           <div className="mt-2">
             <label className="block text-xs font-medium text-gray-700">Preview (Markdown)</label>
@@ -193,29 +221,59 @@ export default function JsonSafeField() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 pt-6">
           <button
-            className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-            onClick={() => copy(jsonValue, "JSON")}
+            className="px-3 py-1 bg-gray-400 text-white rounded text-2xl font-bold"
+            onClick={() => {
+              // Swap direction hint - just visual feedback
+              setCopyStatus({ message: 'Edit either side to convert!', type: 'success' });
+            }}
+            title="Bidirectional conversion"
+          >
+            ⇄
+          </button>
+        </div>
+
+        <div style={{ flex: 1 }}>
+          <label className="block text-xs font-medium text-gray-700">Output (JSON-safe string)</label>
+          <textarea
+            className="w-full border rounded p-2 mt-1 mb-3 font-mono text-sm bg-white"
+            rows={8}
+            value={jsonInput}
+            onChange={handleJsonChange}
+            placeholder={`Incolla JSON qui per decodificare...`}
+          />
+        </div>
+      </div>
+
+      <div className="flex justify-between items-center mt-4 gap-2">
+        <div className="flex gap-2">
+          <button
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+            onClick={() => copy(jsonInput, "JSON")}
             title="Copy JSON value"
           >
-            Copy JSON
+            📋 Copy JSON
           </button>
           <button
-            className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 transition-colors"
+            className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
             onClick={() => copy(input, "Raw text")}
             title="Copy raw"
           >
-            Copy raw
-          </button>
-          <button
-            className="px-3 py-1 bg-red-100 rounded text-sm hover:bg-red-200 transition-colors"
-            onClick={() => setInput("")}
-            title="Clear"
-          >
-            Clear
+            📋 Copy Raw
           </button>
         </div>
+        <button
+          className="px-4 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+          onClick={() => {
+            setInput("");
+            setJsonInput("");
+            setParseError(null);
+          }}
+          title="Clear all"
+        >
+          🗑️ Clear All
+        </button>
       </div>
     </div>
   );
