@@ -35,6 +35,7 @@ import "prismjs/components/prism-sql";
 export default function JsonSafeField() {
   const [input, setInput] = useState<string>("");
   const previewRef = useRef<HTMLDivElement>(null);
+  const [copyStatus, setCopyStatus] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const jsonValue = useMemo(() => {
     try {
@@ -101,13 +102,44 @@ export default function JsonSafeField() {
     },
   };
 
-  const copy = async (text: string) => {
+  const copy = async (text: string, label: string) => {
     try {
-      await navigator.clipboard.writeText(text);
-      // small visual feedback could be added
-    } catch {
-      console.error("Copy failed");
-      alert("Copy to clipboard failed. Select and copy manually.");
+      // First try the modern Clipboard API
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        setCopyStatus({ message: `${label} copied!`, type: 'success' });
+      } else {
+        // Fallback for older browsers or non-HTTPS contexts
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+
+        if (successful) {
+          setCopyStatus({ message: `${label} copied!`, type: 'success' });
+        } else {
+          throw new Error('execCommand failed');
+        }
+      }
+
+      // Clear the status after 3 seconds
+      setTimeout(() => setCopyStatus(null), 3000);
+    } catch (error) {
+      console.error("Copy failed:", error);
+      setCopyStatus({
+        message: `Failed to copy ${label.toLowerCase()}. Please select and copy manually.`,
+        type: 'error'
+      });
+
+      // Clear error after 5 seconds
+      setTimeout(() => setCopyStatus(null), 5000);
     }
   };
 
@@ -115,6 +147,16 @@ export default function JsonSafeField() {
     <div className="p-4 bg-white rounded shadow">
       <h3 className="font-semibold mb-2">JSON-safe text generator</h3>
       <p className="text-sm text-gray-600 mb-3">Incolla qui la domanda o il blocco di testo (Markdown / code). Verrà generato il valore JSON valido (con escape di newline e virgolette).</p>
+
+      {/* Copy Status Message */}
+      {copyStatus && (
+        <div className={`mb-3 p-2 rounded text-sm ${copyStatus.type === 'success'
+            ? 'bg-green-100 text-green-800 border border-green-300'
+            : 'bg-red-100 text-red-800 border border-red-300'
+          }`}>
+          {copyStatus.message}
+        </div>
+      )}
 
       <label className="block text-xs font-medium text-gray-700">Input (raw)</label>
       <textarea
@@ -153,21 +195,21 @@ export default function JsonSafeField() {
 
         <div className="flex flex-col gap-2">
           <button
-            className="px-3 py-1 bg-blue-600 text-white rounded"
-            onClick={() => copy(jsonValue)}
+            className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+            onClick={() => copy(jsonValue, "JSON")}
             title="Copy JSON value"
           >
             Copy JSON
           </button>
           <button
-            className="px-3 py-1 bg-gray-200 rounded"
-            onClick={() => copy(input)}
+            className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 transition-colors"
+            onClick={() => copy(input, "Raw text")}
             title="Copy raw"
           >
             Copy raw
           </button>
           <button
-            className="px-3 py-1 bg-red-100 rounded text-sm"
+            className="px-3 py-1 bg-red-100 rounded text-sm hover:bg-red-200 transition-colors"
             onClick={() => setInput("")}
             title="Clear"
           >
