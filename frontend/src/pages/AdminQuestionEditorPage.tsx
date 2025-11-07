@@ -36,6 +36,34 @@ const QuestionEditor: React.FC = () => {
     }
   }, []);
 
+  const copyToClipboard = useCallback(async (text: string) => {
+    try {
+      // First try the modern Clipboard API
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } else {
+        // Fallback for older browsers or non-HTTPS contexts
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+
+        return successful;
+      }
+    } catch (error) {
+      console.error('Copy failed:', error);
+      return false;
+    }
+  }, []);
+
   const queryClient = useQueryClient();
 
   // --- Fetch Questions using useQuery ---
@@ -556,10 +584,14 @@ const QuestionEditor: React.FC = () => {
         <ImagePicker
           quizFilename={`questions.jsonc`}
           password={adminPassword}
-          onSelect={(imagePath) => {
-            navigator.clipboard.writeText(imagePath);
-            setCopiedPath(imagePath);
-            setTimeout(() => setCopiedPath(null), 3000);
+          onSelect={async (imagePath) => {
+            const success = await copyToClipboard(imagePath);
+            if (success) {
+              setCopiedPath(imagePath);
+              setTimeout(() => setCopiedPath(null), 3000);
+            } else {
+              showToast("error", `Could not copy to clipboard. Path: ${imagePath}`, 5000);
+            }
           }}
           onClose={() => {
             setShowImagePicker(false);

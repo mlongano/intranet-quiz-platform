@@ -20,6 +20,8 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [selectedImagePath, setSelectedImagePath] = useState<string | null>(currentImage || null);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [copyFormat, setCopyFormat] = useState<'path' | 'question_image' | 'option_image'>('path');
   const queryClient = useQueryClient();
 
   // Fetch images for this quiz
@@ -82,18 +84,50 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
 
   const handleSelectImage = (imagePath: string) => {
     setSelectedImagePath(imagePath);
+    setActionFeedback('Image selected - click "Use This Image" to confirm');
+    setTimeout(() => setActionFeedback(null), 2000);
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    e?.preventDefault();
+
+    console.log('Confirm clicked, selectedImagePath:', selectedImagePath);
+
     if (selectedImagePath) {
-      onSelect(selectedImagePath);
+      // Format the output based on selected format
+      let outputText = selectedImagePath;
+
+      if (copyFormat === 'question_image') {
+        outputText = `      "question_image": "${selectedImagePath}",`;
+      } else if (copyFormat === 'option_image') {
+        outputText = `      "image": "${selectedImagePath}",`;
+      }
+
+      setActionFeedback('✓ Image path copied!');
+      onSelect(outputText);
+
+      // Close after a short delay to show feedback
+      setTimeout(() => {
+        onClose();
+      }, 500);
+    } else {
+      setActionFeedback('⚠ Please select an image first');
+      setTimeout(() => setActionFeedback(null), 2000);
     }
-    onClose();
   };
 
-  const handleClear = () => {
+  const handleClear = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    e?.preventDefault();
+
+    console.log('Clear clicked');
+    setActionFeedback('✓ Image cleared');
     onSelect('');
-    onClose();
+
+    setTimeout(() => {
+      onClose();
+    }, 500);
   };
 
   return (
@@ -125,9 +159,12 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h2 style={{ margin: 0 }}>Select Image</h2>
+          <h2 style={{ margin: 0 }}>Select Image for Quiz</h2>
           <button
-            onClick={onClose}
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
             style={{
               background: 'none',
               border: 'none',
@@ -138,6 +175,70 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
           >
             ×
           </button>
+        </div>
+
+        {/* Action Feedback */}
+        {actionFeedback && (
+          <div
+            style={{
+              marginBottom: '16px',
+              padding: '12px',
+              backgroundColor: actionFeedback.includes('⚠') ? '#fff3cd' : '#d4edda',
+              color: actionFeedback.includes('⚠') ? '#856404' : '#155724',
+              border: `1px solid ${actionFeedback.includes('⚠') ? '#ffeeba' : '#c3e6cb'}`,
+              borderRadius: '4px',
+              fontSize: '14px',
+              fontWeight: '500',
+            }}
+          >
+            {actionFeedback}
+          </div>
+        )}
+
+        {/* Copy Format Selection */}
+        <div style={{ marginBottom: '20px', padding: '16px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
+          <h3 style={{ marginTop: 0, marginBottom: '12px', fontSize: '16px' }}>Copy Format</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="copyFormat"
+                value="path"
+                checked={copyFormat === 'path'}
+                onChange={(e) => setCopyFormat(e.target.value as any)}
+                style={{ marginRight: '8px' }}
+              />
+              <span>
+                <strong>Just path:</strong> <code style={{ fontSize: '12px', backgroundColor: '#fff', padding: '2px 4px', borderRadius: '2px' }}>/banks/question_bank/...</code>
+              </span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="copyFormat"
+                value="question_image"
+                checked={copyFormat === 'question_image'}
+                onChange={(e) => setCopyFormat(e.target.value as any)}
+                style={{ marginRight: '8px' }}
+              />
+              <span>
+                <strong>Question image:</strong> <code style={{ fontSize: '12px', backgroundColor: '#fff', padding: '2px 4px', borderRadius: '2px' }}>"question_image": "/banks/...",</code>
+              </span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="copyFormat"
+                value="option_image"
+                checked={copyFormat === 'option_image'}
+                onChange={(e) => setCopyFormat(e.target.value as any)}
+                style={{ marginRight: '8px' }}
+              />
+              <span>
+                <strong>Option image:</strong> <code style={{ fontSize: '12px', backgroundColor: '#fff', padding: '2px 4px', borderRadius: '2px' }}>"image": "/banks/...",</code>
+              </span>
+            </label>
+          </div>
         </div>
 
         {/* Upload Section */}
@@ -261,26 +362,33 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
             <button
               onClick={handleClear}
               style={{
-                padding: '8px 16px',
-                backgroundColor: '#6c757d',
+                padding: '10px 20px',
+                backgroundColor: '#dc3545',
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',
                 cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '500',
               }}
             >
-              Clear Image
+              Remove Image
             </button>
           )}
           <button
-            onClick={onClose}
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
             style={{
-              padding: '8px 16px',
+              padding: '10px 20px',
               backgroundColor: '#6c757d',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
               cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '500',
             }}
           >
             Cancel
@@ -289,15 +397,18 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
             onClick={handleConfirm}
             disabled={!selectedImagePath}
             style={{
-              padding: '8px 16px',
+              padding: '10px 20px',
               backgroundColor: selectedImagePath ? '#28a745' : '#ccc',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
               cursor: selectedImagePath ? 'pointer' : 'not-allowed',
+              fontSize: '14px',
+              fontWeight: '500',
+              opacity: selectedImagePath ? 1 : 0.6,
             }}
           >
-            Confirm
+            {selectedImagePath ? '✓ Use This Image' : 'Select an Image First'}
           </button>
         </div>
       </div>

@@ -27,6 +27,34 @@ const AdminImageManagerPage: React.FC = () => {
     setTimeout(() => setNotification(null), 3000);
   };
 
+  const copyToClipboard = async (text: string) => {
+    try {
+      // First try the modern Clipboard API
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } else {
+        // Fallback for older browsers or non-HTTPS contexts
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+
+        return successful;
+      }
+    } catch (error) {
+      console.error('Copy failed:', error);
+      return false;
+    }
+  };
+
   if (!adminPassword) {
     return (
       <div style={{ padding: '20px', textAlign: 'center' }}>
@@ -133,9 +161,13 @@ const AdminImageManagerPage: React.FC = () => {
         <ImagePicker
           quizFilename={selectedQuizFile}
           password={adminPassword}
-          onSelect={(imagePath) => {
-            navigator.clipboard.writeText(imagePath);
-            showNotification(`Image path copied to clipboard: ${imagePath}`);
+          onSelect={async (imagePath) => {
+            const success = await copyToClipboard(imagePath);
+            if (success) {
+              showNotification(`✓ Image path copied: ${imagePath}`);
+            } else {
+              showNotification(`⚠ Could not copy. Path: ${imagePath}`);
+            }
           }}
           onClose={() => {
             setShowImagePicker(false);
