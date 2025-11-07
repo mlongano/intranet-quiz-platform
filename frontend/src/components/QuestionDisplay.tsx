@@ -4,7 +4,13 @@ import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
+import rehypePrism from "rehype-prism-plus";
 import { Question, Answer, OptionObject } from "../api"; // Import types
+
+// Import Prism theme and line numbers
+import "prismjs/themes/prism-coy.css";
+import "prismjs/plugins/line-numbers/prism-line-numbers.css";
+import "prismjs/plugins/line-numbers/prism-line-numbers";
 
 interface Props {
   question: Question;
@@ -44,6 +50,27 @@ function QuestionDisplay({
         className={`text-base font-semibold ${props.className || ""}`}
       />
     ),
+    // Ensure pre blocks have line-numbers class AND preserve language class
+    pre: ({ children, ...props }: any) => {
+      // Extract the language from the code element if present
+      const codeElement = React.Children.toArray(children).find(
+        (child): child is React.ReactElement =>
+          React.isValidElement(child) && child.type === "code"
+      ) as React.ReactElement<{ className?: string }> | undefined;
+
+      const className = codeElement?.props?.className || "";
+      const languageMatch = className.match(/language-(\w+)/);
+      const language = languageMatch ? languageMatch[1] : "";
+
+      // Ensure both line-numbers and language-* classes are present
+      const preClassName = `line-numbers ${language ? `language-${language}` : ""} ${props.className || ""}`.trim();
+
+      return (
+        <pre {...props} className={preClassName}>
+          {children}
+        </pre>
+      );
+    },
   };
   // --- NEW: Helper to get text from option ---
   const getOptionText = (option: string | OptionObject): string => {
@@ -90,7 +117,7 @@ function QuestionDisplay({
 
       {/* Render question text as Markdown */}
       <div
-        className="text-lg font-medium mb-4"
+        className="text-lg font-medium mb-4 prose prose-sm max-w-none"
         onCopy={(e) => {
           if (disableCopy) e.preventDefault();
         }}
@@ -99,7 +126,35 @@ function QuestionDisplay({
         }}
         style={disableCopy ? { userSelect: "none", WebkitUserSelect: "none" } : undefined}
       >
-        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[
+            rehypeSanitize,
+            [rehypePrism, { showLineNumbers: true }]
+          ]}
+          components={{
+            pre: ({ children, ...props }: any) => {
+              // Extract the language from the code element if present
+              const codeElement = React.Children.toArray(children).find(
+                (child): child is React.ReactElement =>
+                  React.isValidElement(child) && child.type === "code"
+              ) as React.ReactElement<{ className?: string }> | undefined;
+
+              const className = codeElement?.props?.className || "";
+              const languageMatch = className.match(/language-(\w+)/);
+              const language = languageMatch ? languageMatch[1] : "";
+
+              // Ensure both line-numbers and language-* classes are present
+              const preClassName = `line-numbers ${language ? `language-${language}` : ""} ${props.className || ""}`.trim();
+
+              return (
+                <pre {...props} className={preClassName}>
+                  {children}
+                </pre>
+              );
+            },
+          }}
+        >
           {question.text || ""}
         </ReactMarkdown>
       </div>
@@ -149,7 +204,7 @@ function QuestionDisplay({
                   />
                   <label
                     htmlFor={inputId}
-                    className="ml-3 flex-1 text-gray-800"
+                    className="ml-3 flex-1 text-gray-800 prose prose-sm max-w-none"
                     onCopy={(e) => {
                       if (disableCopy) e.preventDefault();
                     }}
@@ -160,7 +215,10 @@ function QuestionDisplay({
                   >
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
-                      rehypePlugins={[rehypeSanitize]}
+                      rehypePlugins={[
+                        rehypeSanitize,
+                        [rehypePrism, { showLineNumbers: true }]
+                      ]}
                       components={optionMarkdownComponents}
                     >
                       {getOptionText(option) || ""}

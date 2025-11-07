@@ -2,10 +2,13 @@ import { useState, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypePrism from "rehype-prism-plus";
+import rehypeSanitize from "rehype-sanitize";
 // Prism theme (choose one available in prismjs/themes)
 import "prismjs/themes/prism-coy.css";
 // Prism line numbers plugin CSS
 import "prismjs/plugins/line-numbers/prism-line-numbers.css";
+// Prism line numbers plugin JavaScript
+import "prismjs/plugins/line-numbers/prism-line-numbers";
 
 /**
  * JsonSafeField
@@ -60,11 +63,13 @@ export default function JsonSafeField() {
           />
           <div className="mt-2">
             <label className="block text-xs font-medium text-gray-700">Preview (Markdown)</label>
-            <div className="mt-1 p-2 border rounded bg-white max-h-48 overflow-auto">
+            <div className="mt-1 p-3 border rounded bg-white max-h-48 overflow-auto prose prose-sm max-w-none">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
-                // enable prism with line numbers
-                rehypePlugins={[[rehypePrism, { showLineNumbers: true }]]}
+                rehypePlugins={[
+                  rehypeSanitize,
+                  [rehypePrism, { showLineNumbers: true }]
+                ]}
               >
                 {input || ""}
               </ReactMarkdown>

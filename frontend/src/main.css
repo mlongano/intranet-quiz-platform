@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 .quiz-no-select {
     -webkit-user-select: none; /* Safari */

@@ -6,7 +6,7 @@ import { parse, ParseError } from "jsonc-parser"; // Import parse from jsonc-par
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchAdminQuestions, updateAdminQuestions, QuizData, Question, clearActiveQuizImages, listQuizImages } from "../api"; // Import both QuizData and Question
 import { useLocation, useNavigate } from "react-router-dom";
-const QuestionDisplay = React.lazy(() => import("../components/QuestionDisplay"));
+import QuestionDisplay from "../components/QuestionDisplay";
 import { ImagePicker } from "../components/ImagePicker";
 const JsonSafeField = React.lazy(() => import("../components/JsonSafeField"));
 
@@ -523,30 +523,28 @@ const QuestionEditor: React.FC = () => {
               {previewParsed.error}
             </div>
           ) : null}
-          <Suspense fallback={<div className="p-4 bg-gray-100 rounded">Loading preview…</div>}>
-            {(() => {
-              const qs = previewParsed.qs;
-              if (!qs) return null;
-              if (qs.length === 0)
-                return <div className="text-gray-600">No questions to preview.</div>;
-              return (
-                <div className="space-y-6">
-                  {qs.map((q, idx) => (
-                    <div key={q.id ?? idx} className="p-4 border rounded">
-                      <div className="mb-2 text-sm text-gray-600">ID: {String(q.id)}</div>
-                      <QuestionDisplay
-                        question={q as Question}
-                        currentAnswer={null}
-                        onAnswerChange={() => { }}
-                        readOnly
-                        highlightIndices={getHighlightIndices(q)}
-                      />
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
-          </Suspense>
+          {(() => {
+            const qs = previewParsed.qs;
+            if (!qs) return null;
+            if (qs.length === 0)
+              return <div className="text-gray-600">No questions to preview.</div>;
+            return (
+              <div className="space-y-6">
+                {qs.map((q, idx) => (
+                  <div key={q.id ?? idx} className="p-4 border rounded">
+                    <div className="mb-2 text-sm text-gray-600">ID: {String(q.id)}</div>
+                    <QuestionDisplay
+                      question={q as Question}
+                      currentAnswer={null}
+                      onAnswerChange={() => { }}
+                      readOnly
+                      highlightIndices={getHighlightIndices(q)}
+                    />
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       )}
 

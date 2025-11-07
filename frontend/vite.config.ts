@@ -12,39 +12,31 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        // Use a function-based manualChunks to split large dependencies into focused chunks
+        // Simplified manual chunks - avoid splitting React core
         manualChunks(id: string) {
           if (id.includes('node_modules')) {
-            // React ecosystem - keep together to avoid module resolution issues
-            if (id.match(/\/node_modules\/(react|react-dom|scheduler)\//)) {
+            // Keep ALL React-related stuff together (React, ReactDOM, scheduler)
+            // This prevents "Cannot read properties of undefined" errors
+            if (id.includes('react') || id.includes('scheduler')) {
               return 'react-vendor';
             }
 
-            // Router
-            if (id.includes('react-router-dom')) return 'router';
-
-            // React Query
-            if (id.includes('@tanstack/react-query') && !id.includes('devtools')) {
-              return 'query';
-            }
-
-            // Prism and rehype-prism (syntax highlighting) - lazy loaded in admin
-            if (id.includes('rehype-prism-plus') || id.includes('prismjs')) {
+            // Separate heavy libraries that don't depend on React internals
+            if (id.includes('prismjs')) {
               return 'prism';
             }
 
-            // JSON/C parsing - lazy loaded in admin
             if (id.includes('jsonc-parser')) {
               return 'jsonc';
             }
 
-            // Everything else stays in vendor (including markdown ecosystem)
+            // Everything else in one vendor chunk
             return 'vendor';
           }
         },
       },
     },
-    chunkSizeWarningLimit: 600, // Increase threshold slightly to suppress warning for remaining main chunk
+    chunkSizeWarningLimit: 1000, // Increase threshold to suppress warnings
   },
   server: {
     host: true, // Allow access from other devices on the network
