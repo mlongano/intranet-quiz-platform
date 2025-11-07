@@ -66,6 +66,9 @@ importers:
       globals:
         specifier: ^16.0.0
         version: 16.0.0
+      rollup-plugin-visualizer:
+        specifier: ^5.9.0
+        version: 5.14.0(rollup@4.40.0)
       typescript:
         specifier: ~5.7.2
         version: 5.7.3

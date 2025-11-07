@@ -1,22 +1,46 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { visualizer } from "rollup-plugin-visualizer";
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(),
+  // Bundle visualizer: generates dist/bundle-report.html after build
+  visualizer({ filename: 'dist/bundle-report.html', title: 'Bundle report' })
+  ],
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          // Split React and React DOM into a separate vendor chunk
-          'react-vendor': ['react', 'react-dom'],
-          // Split React Router into its own chunk
-          'router': ['react-router-dom'],
-          // Split TanStack Query into its own chunk
-          'query': ['@tanstack/react-query'],
-          // Split Markdown rendering libraries into their own chunk
-          'markdown': ['react-markdown', 'remark-gfm', 'rehype-sanitize'],
+        // Use a function-based manualChunks to split large dependencies into focused chunks
+        manualChunks(id: string) {
+          if (id.includes('node_modules')) {
+            // React ecosystem - keep together to avoid module resolution issues
+            if (id.match(/\/node_modules\/(react|react-dom|scheduler)\//)) {
+              return 'react-vendor';
+            }
+            
+            // Router
+            if (id.includes('react-router-dom')) return 'router';
+            
+            // React Query
+            if (id.includes('@tanstack/react-query') && !id.includes('devtools')) {
+              return 'query';
+            }
+
+            // Prism and rehype-prism (syntax highlighting) - lazy loaded in admin
+            if (id.includes('rehype-prism-plus') || id.includes('prismjs')) {
+              return 'prism';
+            }
+
+            // JSON/C parsing - lazy loaded in admin
+            if (id.includes('jsonc-parser')) {
+              return 'jsonc';
+            }
+
+            // Everything else stays in vendor (including markdown ecosystem)
+            return 'vendor';
+          }
         },
       },
     },
