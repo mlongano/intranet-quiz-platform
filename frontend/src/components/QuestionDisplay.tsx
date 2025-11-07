@@ -13,6 +13,20 @@ import "prismjs/themes/prism-coy.css";
 import "prismjs/plugins/line-numbers/prism-line-numbers.css";
 import "prismjs/plugins/line-numbers/prism-line-numbers";
 
+// Import common languages to reduce unknown language errors
+import "prismjs/components/prism-javascript";
+import "prismjs/components/prism-typescript";
+import "prismjs/components/prism-python";
+import "prismjs/components/prism-java";
+import "prismjs/components/prism-c";
+import "prismjs/components/prism-cpp";
+import "prismjs/components/prism-csharp";
+import "prismjs/components/prism-css";
+import "prismjs/components/prism-markup"; // HTML/XML
+import "prismjs/components/prism-json";
+import "prismjs/components/prism-bash";
+import "prismjs/components/prism-sql";
+
 interface Props {
   question: Question;
   currentAnswer: Answer;
@@ -38,14 +52,19 @@ function QuestionDisplay({
     if (containerRef.current) {
       // Use a small delay to ensure DOM is fully rendered
       const timeoutId = setTimeout(() => {
-        Prism.highlightAllUnder(containerRef.current!);
-      }, 0);
+        try {
+          if (containerRef.current) {
+            Prism.highlightAllUnder(containerRef.current);
+          }
+        } catch (error) {
+          // Silently ignore Prism errors (e.g., unknown languages in code blocks)
+          console.warn('Prism highlighting error (ignored):', error);
+        }
+      }, 50);
 
       return () => clearTimeout(timeoutId);
     }
-  }, [question.id, question.text, question.options]);
-
-  // Custom markdown component sizes for options
+  }, [question.id, question.text, question.options]);  // Custom markdown component sizes for options
   const optionMarkdownComponents: Components = {
     h1: (props: any) => (
       <h3
