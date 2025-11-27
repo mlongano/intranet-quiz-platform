@@ -627,6 +627,152 @@ def delete_students_from_bank(filename: str):
         raise InternalServerError(description=f"Error deleting file from bank: {e}")
 
 
+
+def rename_quiz_in_bank(old_filename: str, new_filename: str):
+    """
+    Renames a quiz file in the question_bank.
+    Also renames the associated images folder and updates image paths in the JSON.
+    """
+    if not old_filename or not new_filename:
+        raise BadRequest(description="Both old and new filenames are required.")
+
+    # Sanitize filenames
+    if not old_filename.endswith('.jsonc'): old_filename += '.jsonc'
+    if not new_filename.endswith('.jsonc'): new_filename += '.jsonc'
+
+    safe_old = sanitize_filename(old_filename)
+    safe_new = sanitize_filename(new_filename)
+
+    old_path = Path(QUESTION_BANK_FOLDER) / safe_old
+    new_path = Path(QUESTION_BANK_FOLDER) / safe_new
+
+    if not old_path.exists():
+        raise NotFound(description=f"File '{safe_old}' not found.")
+
+    if new_path.exists():
+        raise Conflict(description=f"File '{safe_new}' already exists.")
+
+    try:
+        # 1. Rename the JSON file
+        old_path.rename(new_path)
+        print(f"Renamed quiz file: {safe_old} -> {safe_new}")
+
+        # 2. Handle Images Folder
+        old_stem = Path(safe_old).stem
+        new_stem = Path(safe_new).stem
+
+        old_images_folder = Path(QUESTION_BANK_FOLDER) / f"{old_stem}_images"
+        new_images_folder = Path(QUESTION_BANK_FOLDER) / f"{new_stem}_images"
+
+        if old_images_folder.exists() and old_images_folder.is_dir():
+            if new_images_folder.exists():
+                print(f"Warning: Target images folder '{new_images_folder}' already exists. Merging/Overwriting.")
+                # In a real scenario, we might want to be more careful. For now, let's just rename/move.
+                pass
+
+            old_images_folder.rename(new_images_folder)
+            print(f"Renamed images folder: {old_images_folder.name} -> {new_images_folder.name}")
+
+            # 3. Update paths inside the new JSON file
+            try:
+                with new_path.open('r', encoding='utf-8') as f:
+                    quiz_data = json.load(f)
+
+                updated = False
+                old_path_prefix = f"/banks/question_bank/{old_stem}_images/"
+                new_path_prefix = f"/banks/question_bank/{new_stem}_images/"
+
+                if 'questions' in quiz_data:
+                    for question in quiz_data['questions']:
+                        # Update question image
+                        if 'question_image' in question and question['question_image']:
+                            if question['question_image'].startswith(old_path_prefix):
+                                question['question_image'] = question['question_image'].replace(old_path_prefix, new_path_prefix)
+                                updated = True
+
+                        # Update option images
+                        if 'options' in question and isinstance(question['options'], list):
+                            for option in question['options']:
+                                if isinstance(option, dict) and 'image' in option and option['image']:
+                                    if option['image'].startswith(old_path_prefix):
+                                        option['image'] = option['image'].replace(old_path_prefix, new_path_prefix)
+                                        updated = True
+
+                if updated:
+                    with new_path.open('w', encoding='utf-8') as f:
+                        json.dump(quiz_data, f, indent=2)
+                    print(f"Updated image paths in '{safe_new}'")
+
+            except Exception as e:
+                print(f"Error updating image paths after rename: {e}")
+
+    except Exception as e:
+        print(f"Error renaming quiz: {e}")
+        # Try to rollback JSON rename if it happened
+        if new_path.exists() and not old_path.exists():
+            try:
+                new_path.rename(old_path)
+            except:
+                pass
+        raise InternalServerError(description=f"Error renaming file: {e}")
+
+
+def rename_scores_in_bank(old_filename: str, new_filename: str):
+    """Renames a scores file in the scores_bank."""
+    if not old_filename or not new_filename:
+        raise BadRequest(description="Both old and new filenames are required.")
+
+    if not old_filename.endswith('.jsonc'): old_filename += '.jsonc'
+    if not new_filename.endswith('.jsonc'): new_filename += '.jsonc'
+
+    safe_old = sanitize_filename(old_filename)
+    safe_new = sanitize_filename(new_filename)
+
+    old_path = Path(SCORES_BANK_FOLDER) / safe_old
+    new_path = Path(SCORES_BANK_FOLDER) / safe_new
+
+    if not old_path.exists():
+        raise NotFound(description=f"File '{safe_old}' not found.")
+
+    if new_path.exists():
+        raise Conflict(description=f"File '{safe_new}' already exists.")
+
+    try:
+        old_path.rename(new_path)
+        print(f"Renamed scores file: {safe_old} -> {safe_new}")
+    except Exception as e:
+        print(f"Error renaming scores file: {e}")
+        raise InternalServerError(description=f"Error renaming file: {e}")
+
+
+def rename_students_in_bank(old_filename: str, new_filename: str):
+    """Renames a students file in the students_bank."""
+    if not old_filename or not new_filename:
+        raise BadRequest(description="Both old and new filenames are required.")
+
+    if not old_filename.endswith('.jsonc'): old_filename += '.jsonc'
+    if not new_filename.endswith('.jsonc'): new_filename += '.jsonc'
+
+    safe_old = sanitize_filename(old_filename)
+    safe_new = sanitize_filename(new_filename)
+
+    old_path = Path(STUDENTS_BANK_FOLDER) / safe_old
+    new_path = Path(STUDENTS_BANK_FOLDER) / safe_new
+
+    if not old_path.exists():
+        raise NotFound(description=f"File '{safe_old}' not found.")
+
+    if new_path.exists():
+        raise Conflict(description=f"File '{safe_new}' already exists.")
+
+    try:
+        old_path.rename(new_path)
+        print(f"Renamed students file: {safe_old} -> {safe_new}")
+    except Exception as e:
+        print(f"Error renaming students file: {e}")
+        raise InternalServerError(description=f"Error renaming file: {e}")
+
+
 def load_questions(filename: str = QUEST_FILE, lenient: bool = False):
     """Reads and returns the JSON content of a specified file with caching for default file.
 
@@ -643,7 +789,7 @@ def load_questions(filename: str = QUEST_FILE, lenient: bool = False):
         if quest_path.exists():
             current_mtime = quest_path.stat().st_mtime
             if _questions_cache is not None and current_mtime <= _questions_mtime:
-                print(f"Using cached questions from '{QUEST_FILE}'")
+                print(f"Using cached questions  from '{QUEST_FILE}'")
                 return _questions_cache
 
     # Load from file

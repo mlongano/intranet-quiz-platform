@@ -701,6 +701,83 @@ export async function saveStudentsToBank(
   return handleResponse<{ success: boolean; message: string }>(response);
 }
 
+
+
+/**
+ * Renames a quiz file in the question_bank.
+ */
+export async function renameQuizInBank(
+  filename: string,
+  newFilename: string,
+  password: string,
+): Promise<BankOperationResponse> {
+  const response = await fetch(`${API_BASE}/admin/bank/rename`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ filename, new_filename: newFilename, pw: password }),
+  });
+  return handleResponse<BankOperationResponse>(response);
+}
+
+/**
+ * Renames a scores file in the scores_bank.
+ */
+export async function renameScoresInBank(
+  filename: string,
+  newFilename: string,
+  password: string,
+): Promise<BankOperationResponse> {
+  const response = await fetch(`${API_BASE}/admin/scores-bank/rename`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ filename, new_filename: newFilename, pw: password }),
+  });
+  return handleResponse<BankOperationResponse>(response);
+}
+
+/**
+ * Renames a students file in the students_bank.
+ */
+export async function renameStudentsInBank(
+  filename: string,
+  newFilename: string,
+  password: string,
+): Promise<BankOperationResponse> {
+  const response = await fetch(`${API_BASE}/admin/students-bank/rename`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ filename, new_filename: newFilename, pw: password }),
+  });
+  return handleResponse<BankOperationResponse>(response);
+}
+
+/**
+ * Generates the download URL for a quiz file.
+ */
+export function getQuizDownloadUrl(filename: string, password: string): string {
+  return `${API_BASE}/admin/bank/download/${encodeURIComponent(filename)}?password=${encodeURIComponent(password)}`;
+}
+
+/**
+ * Generates the download URL for a scores file.
+ */
+export function getScoresDownloadUrl(filename: string, password: string): string {
+  return `${API_BASE}/admin/scores-bank/download/${encodeURIComponent(filename)}?password=${encodeURIComponent(password)}`;
+}
+
+/**
+ * Generates the download URL for a students file.
+ */
+export function getStudentsDownloadUrl(filename: string, password: string): string {
+  return `${API_BASE}/admin/students-bank/download/${encodeURIComponent(filename)}?password=${encodeURIComponent(password)}`;
+}
+
 /**
  * Deletes a specified students file from the students_bank.
  */

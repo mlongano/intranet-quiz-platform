@@ -948,6 +948,85 @@ def api_list_students_bank_files():
         print(f"Error listing students bank files: {e}")
         abort(500, description=f"Failed to list students bank files: {str(e)}")
 
+
+
+# --- Rename Endpoints ---
+
+@admin_bp.route('/admin/bank/rename', methods=['POST'])
+def api_rename_bank_file():
+    """Renames a quiz file in the question_bank."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    filename = data.get('filename')
+    new_filename = data.get('new_filename')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    if not filename or not new_filename:
+        abort(400, description="Both 'filename' and 'new_filename' are required.")
+
+    try:
+        from utils import rename_quiz_in_bank
+        rename_quiz_in_bank(filename, new_filename)
+        return jsonify({"success": True, "message": f"Successfully renamed '{filename}' to '{new_filename}'."})
+    except (NotFound, Conflict, BadRequest, InternalServerError) as e:
+        abort(e.code, description=e.description)
+    except Exception as e:
+        print(f"Error renaming quiz file: {e}")
+        abort(500, description=f"Failed to rename file: {str(e)}")
+
+
+@admin_bp.route('/admin/scores-bank/rename', methods=['POST'])
+def api_rename_scores_bank_file():
+    """Renames a scores file in the scores_bank."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    filename = data.get('filename')
+    new_filename = data.get('new_filename')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    if not filename or not new_filename:
+        abort(400, description="Both 'filename' and 'new_filename' are required.")
+
+    try:
+        from utils import rename_scores_in_bank
+        rename_scores_in_bank(filename, new_filename)
+        return jsonify({"success": True, "message": f"Successfully renamed '{filename}' to '{new_filename}'."})
+    except (NotFound, Conflict, BadRequest, InternalServerError) as e:
+        abort(e.code, description=e.description)
+    except Exception as e:
+        print(f"Error renaming scores file: {e}")
+        abort(500, description=f"Failed to rename file: {str(e)}")
+
+
+@admin_bp.route('/admin/students-bank/rename', methods=['POST'])
+def api_rename_students_bank_file():
+    """Renames a students file in the students_bank."""
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get('pw')
+    filename = data.get('filename')
+    new_filename = data.get('new_filename')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    if not filename or not new_filename:
+        abort(400, description="Both 'filename' and 'new_filename' are required.")
+
+    try:
+        from utils import rename_students_in_bank
+        rename_students_in_bank(filename, new_filename)
+        return jsonify({"success": True, "message": f"Successfully renamed '{filename}' to '{new_filename}'."})
+    except (NotFound, Conflict, BadRequest, InternalServerError) as e:
+        abort(e.code, description=e.description)
+    except Exception as e:
+        print(f"Error renaming students file: {e}")
+        abort(500, description=f"Failed to rename file: {str(e)}")
+
+
 @admin_bp.route('/admin/students-bank/load', methods=['POST'])
 def api_load_students_from_bank():
     """Loads a specified students file from the students_bank into STUDENTS_FILE."""
@@ -969,6 +1048,58 @@ def api_load_students_from_bank():
     except Exception as e:
         print(f"Unexpected error loading students from bank: {e}")
         abort(500, description=f"Unexpected error: {str(e)}")
+
+# --- Download Endpoints ---
+
+@admin_bp.route('/admin/bank/download/<path:filename>', methods=['GET'])
+def api_download_bank_file(filename):
+    """Downloads a quiz file from the question_bank."""
+    auth_pw = request.args.get('password')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    try:
+        from utils import QUESTION_BANK_FOLDER
+        from flask import send_from_directory
+        return send_from_directory(QUESTION_BANK_FOLDER, filename, as_attachment=True)
+    except Exception as e:
+        print(f"Error downloading quiz file: {e}")
+        abort(404, description=f"File not found: {str(e)}")
+
+
+@admin_bp.route('/admin/scores-bank/download/<path:filename>', methods=['GET'])
+def api_download_scores_bank_file(filename):
+    """Downloads a scores file from the scores_bank."""
+    auth_pw = request.args.get('password')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    try:
+        from utils import SCORES_BANK_FOLDER
+        from flask import send_from_directory
+        return send_from_directory(SCORES_BANK_FOLDER, filename, as_attachment=True)
+    except Exception as e:
+        print(f"Error downloading scores file: {e}")
+        abort(404, description=f"File not found: {str(e)}")
+
+
+@admin_bp.route('/admin/students-bank/download/<path:filename>', methods=['GET'])
+def api_download_students_bank_file(filename):
+    """Downloads a students file from the students_bank."""
+    auth_pw = request.args.get('password')
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    try:
+        from utils import STUDENTS_BANK_FOLDER
+        from flask import send_from_directory
+        return send_from_directory(STUDENTS_BANK_FOLDER, filename, as_attachment=True)
+    except Exception as e:
+        print(f"Error downloading students file: {e}")
+        abort(404, description=f"File not found: {str(e)}")
 
 @admin_bp.route('/admin/students-bank/save', methods=['POST'])
 def api_save_students_to_bank():

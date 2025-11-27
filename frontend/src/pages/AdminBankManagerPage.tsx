@@ -16,6 +16,8 @@ import {
   Question, // Import the Question type for preview content
   fetchAdminQuestions,
   QuizData,
+  getQuizDownloadUrl,
+  renameQuizInBank, // New import for rename
 } from "../api";
 import { slugify } from "../lib/utils"; // Assuming api.ts is in src/
 
@@ -33,6 +35,8 @@ function AdminBankManagerPage() {
   const [previewingFile, setPreviewingFile] = useState<string | null>(null); // State to track which file is being previewed
   const [justLoadedFile, setJustLoadedFile] = useState(false); // Track if we just loaded a file to avoid clearing messages
   const [deleteConfirmFile, setDeleteConfirmFile] = useState<string | null>(null); // Track which file is being confirmed for deletion
+  const [renameTargetFile, setRenameTargetFile] = useState<string | null>(null); // Track which file is being renamed
+  const [newFilename, setNewFilename] = useState(""); // State for the new filename input
 
   const queryClient = useQueryClient(); // Get Query Client instance
 
@@ -195,6 +199,50 @@ function AdminBankManagerPage() {
     },
   });
 
+
+  // --- Mutation for Renaming a file in the bank ---
+  const renameFileMutation = useMutation<BankOperationResponse, Error, { filename: string; newFilename: string }>({
+    mutationFn: ({ filename, newFilename }) => {
+      if (!adminPassword) {
+        throw new Error("Admin password not available.");
+      }
+      setError(null);
+      setWarning(null);
+      setMessage(null);
+      return renameQuizInBank(filename, newFilename, adminPassword);
+    },
+    onSuccess: (data, variables) => {
+      setRenameTargetFile(null); // Close rename UI
+      setNewFilename(""); // Reset input
+      setMessage(data.message || `File '${variables.filename}' renamed successfully!`);
+      queryClient.invalidateQueries({ queryKey: ["questionBankFiles"] });
+    },
+    onError: (err: any) => {
+      setError(`Failed to rename file: ${err.message}`);
+    },
+  });
+
+  const handleRenameClick = (filename: string) => {
+    setRenameTargetFile(filename);
+    setNewFilename(filename); // Pre-fill with current filename
+  };
+
+  const submitRename = () => {
+    if (!renameTargetFile || !newFilename.trim()) return;
+
+    let finalName = newFilename.trim();
+    if (!finalName.endsWith('.jsonc')) {
+      finalName += '.jsonc';
+    }
+
+    if (finalName === renameTargetFile) {
+      setRenameTargetFile(null); // No change
+      return;
+    }
+
+    renameFileMutation.mutate({ filename: renameTargetFile, newFilename: finalName });
+  };
+
   // --- Query for Previewing a file from the bank (triggered on demand) ---
   const {
     data: previewData,
@@ -265,13 +313,16 @@ function AdminBankManagerPage() {
     loadFileMutation.isPending ||
     saveFileMutation.isPending ||
     deleteFileMutation.isPending ||
+    renameFileMutation.isPending ||
     isLoadingPreview;
   const currentError =
     error ||
     filesError ||
+    questionsError ||
     loadFileMutation.error ||
     saveFileMutation.error ||
     deleteFileMutation.error ||
+    renameFileMutation.error ||
     previewError;
 
   return (
@@ -313,7 +364,7 @@ function AdminBankManagerPage() {
       {/* Display questions loading error */}
       {questionsError && !currentError && !justLoadedFile && (
         <div className="text-red-500 mb-4">
-          Error loading current quiz: {questionsError.message}
+          Error loading current quiz: {(questionsError as Error).message || 'Unknown error'}
         </div>
       )}
 
@@ -370,57 +421,103 @@ function AdminBankManagerPage() {
             {bankFilesData.files.map((filename) => (
               <li key={filename} className="border-b mb-2 pb-2">
                 <div className="flex justify-between items-center mb-2">
-                  <span>{filename}</span>
-                  <div>
-                    <button
-                      onClick={() => handlePreviewClick(filename)}
-                      className="bg-blue-500 text-white p-1 text-sm rounded mr-2 disabled:bg-gray-400"
-                      disabled={
-                        isLoadingFiles || isLoadingPreview || !adminPassword
-                      }
-                    >
-                      {previewingFile === filename && isLoadingPreview
-                        ? "Loading Preview..."
-                        : previewingFile === filename
-                          ? "Hide Preview"
-                          : "Preview"}
-                    </button>
-                    <button
-                      onClick={() => handleLoadClick(filename)}
-                      className="bg-yellow-500 text-white p-1 text-sm rounded mr-2 disabled:bg-gray-400"
-                      disabled={isLoading || !adminPassword}
-                    >
-                      {loadFileMutation.isPending &&
-                        loadFileMutation.variables === filename
-                        ? "Loading..."
-                        : "Load"}
-                    </button>
-                    {deleteConfirmFile === filename ? (
-                      <span className="inline-flex gap-1 items-center bg-red-50 px-2 py-1 rounded border border-red-300">
-                        <span className="text-red-700 text-xs font-semibold">Delete?</span>
-                        <button
-                          onClick={() => deleteFileMutation.mutate(filename)}
-                          className="bg-red-600 text-white px-2 py-0.5 text-xs rounded disabled:bg-gray-400"
-                          disabled={deleteFileMutation.isPending}
-                        >
-                          {deleteFileMutation.isPending ? "Deleting..." : "Yes"}
-                        </button>
-                        <button
-                          onClick={() => setDeleteConfirmFile(null)}
-                          className="bg-gray-500 text-white px-2 py-0.5 text-xs rounded disabled:bg-gray-400"
-                          disabled={deleteFileMutation.isPending}
-                        >
-                          No
-                        </button>
-                      </span>
-                    ) : (
+                  {renameTargetFile === filename ? (
+                    <div className="flex items-center gap-2 flex-grow mr-2">
+                      <input
+                        type="text"
+                        value={newFilename}
+                        onChange={(e) => setNewFilename(e.target.value)}
+                        className="border p-1 text-sm flex-grow rounded"
+                        autoFocus
+                      />
                       <button
-                        onClick={() => handleDeleteClick(filename)}
-                        className="bg-red-500 text-white p-1 text-sm rounded disabled:bg-gray-400"
-                        disabled={isLoading || !adminPassword}
+                        onClick={submitRename}
+                        className="bg-green-500 text-white px-2 py-1 text-xs rounded"
+                        disabled={renameFileMutation.isPending}
                       >
-                        Delete
+                        Save
                       </button>
+                      <button
+                        onClick={() => setRenameTargetFile(null)}
+                        className="bg-gray-500 text-white px-2 py-1 text-xs rounded"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <span>{filename}</span>
+                  )}
+
+                  <div>
+                    {renameTargetFile !== filename && (
+                      <>
+                        <button
+                          onClick={() => handlePreviewClick(filename)}
+                          className="bg-blue-500 text-white p-1 text-sm rounded mr-2 disabled:bg-gray-400"
+                          disabled={
+                            isLoadingFiles || isLoadingPreview || !adminPassword
+                          }
+                        >
+                          {previewingFile === filename && isLoadingPreview
+                            ? "Loading Preview..."
+                            : previewingFile === filename
+                              ? "Hide Preview"
+                              : "Preview"}
+                        </button>
+                        <button
+                          onClick={() => handleLoadClick(filename)}
+                          className="bg-yellow-500 text-white p-1 text-sm rounded mr-2 disabled:bg-gray-400"
+                          disabled={isLoading || !adminPassword}
+                        >
+                          {loadFileMutation.isPending &&
+                            loadFileMutation.variables === filename
+                            ? "Loading..."
+                            : "Load"}
+                        </button>
+                        <button
+                          onClick={() => handleRenameClick(filename)}
+                          className="bg-indigo-500 text-white p-1 text-sm rounded mr-2 disabled:bg-gray-400"
+                          disabled={isLoading || !adminPassword}
+                        >
+                          Rename
+                        </button>
+                        <a
+                          href={getQuizDownloadUrl(filename, adminPassword || "")}
+                          className="bg-green-600 text-white p-1 text-sm rounded mr-2 inline-block disabled:bg-gray-400 disabled:pointer-events-none"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Download
+                        </a>
+                        {/* Delete Button with Inline Confirmation */}
+                        {deleteConfirmFile === filename ? (
+                          <span className="inline-flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded border border-yellow-300 ml-2">
+                            <span className="text-yellow-700 text-xs font-semibold">Delete?</span>
+                            <button
+                              onClick={() => deleteFileMutation.mutate(filename)}
+                              className="bg-red-600 text-white px-2 py-0.5 text-xs rounded hover:bg-red-700 disabled:opacity-50"
+                              disabled={deleteFileMutation.isPending}
+                            >
+                              {deleteFileMutation.isPending ? "Deleting..." : "Yes"}
+                            </button>
+                            <button
+                              onClick={() => setDeleteConfirmFile(null)}
+                              className="bg-gray-500 text-white px-2 py-0.5 text-xs rounded hover:bg-gray-600 disabled:opacity-50"
+                              disabled={deleteFileMutation.isPending}
+                            >
+                              No
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleDeleteClick(filename)}
+                            className="bg-red-500 text-white p-1 text-sm rounded disabled:bg-gray-400"
+                            disabled={isLoading || !adminPassword}
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

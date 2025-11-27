@@ -9,6 +9,9 @@ import {
   previewStudentsBankFile,
   deleteStudentsFromBank,
   StudentEntry,
+  getStudentsDownloadUrl,
+  renameStudentsInBank, // New import for rename
+  BankOperationResponse,
 } from "../api";
 
 function AdminStudentsBankPage() {
@@ -22,6 +25,8 @@ function AdminStudentsBankPage() {
   const [previewingFile, setPreviewingFile] = useState<string | null>(null);
   const [deleteConfirmFile, setDeleteConfirmFile] = useState<string | null>(null);
   const [loadConfirmFile, setLoadConfirmFile] = useState<string | null>(null);
+  const [renameTargetFile, setRenameTargetFile] = useState<string | null>(null); // Track which file is being renamed
+  const [newFilename, setNewFilename] = useState(""); // State for the new filename input
 
   const queryClient = useQueryClient();
 
@@ -157,6 +162,49 @@ function AdminStudentsBankPage() {
     },
   });
 
+
+  // Rename Mutation
+  const renameMutation = useMutation<BankOperationResponse, Error, { filename: string; newFilename: string }>({
+    mutationFn: ({ filename, newFilename }) => {
+      if (!adminPassword) {
+        throw new Error("Admin password not available.");
+      }
+      setError(null);
+      setMessage(null);
+      return renameStudentsInBank(filename, newFilename, adminPassword);
+    },
+    onSuccess: (data, variables) => {
+      setRenameTargetFile(null);
+      setNewFilename("");
+      setMessage(data.message || `File '${variables.filename}' renamed successfully!`);
+      queryClient.invalidateQueries({ queryKey: ["studentsBankFiles"] });
+    },
+    onError: (err: any) => {
+      setError(`Failed to rename file: ${err.message}`);
+    },
+  });
+
+  const handleRenameClick = (filename: string) => {
+    setRenameTargetFile(filename);
+    setNewFilename(filename); // Pre-fill with current filename
+  };
+
+  const submitRename = () => {
+    if (!renameTargetFile || !newFilename.trim()) return;
+
+    let finalName = newFilename.trim();
+    if (!finalName.endsWith('.jsonc')) {
+      finalName += '.jsonc';
+    }
+
+    if (finalName === renameTargetFile) {
+      setRenameTargetFile(null); // No change
+      return;
+    }
+
+    renameMutation.mutate({ filename: renameTargetFile, newFilename: finalName });
+  };
+
   const handleLoad = (filename: string) => {
     setLoadConfirmFile(filename);
   };
@@ -235,6 +283,22 @@ function AdminStudentsBankPage() {
   const totalEmails = groupedPreview
     ? Object.values(groupedPreview).reduce((sum, emails) => sum + emails.length, 0)
     : 0;
+  const isLoading =
+    isLoadingFiles ||
+    loadMutation.isPending ||
+    saveMutation.isPending ||
+    deleteMutation.isPending ||
+    renameMutation.isPending ||
+    previewMutation.isPending;
+
+  const currentError =
+    error ||
+    filesError ||
+    loadMutation.error ||
+    saveMutation.error ||
+    deleteMutation.error ||
+    renameMutation.error ||
+    previewMutation.error;
 
   return (
     <div className="container mx-auto p-4">
@@ -296,8 +360,10 @@ function AdminStudentsBankPage() {
       <div className="mb-8">
         <h2 className="text-2xl font-semibold mb-4">Available Students Files</h2>
         {isLoadingFiles && <p>Loading files...</p>}
-        {filesError && (
-          <p className="text-red-600">Error loading files: {filesError.message}</p>
+        {currentError && (
+          <p className="text-red-600">
+            Error: {typeof currentError === 'string' ? currentError : currentError.message}
+          </p>
         )}
         {bankFilesData && bankFilesData.files.length === 0 && (
           <p className="text-gray-600">No students files in bank yet.</p>
@@ -309,72 +375,113 @@ function AdminStudentsBankPage() {
                 key={file}
                 className="flex items-center justify-between p-3 border rounded bg-white hover:bg-gray-50"
               >
-                <span className="font-mono text-sm">{file}</span>
+                {renameTargetFile === file ? (
+                  <div className="flex items-center gap-2 flex-grow mr-2">
+                    <input
+                      type="text"
+                      value={newFilename}
+                      onChange={(e) => setNewFilename(e.target.value)}
+                      className="border p-1 text-sm flex-grow rounded"
+                      autoFocus
+                    />
+                    <button
+                      onClick={submitRename}
+                      className="bg-green-500 text-white px-2 py-1 text-xs rounded"
+                      disabled={renameMutation.isPending}
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setRenameTargetFile(null)}
+                      className="bg-gray-500 text-white px-2 py-1 text-xs rounded"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <span className="font-mono text-sm">{file}</span>
+                )}
+
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => handlePreview(file)}
-                    disabled={previewMutation.isPending && previewingFile === file}
-                    className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {previewMutation.isPending && previewingFile === file
-                      ? "Loading..."
-                      : "Preview"}
-                  </button>
-                  {/* Load Button with Inline Confirmation */}
-                  {loadConfirmFile === file ? (
-                    <span className="inline-flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded border border-yellow-300">
-                      <span className="text-sm text-gray-700 mr-1">Load?</span>
+                  {renameTargetFile !== file && (
+                    <>
                       <button
-                        onClick={() => handleLoadConfirm(file)}
-                        className="bg-yellow-600 text-white px-2 py-1 text-xs rounded hover:bg-yellow-700"
-                        disabled={loadMutation.isPending}
+                        onClick={() => handlePreview(file)}
+                        disabled={previewMutation.isPending && previewingFile === file}
+                        className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
                       >
-                        {loadMutation.isPending ? "Loading..." : "Yes"}
+                        {previewingFile === file ? "Previewing..." : "Preview"}
                       </button>
+
+                      {loadConfirmFile === file ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-red-600 font-bold">Overwrite current?</span>
+                          <button
+                            onClick={() => handleLoadConfirm(file)}
+                            className="px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-700"
+                          >
+                            Yes
+                          </button>
+                          <button
+                            onClick={handleLoadCancel}
+                            className="px-2 py-1 bg-gray-500 text-white text-xs rounded hover:bg-gray-700"
+                          >
+                            No
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => handleLoad(file)}
+                          disabled={isLoading}
+                          className="px-3 py-1 bg-yellow-500 text-white text-sm rounded hover:bg-yellow-700 disabled:opacity-50"
+                        >
+                          Load
+                        </button>
+                      )}
                       <button
-                        onClick={handleLoadCancel}
-                        className="bg-gray-500 text-white px-2 py-1 text-xs rounded hover:bg-gray-600"
-                        disabled={loadMutation.isPending}
+                        onClick={() => handleRenameClick(file)}
+                        className="px-3 py-1 bg-indigo-500 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-50"
+                        disabled={isLoading}
                       >
-                        No
+                        Rename
                       </button>
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => handleLoad(file)}
-                      disabled={loadMutation.isPending || deleteMutation.isPending}
-                      className="px-3 py-1 bg-yellow-500 text-white text-sm rounded hover:bg-yellow-700 disabled:opacity-50"
-                    >
-                      Load
-                    </button>
-                  )}
-                  {/* Delete Button with Inline Confirmation */}
-                  {deleteConfirmFile === file ? (
-                    <span className="inline-flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded border border-yellow-300">
-                      <span className="text-sm text-gray-700 mr-1">Delete?</span>
-                      <button
-                        onClick={() => handleDeleteConfirm(file)}
-                        className="bg-red-600 text-white px-2 py-1 text-xs rounded hover:bg-red-700"
-                        disabled={deleteMutation.isPending}
+                      <a
+                        href={getStudentsDownloadUrl(file, adminPassword || "")}
+                        className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-50 inline-block"
+                        target="_blank"
+                        rel="noopener noreferrer"
                       >
-                        {deleteMutation.isPending ? "Deleting..." : "Yes"}
-                      </button>
-                      <button
-                        onClick={handleDeleteCancel}
-                        className="bg-gray-500 text-white px-2 py-1 text-xs rounded hover:bg-gray-600"
-                        disabled={deleteMutation.isPending}
-                      >
-                        No
-                      </button>
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => handleDeleteClick(file)}
-                      className="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50"
-                      disabled={loadMutation.isPending || deleteMutation.isPending}
-                    >
-                      Delete
-                    </button>
+                        Download
+                      </a>
+                      {/* Delete Button with Inline Confirmation */}
+                      {deleteConfirmFile === file ? (
+                        <span className="inline-flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded border border-yellow-300 ml-2">
+                          <span className="text-yellow-700 text-xs font-semibold">Delete?</span>
+                          <button
+                            onClick={() => handleDeleteConfirm(file)}
+                            className="bg-red-600 text-white px-2 py-0.5 text-xs rounded hover:bg-red-700 disabled:opacity-50"
+                            disabled={deleteMutation.isPending}
+                          >
+                            {deleteMutation.isPending ? "Deleting..." : "Yes"}
+                          </button>
+                          <button
+                            onClick={handleDeleteCancel}
+                            className="bg-gray-500 text-white px-2 py-0.5 text-xs rounded hover:bg-gray-600 disabled:opacity-50"
+                            disabled={deleteMutation.isPending}
+                          >
+                            No
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleDeleteClick(file)}
+                          className="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50"
+                          disabled={isLoading} // Use global isLoading
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
