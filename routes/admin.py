@@ -9,6 +9,7 @@ from utils import (
     ADMIN_PW,
     load_scores, # NOW HANDLES LOADING FROM BANK IF FILENAME IS PROVIDED
     save_scores, # Saves to SCORE_FILE
+    update_scores_atomic, # NEW: Atomic score updates to prevent race conditions
     list_scores_bank_files, # NEW import
     load_scores_from_bank,  # NEW import
     save_scores_to_bank,    # NEW import
@@ -132,29 +133,49 @@ def api_save_review():
     if not isinstance(overrides, list):
         raise BadRequest(description="Invalid 'overrides' format, expected a list.")
 
-    # 3. Load Scores
-    scores, target_submission, target_submission_index = load_target_scores(student_id, quiz_id)
+    # Track update count outside callback
+    updates_info = {'count': 0}
 
-    # 4. Apply Overrides
-    target_submission, updated_count = apply_overrides(target_submission, overrides, student_id)
+    # 3. Define atomic update callback
+    def update_callback(scores):
+        # Find the target submission
+        target_submission = None
+        target_submission_index = None
 
-    # 5. Recalculate Totals if changes were made
-    if updated_count > 0:
-        new_raw_points = sum(ans.get('points_awarded', 0) for ans in target_submission['answers'])
-        max_points = target_submission.get('max_points', 0)
-        new_percent = round(new_raw_points / max_points * 100, 2) if max_points else 0
+        for i, record in enumerate(scores):
+            if record.get('student') == student_id and record.get('quiz_id') == quiz_id:
+                target_submission_index = i
+                target_submission = record
+                break
 
-        target_submission['raw_points'] = round(new_raw_points, 2)
-        target_submission['percent'] = new_percent
-        target_submission['timestamp'] = datetime.datetime.utcnow().isoformat(timespec='seconds')
+        if target_submission is None:
+            raise NotFound(description=f"Submission not found for student '{student_id}' with quiz_id '{quiz_id}'.")
 
-        scores[target_submission_index] = target_submission
-        save_scores(scores)
-        print(f"Saved {updated_count} overrides for student '{student_id}', quiz '{quiz_id}'.")
-    else:
-        print(f"No effective overrides applied for student '{student_id}', quiz '{quiz_id}'.")
+        # Apply overrides
+        target_submission, updated_count = apply_overrides(target_submission, overrides, student_id)
+        updates_info['count'] = updated_count
 
-    return jsonify({"success": True, "message": f"{updated_count} overrides applied."})
+        # Recalculate totals if changes were made
+        if updated_count > 0:
+            new_raw_points = sum(ans.get('points_awarded', 0) for ans in target_submission['answers'])
+            max_points = target_submission.get('max_points', 0)
+            new_percent = round(new_raw_points / max_points * 100, 2) if max_points else 0
+
+            target_submission['raw_points'] = round(new_raw_points, 2)
+            target_submission['percent'] = new_percent
+            target_submission['timestamp'] = datetime.datetime.utcnow().isoformat(timespec='seconds')
+
+            scores[target_submission_index] = target_submission
+            print(f"Applied {updated_count} overrides for student '{student_id}', quiz '{quiz_id}'.")
+        else:
+            print(f"No effective overrides applied for student '{student_id}', quiz '{quiz_id}'.")
+
+        return scores
+
+    # 4. Atomically update scores (prevents race conditions)
+    update_scores_atomic(update_callback)
+
+    return jsonify({"success": True, "message": f"{updates_info['count']} overrides applied."})
 
 @admin_bp.route('/admin/questions', methods=['POST', 'PUT']) # Or PUT instead of POST
 def manage_questions():
@@ -481,8 +502,7 @@ def api_recalculate_all_scores():
             except Exception as e:
                 print(f"Warning: Could not create backup: {e}")
 
-        # Load current scores and questions
-        scores = load_scores()
+        # Load questions (read-only, doesn't need lock)
         quiz_data = load_questions()
         questions = quiz_data['questions']
         quiz_title = quiz_data.get('title')
@@ -490,190 +510,195 @@ def api_recalculate_all_scores():
         # Create a question bank map for quick lookup
         qbank_map = {q['id']: q for q in questions}
 
-        recalculated_count = 0
-        errors = []
+        # Track results outside callback
+        results = {'recalculated_count': 0, 'errors': []}
 
-        for score_entry in scores:
-            try:
-                if 'answers' not in score_entry or not isinstance(score_entry['answers'], list):
-                    errors.append(f"Student {score_entry.get('student')}: Missing or invalid answers field")
-                    continue
-
-                student_id = score_entry.get('student', '')
-
-                # Check if this submission has option_order data
-                has_option_order = any(
-                    'option_order' in ans and ans.get('option_order')
-                    for ans in score_entry['answers']
-                )
-
-                # Helper function to extract indices from formatted answers like "'text' (Index: 2)"
-                import re
-                def extract_indices_from_formatted_answer(formatted_answer):
-                    """Extract original indices from formatted answer strings."""
-                    if isinstance(formatted_answer, str):
-                        # Single answer: "'text' (Index: 2)"
-                        match = re.search(r'\(Index:\s*(\d+)\)', formatted_answer)
-                        if match:
-                            return int(match.group(1))
-                        return None
-                    elif isinstance(formatted_answer, list):
-                        # Multiple answers: ["'text1' (Index: 2)", "'text2' (Index: 3)"]
-                        indices = []
-                        for item in formatted_answer:
-                            if isinstance(item, str):
-                                match = re.search(r'\(Index:\s*(\d+)\)', item)
-                                if match:
-                                    indices.append(int(match.group(1)))
-                        return indices if indices else None
-                    return None
-
-                # Recalculate scores (works with or without option_order)
-                total_score = 0.0
-                max_score = 0.0
-
-                for answer_detail in score_entry['answers']:
-                    q_id = answer_detail.get('question_id')
-
-                    if q_id not in qbank_map:
-                        errors.append(f"Student {student_id}: Question {q_id} not found in current question bank")
+        # Define atomic update callback
+        def recalculate_callback(scores):
+            for score_entry in scores:
+                try:
+                    if 'answers' not in score_entry or not isinstance(score_entry['answers'], list):
+                        results['errors'].append(f"Student {score_entry.get('student')}: Missing or invalid answers field")
                         continue
 
-                    current_question = qbank_map[q_id]
-                    q_type = current_question.get('type')
-                    weight = current_question.get('weight', 1)
-                    max_score += weight
+                    student_id = score_entry.get('student', '')
 
-                    current_correct_answer = current_question.get('correct')
-                    current_options = current_question.get('options', [])
+                    # Check if this submission has option_order data
+                    has_option_order = any(
+                        'option_order' in ans and ans.get('option_order')
+                        for ans in score_entry['answers']
+                    )
 
-                    # Helper to get text from an option (string or object)
-                    def get_option_text(option):
-                        return option.get('text', '') if isinstance(option, dict) else str(option)
+                    # Helper function to extract indices from formatted answers like "'text' (Index: 2)"
+                    import re
+                    def extract_indices_from_formatted_answer(formatted_answer):
+                        """Extract original indices from formatted answer strings."""
+                        if isinstance(formatted_answer, str):
+                            # Single answer: "'text' (Index: 2)"
+                            match = re.search(r'\(Index:\s*(\d+)\)', formatted_answer)
+                            if match:
+                                return int(match.group(1))
+                            return None
+                        elif isinstance(formatted_answer, list):
+                            # Multiple answers: ["'text1' (Index: 2)", "'text2' (Index: 3)"]
+                            indices = []
+                            for item in formatted_answer:
+                                if isinstance(item, str):
+                                    match = re.search(r'\(Index:\s*(\d+)\)', item)
+                                    if match:
+                                        indices.append(int(match.group(1)))
+                            return indices if indices else None
+                        return None
+    
+                    # Recalculate scores (works with or without option_order)
+                    total_score = 0.0
+                    max_score = 0.0
+    
+                    for answer_detail in score_entry['answers']:
+                        q_id = answer_detail.get('question_id')
+    
+                        if q_id not in qbank_map:
+                            results['errors'].append(f"Student {student_id}: Question {q_id} not found in current question bank")
+                            continue
+    
+                        current_question = qbank_map[q_id]
+                        q_type = current_question.get('type')
+                        weight = current_question.get('weight', 1)
+                        max_score += weight
+    
+                        current_correct_answer = current_question.get('correct')
+                        current_options = current_question.get('options', [])
+    
+                        # Helper to get text from an option (string or object)
+                        def get_option_text(option):
+                            return option.get('text', '') if isinstance(option, dict) else str(option)
+    
+                        # Update stored correct answer (both raw and formatted)
+                        answer_detail['raw_correct_answer'] = current_correct_answer
+    
+                        # Regenerate formatted correct_answer to reflect current question bank
+                        if q_type == 'single' and isinstance(current_correct_answer, int) and 0 <= current_correct_answer < len(current_options):
+                            option_text = get_option_text(current_options[current_correct_answer])
+                            answer_detail['correct_answer'] = f"'{option_text}' (Index: {current_correct_answer})"
+                        elif q_type == 'multiple' and isinstance(current_correct_answer, list):
+                            formatted_correct = [
+                                f"'{get_option_text(current_options[idx])}' (Index: {idx})"
+                                for idx in current_correct_answer
+                                if 0 <= idx < len(current_options)
+                            ]
+                            answer_detail['correct_answer'] = formatted_correct
+                        elif q_type == 'open':
+                            # For open questions, keep existing or use keywords/acceptable
+                            if 'acceptable' in current_question:
+                                answer_detail['correct_answer'] = current_question['acceptable']
+                            elif 'keywords' in current_question:
+                                answer_detail['correct_answer'] = {"keywords": current_question['keywords']}
+                            # else keep existing formatted answer
+    
+                        # Calculate score
+                        question_score = 0.0
+    
+                        if q_type == 'open':
+                            # Keep existing score for open questions
+                            question_score = answer_detail.get('points_awarded', 0)
+                        elif q_type == 'single':
+                            # Extract student's original index from formatted answer
+                            student_original_index = None
+    
+                            if has_option_order and 'option_order' in answer_detail:
+                                # Use option_order if available
+                                raw_student_answer = answer_detail.get('raw_student_answer')
+                                option_order = answer_detail.get('option_order', [])
+                                if isinstance(raw_student_answer, int) and raw_student_answer < len(option_order):
+                                    student_original_index = option_order[raw_student_answer]
+                            else:
+                                # Parse from formatted student_answer
+                                formatted_answer = answer_detail.get('student_answer', '')
+                                student_original_index = extract_indices_from_formatted_answer(formatted_answer)
+    
+                            if student_original_index is not None and student_original_index == current_correct_answer:
+                                question_score = weight
+    
+                        elif q_type == 'multiple':
+                            current_correct_indices = current_correct_answer if isinstance(current_correct_answer, list) else []
+                            student_original_indices = None
+    
+                            if has_option_order and 'option_order' in answer_detail:
+                                # Use option_order if available
+                                raw_student_answer = answer_detail.get('raw_student_answer')
+                                option_order = answer_detail.get('option_order', [])
+                                if isinstance(raw_student_answer, list):
+                                    student_original_indices = []
+                                    for shuffled_idx in raw_student_answer:
+                                        if isinstance(shuffled_idx, int) and shuffled_idx < len(option_order):
+                                            student_original_indices.append(option_order[shuffled_idx])
+                            else:
+                                # Parse from formatted student_answer
+                                formatted_answer = answer_detail.get('student_answer', [])
+                                student_original_indices = extract_indices_from_formatted_answer(formatted_answer)
+    
+                            if student_original_indices is not None:
+                                num_options = len(current_question.get('options', []))
+                                num_correct_total = len(current_correct_indices)
+                                num_user_correct = len([idx for idx in student_original_indices if idx in current_correct_indices])
+                                num_user_wrong = len([idx for idx in student_original_indices if idx not in current_correct_indices])
+    
+                                if num_correct_total > 0:
+                                    points_per_correct = weight / num_correct_total
+                                    points_per_wrong = weight / (num_options - num_correct_total) if (num_options - num_correct_total) > 0 else weight
+                                    calculated_score = (num_user_correct * points_per_correct) - (num_user_wrong * points_per_wrong)
+                                    question_score = max(0.0, calculated_score)
+    
+                        # Update both score fields
+                        answer_detail['points_awarded'] = round(question_score, 2)
+                        answer_detail['raw_points'] = round(question_score, 2)
+                        total_score += question_score
+    
+                    # Update totals
+                    old_score = score_entry.get('raw_points', 0)
+                    new_score = round(total_score, 2)
+                    new_percent = round(total_score / max_score * 100, 2) if max_score > 0 else 0
+    
+                    score_entry['raw_points'] = new_score
+                    score_entry['max_points'] = max_score
+                    score_entry['percent'] = new_percent
+    
+                    # Add quiz_title if not present
+                    if 'quiz_title' not in score_entry and quiz_title:
+                        score_entry['quiz_title'] = quiz_title
+    
+                    if abs(old_score - new_score) > 0.01:
+                        results['recalculated_count'] += 1
+                        print(f"Recalculated score for {student_id}: {old_score} -> {new_score}")
+                    else:
+                        print(f"No change for {student_id}: score remains {old_score}")
+    
+                except Exception as e:
+                    results['errors'].append(f"Student {score_entry.get('student', 'unknown')}: {str(e)}")
+                    print(f"Error processing {score_entry.get('student')}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    continue
 
-                    # Update stored correct answer (both raw and formatted)
-                    answer_detail['raw_correct_answer'] = current_correct_answer
+            # Return modified scores
+            return scores
 
-                    # Regenerate formatted correct_answer to reflect current question bank
-                    if q_type == 'single' and isinstance(current_correct_answer, int) and 0 <= current_correct_answer < len(current_options):
-                        option_text = get_option_text(current_options[current_correct_answer])
-                        answer_detail['correct_answer'] = f"'{option_text}' (Index: {current_correct_answer})"
-                    elif q_type == 'multiple' and isinstance(current_correct_answer, list):
-                        formatted_correct = [
-                            f"'{get_option_text(current_options[idx])}' (Index: {idx})"
-                            for idx in current_correct_answer
-                            if 0 <= idx < len(current_options)
-                        ]
-                        answer_detail['correct_answer'] = formatted_correct
-                    elif q_type == 'open':
-                        # For open questions, keep existing or use keywords/acceptable
-                        if 'acceptable' in current_question:
-                            answer_detail['correct_answer'] = current_question['acceptable']
-                        elif 'keywords' in current_question:
-                            answer_detail['correct_answer'] = {"keywords": current_question['keywords']}
-                        # else keep existing formatted answer
+        # Atomically update scores (prevents race conditions)
+        updated_scores = update_scores_atomic(recalculate_callback)
 
-                    # Calculate score
-                    question_score = 0.0
-
-                    if q_type == 'open':
-                        # Keep existing score for open questions
-                        question_score = answer_detail.get('points_awarded', 0)
-                    elif q_type == 'single':
-                        # Extract student's original index from formatted answer
-                        student_original_index = None
-
-                        if has_option_order and 'option_order' in answer_detail:
-                            # Use option_order if available
-                            raw_student_answer = answer_detail.get('raw_student_answer')
-                            option_order = answer_detail.get('option_order', [])
-                            if isinstance(raw_student_answer, int) and raw_student_answer < len(option_order):
-                                student_original_index = option_order[raw_student_answer]
-                        else:
-                            # Parse from formatted student_answer
-                            formatted_answer = answer_detail.get('student_answer', '')
-                            student_original_index = extract_indices_from_formatted_answer(formatted_answer)
-
-                        if student_original_index is not None and student_original_index == current_correct_answer:
-                            question_score = weight
-
-                    elif q_type == 'multiple':
-                        current_correct_indices = current_correct_answer if isinstance(current_correct_answer, list) else []
-                        student_original_indices = None
-
-                        if has_option_order and 'option_order' in answer_detail:
-                            # Use option_order if available
-                            raw_student_answer = answer_detail.get('raw_student_answer')
-                            option_order = answer_detail.get('option_order', [])
-                            if isinstance(raw_student_answer, list):
-                                student_original_indices = []
-                                for shuffled_idx in raw_student_answer:
-                                    if isinstance(shuffled_idx, int) and shuffled_idx < len(option_order):
-                                        student_original_indices.append(option_order[shuffled_idx])
-                        else:
-                            # Parse from formatted student_answer
-                            formatted_answer = answer_detail.get('student_answer', [])
-                            student_original_indices = extract_indices_from_formatted_answer(formatted_answer)
-
-                        if student_original_indices is not None:
-                            num_options = len(current_question.get('options', []))
-                            num_correct_total = len(current_correct_indices)
-                            num_user_correct = len([idx for idx in student_original_indices if idx in current_correct_indices])
-                            num_user_wrong = len([idx for idx in student_original_indices if idx not in current_correct_indices])
-
-                            if num_correct_total > 0:
-                                points_per_correct = weight / num_correct_total
-                                points_per_wrong = weight / (num_options - num_correct_total) if (num_options - num_correct_total) > 0 else weight
-                                calculated_score = (num_user_correct * points_per_correct) - (num_user_wrong * points_per_wrong)
-                                question_score = max(0.0, calculated_score)
-
-                    # Update both score fields
-                    answer_detail['points_awarded'] = round(question_score, 2)
-                    answer_detail['raw_points'] = round(question_score, 2)
-                    total_score += question_score
-
-                # Update totals
-                old_score = score_entry.get('raw_points', 0)
-                new_score = round(total_score, 2)
-                new_percent = round(total_score / max_score * 100, 2) if max_score > 0 else 0
-
-                score_entry['raw_points'] = new_score
-                score_entry['max_points'] = max_score
-                score_entry['percent'] = new_percent
-
-                # Add quiz_title if not present
-                if 'quiz_title' not in score_entry and quiz_title:
-                    score_entry['quiz_title'] = quiz_title
-
-                if abs(old_score - new_score) > 0.01:
-                    recalculated_count += 1
-                    print(f"Recalculated score for {student_id}: {old_score} -> {new_score}")
-                else:
-                    print(f"No change for {student_id}: score remains {old_score}")
-
-            except Exception as e:
-                errors.append(f"Student {score_entry.get('student', 'unknown')}: {str(e)}")
-                print(f"Error processing {score_entry.get('student')}: {e}")
-                import traceback
-                traceback.print_exc()
-                continue
-
-        # Save updated scores (always save, as individual question scores may have changed)
-        save_scores(scores)
-
-        result_message = f"Recalculated {recalculated_count} out of {len(scores)} submissions"
-        if recalculated_count < len(scores):
-            result_message += f" ({len(scores) - recalculated_count} had no total score change)"
+        result_message = f"Recalculated {results['recalculated_count']} out of {len(updated_scores)} submissions"
+        if results['recalculated_count'] < len(updated_scores):
+            result_message += f" ({len(updated_scores) - results['recalculated_count']} had no total score change)"
         result_message += "."
-        if errors:
-            result_message += f" Encountered {len(errors)} errors."
+        if results['errors']:
+            result_message += f" Encountered {len(results['errors'])} errors."
 
         return jsonify({
             "success": True,
             "message": result_message,
-            "updated_count": recalculated_count,
-            "total_count": len(scores),
-            "errors": errors[:10]
+            "updated_count": results['recalculated_count'],
+            "total_count": len(updated_scores),
+            "errors": results['errors'][:10]
         })
 
     except Exception as e:

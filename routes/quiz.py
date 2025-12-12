@@ -16,12 +16,12 @@ from utils import (
     format_image_url,
     load_scores,
     save_scores,
+    append_score_atomic,
     load_questions,
     load_quiz_status,
     grade,
     load_quiz_plan_by_student,
     validate_submission_data,
-    check_duplicate_submission,
     delete_plan_file_by_student,
     find_plan_by_quiz_id,
     format_detailed_answers,
@@ -296,8 +296,6 @@ def api_submit():
 
     qbank = quiz_data['questions']
     quiz_title = quiz_data.get('title')
-    scores = load_scores()
-    check_duplicate_submission(student_id, scores) # Handles Conflict
 
     qbank_map = {q['id']: q for q in qbank}
     calc_results = grade(answers, plan, qbank)
@@ -311,7 +309,8 @@ def api_submit():
         calc_results.get('verdicts_per_question', [])
     )
 
-    scores.append({
+    # Build the score entry
+    score_entry = {
         'student':    student_id,
         'quiz_id':    quiz_id,
         'quiz_title': quiz_title,  # Add quiz title to score record
@@ -320,8 +319,13 @@ def api_submit():
         'max_points': calc_results['max_points'],
         'percent': calc_results['percent'],
         'timestamp':  datetime.datetime.utcnow().isoformat(timespec='seconds')
-    })
-    save_scores(scores)
+    }
+
+    # Atomically append the score (includes duplicate check within lock)
+    # This prevents race conditions where concurrent submissions could overwrite each other
+    append_score_atomic(score_entry)
+
+    # Only delete plan file after successful score save
     delete_plan_file_by_student(student_id)
 
     return jsonify({

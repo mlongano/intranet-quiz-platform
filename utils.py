@@ -170,25 +170,15 @@ def load_scores(filename: str = SCORE_FILE):
         raise InternalServerError(description=f"Error reading scores file '{file_path}': {e}")
 
 def save_scores(data):
-    """Saves scores to the scores file with file locking to prevent race conditions."""
+    """
+    Saves scores to the scores file with file locking to prevent race conditions.
+    WARNING: This replaces the entire scores file. For appending, use append_score_atomic().
+    """
     lock_path = f"{SCORE_FILE}.lock"
     lock = FileLock(lock_path, timeout=10)
 
     try:
         with lock:
-            # Read current scores to merge (in case another process wrote during our operation)
-            current_scores = []
-            if Path(SCORE_FILE).exists():
-                try:
-                    with open(SCORE_FILE, 'r', encoding='utf-8') as f:
-                        current_scores = json.load(f)
-                except (ValueError, FileNotFoundError):
-                    current_scores = []
-
-            # Merge: append new scores if they're not already present
-            # Assuming 'data' is the complete list to save (not just new entries)
-            # If data is meant to be appended, adjust logic here
-
             # Write atomically using temp file
             temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(SCORE_FILE) or '.', suffix='.tmp')
             try:
@@ -205,6 +195,128 @@ def save_scores(data):
     except Exception as e:
         print(f"Error saving scores to {SCORE_FILE}: {e}")
         raise InternalServerError(description=f"Error saving scores: {e}")
+
+def append_score_atomic(score_entry):
+    """
+    Atomically appends a single score entry to the scores file.
+    This function prevents race conditions by acquiring a lock BEFORE reading,
+    then performing the entire read-check-append-write sequence atomically.
+
+    Args:
+        score_entry: A dictionary containing the score data to append
+
+    Raises:
+        Conflict: If the student has already submitted (duplicate)
+        InternalServerError: If there's a file system error or lock timeout
+    """
+    lock_path = f"{SCORE_FILE}.lock"
+    lock = FileLock(lock_path, timeout=10)
+
+    try:
+        with lock:
+            # Step 1: Load current scores within the lock
+            current_scores = []
+            if Path(SCORE_FILE).exists():
+                try:
+                    with open(SCORE_FILE, 'r', encoding='utf-8') as f:
+                        current_scores = json.load(f)
+                except (ValueError, FileNotFoundError):
+                    current_scores = []
+
+            # Step 2: Check for duplicate submission within the lock
+            student_id = score_entry.get('student')
+            if any(r.get('student') == student_id for r in current_scores):
+                raise Conflict(description='Already submitted')
+
+            # Step 3: Append the new score
+            current_scores.append(score_entry)
+
+            # Step 4: Write atomically using temp file
+            temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(SCORE_FILE) or '.', suffix='.tmp')
+            try:
+                with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
+                    json.dump(current_scores, f, indent=2)
+                os.replace(temp_path, SCORE_FILE)  # Atomic on POSIX systems
+                print(f"Successfully appended score for student: {student_id}")
+            except Exception as e:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+                raise e
+
+    except Timeout:
+        print(f"Error: Could not acquire lock on {SCORE_FILE} within timeout")
+        raise InternalServerError(description="Could not save score due to lock timeout. Please try again.")
+    except Conflict:
+        # Re-raise Conflict as-is
+        raise
+    except Exception as e:
+        print(f"Error appending score to {SCORE_FILE}: {e}")
+        raise InternalServerError(description=f"Error saving score: {e}")
+
+def update_scores_atomic(update_callback):
+    """
+    Atomically updates scores by applying a callback function.
+    This prevents race conditions in read-modify-write operations.
+
+    The callback receives the current scores list and should modify it in place
+    or return a new list. Any exceptions raised by the callback will be propagated.
+
+    Args:
+        update_callback: A function that takes scores list and modifies it.
+                        Signature: update_callback(scores: list) -> list or None
+
+    Returns:
+        The updated scores list
+
+    Raises:
+        InternalServerError: If there's a file system error or lock timeout
+
+    Example:
+        def my_update(scores):
+            scores[0]['percent'] = 100
+            return scores
+
+        update_scores_atomic(my_update)
+    """
+    lock_path = f"{SCORE_FILE}.lock"
+    lock = FileLock(lock_path, timeout=10)
+
+    try:
+        with lock:
+            # Step 1: Load current scores within the lock
+            current_scores = []
+            if Path(SCORE_FILE).exists():
+                try:
+                    with open(SCORE_FILE, 'r', encoding='utf-8') as f:
+                        current_scores = json.load(f)
+                except (ValueError, FileNotFoundError):
+                    current_scores = []
+
+            # Step 2: Apply the update callback
+            result = update_callback(current_scores)
+            # If callback returns a value, use it; otherwise assume in-place modification
+            updated_scores = result if result is not None else current_scores
+
+            # Step 3: Write atomically using temp file
+            temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(SCORE_FILE) or '.', suffix='.tmp')
+            try:
+                with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
+                    json.dump(updated_scores, f, indent=2)
+                os.replace(temp_path, SCORE_FILE)  # Atomic on POSIX systems
+                print(f"Successfully updated scores atomically")
+            except Exception as e:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+                raise e
+
+            return updated_scores
+
+    except Timeout:
+        print(f"Error: Could not acquire lock on {SCORE_FILE} within timeout")
+        raise InternalServerError(description="Could not acquire lock on scores file. Please try again.")
+    except Exception as e:
+        print(f"Error updating scores atomically: {e}")
+        raise InternalServerError(description=f"Error updating scores: {e}")
 
 def clear_scores_with_backup():
     """Clears all scores by saving to a temporary backup file and emptying the main scores file."""
