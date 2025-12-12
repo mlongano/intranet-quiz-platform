@@ -175,13 +175,117 @@ def api_start():
         raise InternalServerError(description=f"Could not save quiz plan file: {e}")
     return jsonify({"quiz_id": quiz_id})
 
+@quiz_bp.route('/save-answer', methods=['POST'])
+def api_save_answer():
+    """
+    Saves a single answer for the current question and advances progression.
+    Security: Only allows forward progression, answers are immutable once saved.
+    """
+    data = request.get_json(silent=True) or {}
+    quiz_id = data.get('quiz_id', '').strip()
+    answer = data.get('answer')
+
+    if not quiz_id or len(quiz_id) != 12:
+        abort(400, description="Invalid quiz ID format.")
+
+    if answer is None:
+        abort(400, description="Missing answer.")
+
+    # Find and load the plan file
+    quiz_folder_path = Path(QUIZ_FOLDER)
+    plan, student_id, plan_file_path = find_plan_by_quiz_id(quiz_id, quiz_folder_path)
+
+    if plan is None or not student_id or not plan_file_path:
+        raise NotFound(description=f"Could not find active quiz plan matching ID '{quiz_id}'")
+
+    # Initialize progression if not present
+    if 'progression' not in plan:
+        plan['progression'] = {
+            'current_index': 0,
+            'answers': {},
+            'last_updated': datetime.datetime.utcnow().isoformat(timespec='seconds')
+        }
+
+    progression = plan['progression']
+    current_index = progression.get('current_index', 0)
+    answers = progression.get('answers', {})
+    total_questions = len(plan.get('plan', []))
+
+    # Security check: prevent going back or skipping questions
+    if current_index >= total_questions:
+        return jsonify(error="Quiz already completed"), 400
+
+    # Security check: prevent overwriting existing answers
+    answer_key = str(current_index)
+    if answer_key in answers:
+        return jsonify(error="Answer already submitted for this question"), 400
+
+    # Save the answer immutably
+    answers[answer_key] = answer
+    progression['answers'] = answers
+    progression['current_index'] = current_index + 1
+    progression['last_updated'] = datetime.datetime.utcnow().isoformat(timespec='seconds')
+
+    # Write updated plan atomically
+    try:
+        temp_fd, temp_path = tempfile.mkstemp(dir=QUIZ_FOLDER, suffix='.tmp')
+        try:
+            with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
+                json.dump(plan, f, indent=2)
+            os.replace(temp_path, str(plan_file_path))
+        except Exception as e:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise e
+    except Exception as e:
+        raise InternalServerError(description=f"Could not save progression: {e}")
+
+    # Return progression status
+    is_complete = progression['current_index'] >= total_questions
+    return jsonify({
+        'success': True,
+        'current_index': progression['current_index'],
+        'total_questions': total_questions,
+        'is_complete': is_complete
+    })
+
 @quiz_bp.route('/submit', methods=['POST'])
 def api_submit():
-    """Handles submission, grades, saves detailed score, and deletes plan."""
+    """
+    Handles submission, grades, saves detailed score, and deletes plan.
+    Uses answers from server-side progression instead of client submission.
+    """
     data = request.get_json(silent=True) or {}
-    quiz_id, student_id, answers = validate_submission_data(data)
+    quiz_id = data.get('quiz_id', '').strip()
+
+    if not quiz_id or len(quiz_id) != 12:
+        abort(400, description="Invalid quiz ID format.")
+
+    # Find and load the plan file
+    quiz_folder_path = Path(QUIZ_FOLDER)
+    plan, student_id, _ = find_plan_by_quiz_id(quiz_id, quiz_folder_path)
+
+    if plan is None or not student_id:
+        raise NotFound(description=f"Could not find active quiz plan matching ID '{quiz_id}'")
+
+    # Ensure progression exists
+    if 'progression' not in plan:
+        return jsonify(error="No progression data found. Please answer questions first."), 400
+
+    progression = plan['progression']
+    total_questions = len(plan.get('plan', []))
+
+    # Validate that all questions have been answered
+    if progression.get('current_index', 0) < total_questions:
+        return jsonify(
+            error=f"Quiz not complete. Answered {progression.get('current_index', 0)} of {total_questions} questions."
+        ), 400
+
+    # Get answers from server-side progression (convert string keys to int)
+    server_answers = progression.get('answers', {})
+    answers = [server_answers.get(str(i)) for i in range(total_questions)]
+
     try:
-        plan = load_quiz_plan_by_student(student_id) # Handles NotFound, InternalServerError
         quiz_data = load_questions() # Handles InternalServerError
     except HTTPException as e:
         print(f"Error preparing submission handling: {e}")
@@ -189,6 +293,7 @@ def api_submit():
     except Exception as e:
         print(f"Unexpected error preparing submission handling: {e}")
         return jsonify(error="Internal server error"), 500
+
     qbank = quiz_data['questions']
     quiz_title = quiz_data.get('title')
     scores = load_scores()
@@ -227,7 +332,11 @@ def api_submit():
 
 @quiz_bp.route('/resume/<quiz_id>')
 def api_resume(quiz_id):
-    """Resumes a quiz by finding the plan file containing the quiz_id."""
+    """
+    Resumes a quiz by finding the plan file containing the quiz_id.
+    Returns only the current question based on server-side progression.
+    Security: Client cannot see future questions or manipulate progression.
+    """
     if not quiz_id or len(quiz_id) != 12:
         abort(400, description="Invalid quiz ID format.")
 
@@ -243,6 +352,14 @@ def api_resume(quiz_id):
     if not found_student_id:
         raise InternalServerError(description=f"Plan file for quiz '{quiz_id}' is missing student identifier.")
 
+    # Initialize progression if not present (for backward compatibility)
+    if 'progression' not in plan:
+        plan['progression'] = {
+            'current_index': 0,
+            'answers': {},
+            'last_updated': datetime.datetime.utcnow().isoformat(timespec='seconds')
+        }
+
     try:
         quiz_data = load_questions() # Can raise InternalServerError
         qbank = quiz_data['questions']
@@ -254,47 +371,66 @@ def api_resume(quiz_id):
         return jsonify(error="Internal server error while loading quiz data"), 500
 
     qbank_map = {q['id']: q for q in qbank}
-    stripped = []
-    for step in plan.get('plan', []):
-        q_id = step.get('id')
-        if not q_id or q_id not in qbank_map:
-            print(f"Warning: Question ID '{q_id}' during resume not found in bank.")
-            continue
-        q = qbank_map[q_id]
-        q_options = q.get('options', [])
-        step_option_order = step.get('option_order', [])
+    progression = plan['progression']
+    current_index = progression.get('current_index', 0)
+    quiz_plan = plan.get('plan', [])
+    total_questions = len(quiz_plan)
 
-        options_for_client = []
-        if q['type'] != 'open':
-            q_options = q.get('options', [])
-            # --- Process options (string or object) ---
-            for i in step_option_order:
-                # Defensive bounds-check: skip invalid indices
-                if i is None or not isinstance(i, int) or i < 0 or i >= len(q_options):
-                    print(f"Warning: resume - option index {i} out of range for question {q.get('id')}, skipping.")
-                    continue
-                original_option = q_options[i]
-                if isinstance(original_option, dict):
-                    # Option is an object: format image path, keep text
-                    options_for_client.append({
-                        "text": original_option.get("text", ""),
-                        "image": original_option.get("image")
-                    })
-                else:
-                    # Option is a simple string
-                    options_for_client.append(str(original_option)) # Send as string
-
-        stripped.append({
-            "id": q['id'],
-            "type": q['type'],
-            "weight": q.get('weight', 1),
-            "text": q['text'],
-            "question_image": q.get('question_image'),
-            "options": options_for_client # <-- Send processed options
+    # Check if quiz is complete
+    if current_index >= total_questions:
+        return jsonify({
+            "quiz_id": quiz_id,
+            "student": found_student_id,
+            "is_complete": True,
+            "current_index": current_index,
+            "total_questions": total_questions,
+            "message": "Quiz already completed. Please submit if not already done."
         })
+
+    # Get only the current question
+    current_step = quiz_plan[current_index]
+    q_id = current_step.get('id')
+
+    if not q_id or q_id not in qbank_map:
+        raise InternalServerError(description=f"Question ID '{q_id}' not found in bank.")
+
+    q = qbank_map[q_id]
+    step_option_order = current_step.get('option_order', [])
+
+    options_for_client = []
+    if q['type'] != 'open':
+        q_options = q.get('options', [])
+        # --- Process options (string or object) ---
+        for i in step_option_order:
+            # Defensive bounds-check: skip invalid indices
+            if i is None or not isinstance(i, int) or i < 0 or i >= len(q_options):
+                print(f"Warning: resume - option index {i} out of range for question {q.get('id')}, skipping.")
+                continue
+            original_option = q_options[i]
+            if isinstance(original_option, dict):
+                # Option is an object: format image path, keep text
+                options_for_client.append({
+                    "text": original_option.get("text", ""),
+                    "image": format_image_url(original_option.get("image"))
+                })
+            else:
+                # Option is a simple string
+                options_for_client.append(str(original_option))
+
+    current_question = {
+        "id": q['id'],
+        "type": q['type'],
+        "weight": q.get('weight', 1),
+        "text": q['text'],
+        "question_image": format_image_url(q.get('question_image')),
+        "options": options_for_client
+    }
 
     return jsonify({
         "quiz_id": quiz_id,
         "student": found_student_id,
-        "questions": stripped
+        "current_question": current_question,
+        "current_index": current_index,
+        "total_questions": total_questions,
+        "is_complete": False
     })

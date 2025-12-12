@@ -7,14 +7,22 @@ interface StartQuizPayload {
 
 interface StartQuizResponse {
   quiz_id: string;
-  student: string;
-  questions: Question[]; // Define Question type below
+}
+
+interface SaveAnswerPayload {
+  quiz_id: string;
+  answer: Answer;
+}
+
+interface SaveAnswerResponse {
+  success: boolean;
+  current_index: number;
+  total_questions: number;
+  is_complete: boolean;
 }
 
 interface SubmitPayload {
   quiz_id: string;
-  student_id: string; // Match backend expectation
-  answers: any[]; // Define Answer type more specifically if possible
 }
 
 interface SubmitResponse {
@@ -23,7 +31,15 @@ interface SubmitResponse {
   percent: number;
 }
 
-type ResumeResponse = StartQuizResponse; // Resume returns same shape as start
+interface ResumeResponse {
+  quiz_id: string;
+  student: string;
+  current_question?: Question;
+  current_index: number;
+  total_questions: number;
+  is_complete: boolean;
+  message?: string;
+}
 
 export interface Option {
   // Assuming options are just strings based on main.js
@@ -180,6 +196,17 @@ export async function startQuiz(
 export async function resumeQuiz(quizId: string): Promise<ResumeResponse> {
   const response = await fetch(`${API_BASE}/resume/${quizId}`);
   return handleResponse<ResumeResponse>(response);
+}
+
+export async function saveAnswer(
+  payload: SaveAnswerPayload,
+): Promise<SaveAnswerResponse> {
+  const response = await fetch(`${API_BASE}/save-answer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<SaveAnswerResponse>(response);
 }
 
 export async function submitQuiz(

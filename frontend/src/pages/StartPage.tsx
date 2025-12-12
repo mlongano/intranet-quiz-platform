@@ -1,11 +1,8 @@
-// frontend/src/pages/StartPage.tsx (with Tailwind)
+// frontend/src/pages/StartPage.tsx (Secure Version - No localStorage)
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { startQuiz, getQuizStatus, getQuizInfo } from "../api";
-
-// Key needs to be accessible here too, or imported from a constants file
-const QUIZ_STORAGE_KEY = "quiz_state";
 
 // Simple reusable ErrorDisplay component (Example)
 function ErrorDisplay({ message }: { message: string | null }) {
@@ -43,19 +40,10 @@ function StartPage() {
     mutationFn: startQuiz,
     onSuccess: (data) => {
       console.log("Quiz started:", data);
-      // *** FIX: Clear old state when starting a NEW quiz ***
-      try {
-        localStorage.removeItem(QUIZ_STORAGE_KEY);
-        console.log("Cleared previous quiz state from localStorage.");
-      } catch (e) {
-        console.error("Failed to clear localStorage:", e);
-      }
       navigate(`/quiz/${data.quiz_id}`);
     },
     onError: (err: any) => {
-      // ... (error handling as before) ...
       if (err.isConflict && err.quizId) {
-        // Don't clear localStorage if resuming
         setError(
           `Il quiz è già stato avviato o completato. Tentativo di ripristino del quiz ${err.quizId}...`,
         );
