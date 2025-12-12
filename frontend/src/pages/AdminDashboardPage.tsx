@@ -291,12 +291,14 @@ export default function AdminRootPage() {
                 </span>
               </div>
 
-              <button
-                onClick={() => navigate("/")}
+              <a
+                href="/"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="px-4 py-2 bg-white text-teal-700 font-medium rounded-lg hover:bg-teal-50 transition-colors"
               >
                 View Quiz
-              </button>
+              </a>
             </div>
           </div>
         </div>
