@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.0] - 2025-12-13
+
+### Fixed
+
+- **Race Conditions**: Implemented atomic file operations for backend scores and bank management to prevent data corruption during concurrent requests.
+- **Window Open Issue**: Fixed an issue in Admin Dashboard where `window.open` was not functioning correctly; replaced with robust window opening logic.
+- **Rename Feature**: Restored the missing rename functionality for files in the bank management pages (Scores, Students, Questions).
+
+### Added
+
+- **Rename UI**: Added rename buttons and modals to bank management interfaces.
+
+---
+
 ## [2.2.0] - 2025-10-26
 
 ### Added
@@ -103,10 +117,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **New Components**:
   - `ImagePicker.tsx` - Reusable image selection component with thumbnails
   - Toast notification system (inline, not a separate component)
-  
+
 - **New Pages**:
   - `AdminImagesPage.tsx` - Dedicated image management interface
-  
+
 - **Updated API Functions** (`frontend/src/api.ts`):
   - `uploadImages(files, password)` - Upload multiple images
   - `listQuizImages(password)` - Get images for current quiz
@@ -114,7 +128,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `deleteScoresFromBank(filename, password)` - Delete scores file
   - `deleteStudentsFromBank(filename, password)` - Delete students file
   - `clearQuizImages(password)` - Delete all images for active quiz
-  
+
 - **New Utilities** (`frontend/src/lib/utils.ts`):
   - `slugify(text)` - Convert text to URL-safe slug format
 
