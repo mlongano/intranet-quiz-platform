@@ -416,6 +416,13 @@ export default function AdminRootPage() {
                   >
                     {scoresBankFiles?.files?.length || 0} scores
                   </button>
+              <button
+                onClick={() => navigateTo("/admin/scores-bank-review")}
+                className="w-full text-left px-4 py-3 bg-green-50 hover:bg-green-100 rounded-lg transition-colors border border-green-200"
+              >
+                <div className="font-semibold text-green-900">Review Bank Scores</div>
+                <div className="text-sm text-green-700">Analyze archived scores by student or question</div>
+              </button>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();

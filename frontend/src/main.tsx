@@ -19,6 +19,7 @@ import AdminQuestionEditorPage from "./pages/AdminQuestionEditorPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import AdminBankManagerPage from "./pages/AdminBankManagerPage"; // Assuming this file is in ./pages
 import AdminScoresBankPage from "./pages/AdminScoresBankPage";
+import AdminScoresBankReviewPage from "./pages/AdminScoresBankReviewPage";
 import AdminStudentsPage from "./pages/AdminStudentsPage";
 import AdminStudentsBankPage from "./pages/AdminStudentsBankPage";
 import AdminImageManagerPage from "./pages/AdminImageManagerPage";
@@ -70,6 +71,10 @@ const router = createBrowserRouter([
       {
         path: "scores-bank", // This will make the route /admin/bank
         element: <AdminScoresBankPage />, // The component to manage bank files
+      },
+      {
+        path: "scores-bank-review", // This will make the route /admin/scores-bank-review
+        element: <AdminScoresBankReviewPage />, // Component to review scores from bank
       },
       {
         path: "students", // This will make the route /admin/students
