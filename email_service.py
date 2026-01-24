@@ -12,19 +12,24 @@ import re
 from typing import Optional
 
 # Load email configuration from environment
-EMAIL_SENDER = os.getenv('EMAIL_SENDER', '')
-EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD', '')
-SMTP_SERVER = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
-SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
+EMAIL_SENDER = os.getenv("EMAIL_SENDER", "")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 
 
 def is_valid_email(email: str) -> bool:
     """Validate email format."""
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
     return bool(re.match(pattern, email))
 
 
-def format_quiz_results_html(submission: dict, include_details: bool = True, subject: str = "Risultati del Quiz", show_admin_feedback: bool = False) -> str:
+def format_quiz_results_html(
+    submission: dict,
+    include_details: bool = True,
+    subject: str = "Risultati del Quiz",
+    show_admin_feedback: bool = False,
+) -> str:
     """
     Format quiz submission data as HTML email content.
 
@@ -36,13 +41,13 @@ def format_quiz_results_html(submission: dict, include_details: bool = True, sub
     Returns:
         HTML string for email body
     """
-    student = submission.get('student', 'Student')
-    quiz_id = submission.get('quiz_id', 'N/A')
-    raw_points = submission.get('raw_points', 0)
-    max_points = submission.get('max_points', 0)
-    percent = submission.get('percent', 0)
-    timestamp = submission.get('timestamp', '')
-    answers = submission.get('answers', [])
+    student = submission.get("student", "Student")
+    quiz_id = submission.get("quiz_id", "N/A")
+    raw_points = submission.get("raw_points", 0)
+    max_points = submission.get("max_points", 0)
+    percent = submission.get("percent", 0)
+    timestamp = submission.get("timestamp", "")
+    answers = submission.get("answers", [])
 
     # Format timestamp
     try:
@@ -50,7 +55,7 @@ def format_quiz_results_html(submission: dict, include_details: bool = True, sub
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         local_dt = dt.astimezone()
-        formatted_time = local_dt.strftime('%d/%m/%Y %H:%M:%S')
+        formatted_time = local_dt.strftime("%d/%m/%Y %H:%M:%S")
     except:
         formatted_time = timestamp
 
@@ -90,39 +95,43 @@ def format_quiz_results_html(submission: dict, include_details: bool = True, sub
     if include_details:
         # Add each question
         for idx, answer in enumerate(answers, 1):
-            q_text = answer.get('question_text', 'Question')
-            student_ans = answer.get('student_answer', 'No answer')
-            correct_ans = answer.get('correct_answer', 'N/A')
-            points = answer.get('points_awarded', 0)
-            weight = answer.get('weight', 1)
+            q_text = answer.get("question_text", "Question")
+            student_ans = answer.get("student_answer", "No answer")
+            correct_ans = answer.get("correct_answer", "N/A")
+            points = answer.get("points_awarded", 0)
+            weight = answer.get("weight", 1)
 
             # Determine if answer is correct, incorrect, or partial
             if points == 0:
-                status_class = 'incorrect'
-                status_text = '✗ Errato'
+                status_class = "incorrect"
+                status_text = "✗ Errato"
             elif points >= weight:
-                status_class = 'correct'
-                status_text = '✓ Corretto'
+                status_class = "correct"
+                status_text = "✓ Corretto"
             else:
-                status_class = 'partial'
-                status_text = '◐ Parziale'
+                status_class = "partial"
+                status_text = "◐ Parziale"
 
             # Format answers (handle lists for multiple choice)
             if isinstance(student_ans, list):
-                student_ans_str = '<ul>' + ''.join(f'<li>{ans}</li>' for ans in student_ans) + '</ul>'
+                student_ans_str = (
+                    "<ul>" + "".join(f"<li>{ans}</li>" for ans in student_ans) + "</ul>"
+                )
             else:
                 student_ans_str = str(student_ans)
 
             if isinstance(correct_ans, list):
-                correct_ans_str = '<ul>' + ''.join(f'<li>{ans}</li>' for ans in correct_ans) + '</ul>'
+                correct_ans_str = (
+                    "<ul>" + "".join(f"<li>{ans}</li>" for ans in correct_ans) + "</ul>"
+                )
             else:
                 correct_ans_str = str(correct_ans)
 
             # Add LLM feedback/verdict only if explicitly allowed (admin view)
             admin_feedback_html = ""
             if show_admin_feedback:
-                llm_fb = answer.get('llm_feedback')
-                llm_vd = answer.get('llm_verdict')
+                llm_fb = answer.get("llm_feedback")
+                llm_vd = answer.get("llm_verdict")
                 if llm_fb or llm_vd:
                     admin_feedback_html = f"<p><em>Feedback (teacher only):</em> {llm_vd or ''} - {llm_fb or ''}</p>"
 
@@ -162,7 +171,13 @@ def format_quiz_results_html(submission: dict, include_details: bool = True, sub
     return html
 
 
-def send_quiz_result_email(student_email: str, submission: dict, custom_subject: Optional[str] = None, include_details: bool = True, show_admin_feedback: bool = False) -> tuple[bool, str]:
+def send_quiz_result_email(
+    student_email: str,
+    submission: dict,
+    custom_subject: Optional[str] = None,
+    include_details: bool = True,
+    show_admin_feedback: bool = False,
+) -> tuple[bool, str]:
     """
     Send quiz results to student via email.
 
@@ -181,7 +196,10 @@ def send_quiz_result_email(student_email: str, submission: dict, custom_subject:
     # Validate configuration
     if not EMAIL_SENDER or not EMAIL_PASSWORD:
         print("[EMAIL] Error: Email service not configured")
-        return False, "Email service not configured. Please set EMAIL_SENDER and EMAIL_PASSWORD in .env"
+        return (
+            False,
+            "Email service not configured. Please set EMAIL_SENDER and EMAIL_PASSWORD in .env",
+        )
 
     print(f"[EMAIL] Using SMTP server: {SMTP_SERVER}:{SMTP_PORT}")
     print(f"[EMAIL] Sender: {EMAIL_SENDER}")
@@ -193,21 +211,23 @@ def send_quiz_result_email(student_email: str, submission: dict, custom_subject:
 
     try:
         # Create message
-        msg = MIMEMultipart('alternative')
-        msg['From'] = EMAIL_SENDER
-        msg['To'] = student_email
+        msg = MIMEMultipart("alternative")
+        msg["From"] = EMAIL_SENDER
+        msg["To"] = student_email
 
         # Use custom subject if provided, otherwise generate default
         if custom_subject:
-            msg['Subject'] = custom_subject
+            msg["Subject"] = custom_subject
         else:
-            msg['Subject'] = f"Quiz Results - Score: {submission.get('percent', 0)}%"
+            msg["Subject"] = f"Quiz Results - Score: {submission.get('percent', 0)}%"
 
         print(f"[EMAIL] Message created with subject: {msg['Subject']}")
 
         # Generate HTML content with or without details
-        html_content = format_quiz_results_html(submission, include_details, msg['Subject'], show_admin_feedback)
-        html_part = MIMEText(html_content, 'html')
+        html_content = format_quiz_results_html(
+            submission, include_details, msg["Subject"], show_admin_feedback
+        )
+        html_part = MIMEText(html_content, "html")
         msg.attach(html_part)
 
         print(f"[EMAIL] HTML content generated, length: {len(html_content)} chars")
@@ -227,18 +247,26 @@ def send_quiz_result_email(student_email: str, submission: dict, custom_subject:
 
     except smtplib.SMTPAuthenticationError as e:
         print(f"[EMAIL] Authentication error: {e}")
-        return False, "Email authentication failed. Check EMAIL_SENDER and EMAIL_PASSWORD"
+        return (
+            False,
+            "Email authentication failed. Check EMAIL_SENDER and EMAIL_PASSWORD",
+        )
     except smtplib.SMTPException as e:
         print(f"[EMAIL] SMTP error: {e}")
         return False, f"SMTP error: {str(e)}"
     except Exception as e:
         print(f"[EMAIL] Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         return False, f"Error sending email: {str(e)}"
 
 
-def send_bulk_quiz_results(submissions: list[dict], custom_subject: Optional[str] = None, include_details: bool = True) -> dict:
+def send_bulk_quiz_results(
+    submissions: list[dict],
+    custom_subject: Optional[str] = None,
+    include_details: bool = True,
+) -> dict:
     """
     Send quiz results to multiple students.
 
@@ -250,26 +278,24 @@ def send_bulk_quiz_results(submissions: list[dict], custom_subject: Optional[str
     Returns:
         Dict with success_count, failed_count, and errors list
     """
-    results = {
-        'success_count': 0,
-        'failed_count': 0,
-        'errors': []
-    }
+    results = {"success_count": 0, "failed_count": 0, "errors": []}
 
     for submission in submissions:
-        student_email = submission.get('student', '')
+        student_email = submission.get("student", "")
 
         if not student_email:
-            results['failed_count'] += 1
-            results['errors'].append('Missing student email')
+            results["failed_count"] += 1
+            results["errors"].append("Missing student email")
             continue
 
-        success, message = send_quiz_result_email(student_email, submission, custom_subject, include_details)
+        success, message = send_quiz_result_email(
+            student_email, submission, custom_subject, include_details
+        )
 
         if success:
-            results['success_count'] += 1
+            results["success_count"] += 1
         else:
-            results['failed_count'] += 1
-            results['errors'].append(f"{student_email}: {message}")
+            results["failed_count"] += 1
+            results["errors"].append(f"{student_email}: {message}")
 
     return results

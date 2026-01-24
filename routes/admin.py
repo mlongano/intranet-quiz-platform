@@ -1,40 +1,47 @@
 # routes/admin.py
 from flask import Blueprint, request, jsonify, abort
 from pathlib import Path
-from werkzeug.exceptions import Unauthorized, BadRequest, NotFound, InternalServerError, Conflict
+from werkzeug.exceptions import (
+    Unauthorized,
+    BadRequest,
+    NotFound,
+    InternalServerError,
+    Conflict,
+)
 import datetime
 
 # Import necessary functions and data from utils
 from utils import (
     ADMIN_PW,
-    load_scores, # NOW HANDLES LOADING FROM BANK IF FILENAME IS PROVIDED
-    save_scores, # Saves to SCORE_FILE
-    update_scores_atomic, # NEW: Atomic score updates to prevent race conditions
-    list_scores_bank_files, # NEW import
+    load_scores,  # NOW HANDLES LOADING FROM BANK IF FILENAME IS PROVIDED
+    save_scores,  # Saves to SCORE_FILE
+    update_scores_atomic,  # NEW: Atomic score updates to prevent race conditions
+    list_scores_bank_files,  # NEW import
     load_scores_from_bank,  # NEW import
-    save_scores_to_bank,    # NEW import
+    save_scores_to_bank,  # NEW import
     load_questions,
     save_questions,
-    list_question_bank_files, # New function
-    load_quiz_from_bank,      # New function
+    list_question_bank_files,  # New function
+    load_quiz_from_bank,  # New function
     save_quiz_to_bank,
-    delete_quiz_from_bank,    # New function for deleting
-    list_students_bank_files, # NEW import for students bank
+    delete_quiz_from_bank,  # New function for deleting
+    list_students_bank_files,  # NEW import for students bank
     load_students_from_bank,  # NEW import for students bank
-    save_students_to_bank,    # NEW import for students bank
-    load_quiz_status,         # NEW import for quiz status
-    save_quiz_status,         # NEW import for quiz status
+    save_students_to_bank,  # NEW import for students bank
+    load_quiz_status,  # NEW import for quiz status
+    save_quiz_status,  # NEW import for quiz status
 )
 
 # Import email service
 from email_service import send_quiz_result_email, send_bulk_quiz_results, is_valid_email
 
-admin_bp = Blueprint('admin', __name__, url_prefix='/api')
+admin_bp = Blueprint("admin", __name__, url_prefix="/api")
 
-@admin_bp.route('/scores', methods=['POST'])
+
+@admin_bp.route("/scores", methods=["POST"])
 def api_scores():
     data = request.get_json(silent=True) or {}
-    provided_pw = data.get('pw', '')
+    provided_pw = data.get("pw", "")
 
     # Debug logging for password verification
     print(f"[AUTH] Admin login attempt")
@@ -43,15 +50,16 @@ def api_scores():
     # Consider using werkzeug.security.check_password_hash for real password checking
     if provided_pw != ADMIN_PW:
         print(f"[AUTH] ✗ Authentication FAILED - Password mismatch")
-        abort(403) # Forbidden
+        abort(403)  # Forbidden
 
     print(f"[AUTH] ✓ Authentication SUCCESS")
     scores = []
     try:
         scores = load_scores()
     except FileNotFoundError:
-        abort(404) # Not Found
+        abort(404)  # Not Found
     return jsonify(scores)
+
 
 def load_target_scores(student_id, quiz_id):
     scores = []
@@ -67,30 +75,41 @@ def load_target_scores(student_id, quiz_id):
     target_submission = None
 
     for i, record in enumerate(scores):
-        if record.get('student') == student_id and record.get('quiz_id') == quiz_id:
+        if record.get("student") == student_id and record.get("quiz_id") == quiz_id:
             target_submission_index = i
             target_submission = record
             break
 
     if target_submission is None:
-        raise NotFound(description=f"Submission not found for student '{student_id}' with quiz_id '{quiz_id}'.")
+        raise NotFound(
+            description=f"Submission not found for student '{student_id}' with quiz_id '{quiz_id}'."
+        )
 
     return scores, target_submission, target_submission_index
 
-def apply_overrides(target_submission, overrides, student_id):
-    if 'answers' not in target_submission or not isinstance(target_submission['answers'], list):
-        raise InternalServerError(description="Target submission record is missing or has invalid 'answers'.")
 
-    answers_map = {str(ans.get('question_id')): ans for ans in target_submission['answers']}
+def apply_overrides(target_submission, overrides, student_id):
+    if "answers" not in target_submission or not isinstance(
+        target_submission["answers"], list
+    ):
+        raise InternalServerError(
+            description="Target submission record is missing or has invalid 'answers'."
+        )
+
+    answers_map = {
+        str(ans.get("question_id")): ans for ans in target_submission["answers"]
+    }
     updated_count = 0
 
     for override_item in overrides:
-        if not isinstance(override_item, dict): continue
+        if not isinstance(override_item, dict):
+            continue
 
-        q_id_to_override = str(override_item.get('question_id'))
-        new_points = override_item.get('points')
+        q_id_to_override = str(override_item.get("question_id"))
+        new_points = override_item.get("points")
 
-        if q_id_to_override is None or new_points is None: continue
+        if q_id_to_override is None or new_points is None:
+            continue
 
         try:
             new_points = float(new_points)
@@ -99,34 +118,43 @@ def apply_overrides(target_submission, overrides, student_id):
 
         if q_id_to_override in answers_map:
             answer_detail = answers_map[q_id_to_override]
-            max_points_for_q = answer_detail.get('weight', 1)
+            max_points_for_q = answer_detail.get("weight", 1)
 
             if not (0 <= new_points <= max_points_for_q):
-                print(f"Warning: Override points {new_points} out of range (0-{max_points_for_q}) for q_id {q_id_to_override}.")
+                print(
+                    f"Warning: Override points {new_points} out of range (0-{max_points_for_q}) for q_id {q_id_to_override}."
+                )
                 continue
 
-            if answer_detail.get('points_awarded') != round(new_points, 2):
-                print(f"Overriding points for q_id {q_id_to_override}: {answer_detail.get('points_awarded')} -> {round(new_points, 2)}")
-                answer_detail['points_awarded'] = round(new_points, 2)
+            if answer_detail.get("points_awarded") != round(new_points, 2):
+                print(
+                    f"Overriding points for q_id {q_id_to_override}: {answer_detail.get('points_awarded')} -> {round(new_points, 2)}"
+                )
+                answer_detail["points_awarded"] = round(new_points, 2)
                 updated_count += 1
         else:
-            print(f"Warning: Question ID '{q_id_to_override}' not found in submission for student '{student_id}'.")
+            print(
+                f"Warning: Question ID '{q_id_to_override}' not found in submission for student '{student_id}'."
+            )
     return target_submission, updated_count
 
-@admin_bp.route('/review', methods=['POST'])
+
+@admin_bp.route("/review", methods=["POST"])
 def api_save_review():
     """Receives score overrides from admin and updates the scores file."""
     data = request.get_json(silent=True) or {}
 
     # 1. Authentication
-    password = data.get('password')
+    password = data.get("password")
     if not password or password != ADMIN_PW:
         raise Unauthorized(description="Admin authentication failed.")
 
     # 2. Validate Input Payload
-    student_id = data.get('student_id')
-    quiz_id = data.get('quiz_id') # Use quiz_id to pinpoint the exact submission
-    overrides = data.get('overrides') # Expected: list of {'question_id': ..., 'points': ...}
+    student_id = data.get("student_id")
+    quiz_id = data.get("quiz_id")  # Use quiz_id to pinpoint the exact submission
+    overrides = data.get(
+        "overrides"
+    )  # Expected: list of {'question_id': ..., 'points': ...}
 
     if not student_id or not quiz_id:
         raise BadRequest(description="Missing student_id or quiz_id.")
@@ -134,7 +162,7 @@ def api_save_review():
         raise BadRequest(description="Invalid 'overrides' format, expected a list.")
 
     # Track update count outside callback
-    updates_info = {'count': 0}
+    updates_info = {"count": 0}
 
     # 3. Define atomic update callback
     def update_callback(scores):
@@ -143,108 +171,137 @@ def api_save_review():
         target_submission_index = None
 
         for i, record in enumerate(scores):
-            if record.get('student') == student_id and record.get('quiz_id') == quiz_id:
+            if record.get("student") == student_id and record.get("quiz_id") == quiz_id:
                 target_submission_index = i
                 target_submission = record
                 break
 
         if target_submission is None:
-            raise NotFound(description=f"Submission not found for student '{student_id}' with quiz_id '{quiz_id}'.")
+            raise NotFound(
+                description=f"Submission not found for student '{student_id}' with quiz_id '{quiz_id}'."
+            )
 
         # Apply overrides
-        target_submission, updated_count = apply_overrides(target_submission, overrides, student_id)
-        updates_info['count'] = updated_count
+        target_submission, updated_count = apply_overrides(
+            target_submission, overrides, student_id
+        )
+        updates_info["count"] = updated_count
 
         # Recalculate totals if changes were made
         if updated_count > 0:
-            new_raw_points = sum(ans.get('points_awarded', 0) for ans in target_submission['answers'])
-            max_points = target_submission.get('max_points', 0)
-            new_percent = round(new_raw_points / max_points * 100, 2) if max_points else 0
+            new_raw_points = sum(
+                ans.get("points_awarded", 0) for ans in target_submission["answers"]
+            )
+            max_points = target_submission.get("max_points", 0)
+            new_percent = (
+                round(new_raw_points / max_points * 100, 2) if max_points else 0
+            )
 
-            target_submission['raw_points'] = round(new_raw_points, 2)
-            target_submission['percent'] = new_percent
-            target_submission['timestamp'] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')
+            target_submission["raw_points"] = round(new_raw_points, 2)
+            target_submission["percent"] = new_percent
+            target_submission["timestamp"] = datetime.datetime.now(
+                datetime.timezone.utc
+            ).isoformat(timespec="seconds")
 
             scores[target_submission_index] = target_submission
-            print(f"Applied {updated_count} overrides for student '{student_id}', quiz '{quiz_id}'.")
+            print(
+                f"Applied {updated_count} overrides for student '{student_id}', quiz '{quiz_id}'."
+            )
         else:
-            print(f"No effective overrides applied for student '{student_id}', quiz '{quiz_id}'.")
+            print(
+                f"No effective overrides applied for student '{student_id}', quiz '{quiz_id}'."
+            )
 
         return scores
 
     # 4. Atomically update scores (prevents race conditions)
     update_scores_atomic(update_callback)
 
-    return jsonify({"success": True, "message": f"{updates_info['count']} overrides applied."})
+    return jsonify(
+        {"success": True, "message": f"{updates_info['count']} overrides applied."}
+    )
 
-@admin_bp.route('/admin/questions', methods=['POST', 'PUT']) # Or PUT instead of POST
+
+@admin_bp.route("/admin/questions", methods=["POST", "PUT"])  # Or PUT instead of POST
 def manage_questions():
     # Authentication (reuse or adapt from /api/scores or /api/review)
     auth_pw = None
     data = request.get_json(silent=True) or {}
-    if request.method == 'POST':
+    if request.method == "POST":
         data = request.get_json(silent=True) or {}
-        auth_pw = data.get('pw') # TODO: not secure
-    elif request.method == 'PUT':
+        auth_pw = data.get("pw")  # TODO: not secure
+    elif request.method == "PUT":
         # Get password from custom header X-Admin-Password
-        auth_pw = request.headers.get('X-Admin-Pass')
+        auth_pw = request.headers.get("X-Admin-Pass")
 
     if not auth_pw or auth_pw != ADMIN_PW:
-        abort(403) # Forbidden
-        #raise Unauthorized(description="Admin authentication failed.")
+        abort(403)  # Forbidden
+        # raise Unauthorized(description="Admin authentication failed.")
 
-    if request.method == 'POST':
+    if request.method == "POST":
         try:
             # Load in lenient mode to allow editing of invalid format files
             quiz_data = load_questions(lenient=True)
-            return jsonify(quiz_data)  # Return the whole object with title, questions, and optionally warning
+            return jsonify(
+                quiz_data
+            )  # Return the whole object with title, questions, and optionally warning
         except BadRequest as e:
             # Return detailed validation error to client
-            return jsonify({'error': e.description or str(e)}), 400
+            return jsonify({"error": e.description or str(e)}), 400
         except NotFound as e:
-            return jsonify({'error': e.description or 'Questions file not found'}), 404
+            return jsonify({"error": e.description or "Questions file not found"}), 404
         except InternalServerError as e:
-            return jsonify({'error': e.description or 'Internal server error'}), 500
+            return jsonify({"error": e.description or "Internal server error"}), 500
         except Exception as e:
             print(f"Error loading questions: {e}")
-            return jsonify({'error': f'Failed to load questions: {str(e)}'}), 500
+            return jsonify({"error": f"Failed to load questions: {str(e)}"}), 500
 
-    if request.method == 'PUT':
-         # Validate the new format
-         if data is None:
-             raise BadRequest(description="No data provided")
+    if request.method == "PUT":
+        # Validate the new format
+        if data is None:
+            raise BadRequest(description="No data provided")
 
-         # Must be object with 'questions' field
-         if not isinstance(data, dict):
-             raise BadRequest(description="Invalid data format: Must be an object with 'title' and 'questions' fields")
+        # Must be object with 'questions' field
+        if not isinstance(data, dict):
+            raise BadRequest(
+                description="Invalid data format: Must be an object with 'title' and 'questions' fields"
+            )
 
-         if 'questions' not in data:
-             raise BadRequest(description="Invalid data format: Missing 'questions' field")
+        if "questions" not in data:
+            raise BadRequest(
+                description="Invalid data format: Missing 'questions' field"
+            )
 
-         if not isinstance(data['questions'], list):
-             raise BadRequest(description="Invalid data format: 'questions' field must be an array")
+        if not isinstance(data["questions"], list):
+            raise BadRequest(
+                description="Invalid data format: 'questions' field must be an array"
+            )
 
-         # **Add more validation here if needed** (e.g., check structure of each question)
-         try:
-             save_questions(data)
-             return jsonify({"success": True, "message": "Questions updated successfully."})
-         except Exception:
-             abort(500)
-             # Handle potential errors from save_questions
-             #raise InternalServerError(description=f"Failed to save questions: {e}")
+        # **Add more validation here if needed** (e.g., check structure of each question)
+        try:
+            save_questions(data)
+            return jsonify(
+                {"success": True, "message": "Questions updated successfully."}
+            )
+        except Exception:
+            abort(500)
+            # Handle potential errors from save_questions
+            # raise InternalServerError(description=f"Failed to save questions: {e}")
 
     # Fallback for unsupported methods
     abort(405)
 
+
 # --- NEW Admin Endpoints for Question Bank Management ---
 
-@admin_bp.route('/admin/bank/files', methods=['POST'])
+
+@admin_bp.route("/admin/bank/files", methods=["POST"])
 def api_list_bank_files():
     """Lists available quiz files (jsonc) in the question_bank folder."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
+    auth_pw = data.get("pw")
     if not auth_pw or auth_pw != ADMIN_PW:
-        abort(403) # Forbidden
+        abort(403)  # Forbidden
 
     try:
         available_files = list_question_bank_files()
@@ -253,15 +310,16 @@ def api_list_bank_files():
         print(f"Error listing bank files: {e}")
         abort(500, description="Internal server error listing bank files.")
 
-@admin_bp.route('/admin/bank/load', methods=['POST'])
+
+@admin_bp.route("/admin/bank/load", methods=["POST"])
 def api_load_from_bank():
     """Loads a specified quiz file from the question_bank into QUEST_FILE."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
-    filename = data.get('filename')
+    auth_pw = data.get("pw")
+    filename = data.get("filename")
 
     if not auth_pw or auth_pw != ADMIN_PW:
-        abort(403) # Forbidden
+        abort(403)  # Forbidden
     if not filename:
         abort(400, description="Missing filename in request body.")
 
@@ -269,79 +327,100 @@ def api_load_from_bank():
         warning = load_quiz_from_bank(filename)
         response = {
             "success": True,
-            "message": f"Successfully loaded '{filename}' into active quiz."
+            "message": f"Successfully loaded '{filename}' into active quiz.",
         }
         if warning:
             response["warning"] = warning
         return jsonify(response)
     except BadRequest as e:
         # Return detailed validation error to client
-        return jsonify({'error': e.description or str(e)}), 400
+        return jsonify({"error": e.description or str(e)}), 400
     except NotFound as e:
-        return jsonify({'error': e.description or 'File not found'}), 404
+        return jsonify({"error": e.description or "File not found"}), 404
     except InternalServerError as e:
         print(f"Internal error loading quiz from bank '{filename}': {e}")
-        return jsonify({'error': e.description or 'Internal server error'}), 500
+        return jsonify({"error": e.description or "Internal server error"}), 500
     except Exception as e:
         print(f"Error loading from bank: {e}")
-        return jsonify({'error': f'Internal server error loading quiz from bank: {str(e)}'}), 500
+        return jsonify(
+            {"error": f"Internal server error loading quiz from bank: {str(e)}"}
+        ), 500
 
-@admin_bp.route('/admin/bank/save', methods=['POST'])
+
+@admin_bp.route("/admin/bank/save", methods=["POST"])
 def api_save_to_bank():
     """Saves the current QUEST_FILE to the question_bank with the provided filename."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
-    filename = data.get('filename_suffix', '') # Frontend sends full filename in 'filename_suffix' field
+    auth_pw = data.get("pw")
+    filename = data.get(
+        "filename_suffix", ""
+    )  # Frontend sends full filename in 'filename_suffix' field
 
     if not auth_pw or auth_pw != ADMIN_PW:
-        abort(403) # Forbidden
+        abort(403)  # Forbidden
     if not filename:
         abort(400, description="Filename is required.")
 
     try:
         save_quiz_to_bank(filename)
-        return jsonify({"success": True, "message": f"Successfully saved quiz as '{filename}' to bank."})
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Successfully saved quiz as '{filename}' to bank.",
+            }
+        )
     except Conflict as e:
         abort(409, description=e.description)
     except (BadRequest, InternalServerError) as e:
-         abort(e.code, description=e.description) if e.code else abort(500, description="Internal server error saving quiz to bank.")
+        abort(e.code, description=e.description) if e.code else abort(
+            500, description="Internal server error saving quiz to bank."
+        )
     except Exception as e:
         print(f"Error saving to bank: {e}")
         abort(500, description="Internal server error saving quiz to bank.")
 
-@admin_bp.route('/admin/bank/delete', methods=['POST'])
+
+@admin_bp.route("/admin/bank/delete", methods=["POST"])
 def api_delete_from_bank():
     """Deletes a specified quiz file from the question_bank."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
-    filename = data.get('filename')
+    auth_pw = data.get("pw")
+    filename = data.get("filename")
 
     if not auth_pw or auth_pw != ADMIN_PW:
-        abort(403) # Forbidden
+        abort(403)  # Forbidden
     if not filename:
         abort(400, description="Missing filename in request body.")
 
     try:
         delete_quiz_from_bank(filename)
-        return jsonify({"success": True, "message": f"Successfully deleted '{filename}' from bank."})
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Successfully deleted '{filename}' from bank.",
+            }
+        )
     except NotFound as e:
-        return jsonify({'error': e.description or 'File not found'}), 404
+        return jsonify({"error": e.description or "File not found"}), 404
     except InternalServerError as e:
         print(f"Internal error deleting quiz from bank '{filename}': {e}")
-        return jsonify({'error': e.description or 'Internal server error'}), 500
+        return jsonify({"error": e.description or "Internal server error"}), 500
     except Exception as e:
         print(f"Error deleting from bank: {e}")
-        return jsonify({'error': f'Internal server error deleting quiz from bank: {str(e)}'}), 500
+        return jsonify(
+            {"error": f"Internal server error deleting quiz from bank: {str(e)}"}
+        ), 500
 
-@admin_bp.route('/admin/bank/preview', methods=['POST'])
+
+@admin_bp.route("/admin/bank/preview", methods=["POST"])
 def api_preview_bank_file():
     """Reads and returns the JSON content of a specified file in the question_bank for preview."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
-    filename = data.get('filename')
+    auth_pw = data.get("pw")
+    filename = data.get("filename")
 
     if not auth_pw or auth_pw != ADMIN_PW:
-        abort(403) # Forbidden
+        abort(403)  # Forbidden
     if not filename:
         abort(400, description="Missing filename in request body.")
 
@@ -351,24 +430,27 @@ def api_preview_bank_file():
         return jsonify(file_content)
     except BadRequest as e:
         # Return detailed validation error to client
-        return jsonify({'error': e.description or str(e)}), 400
+        return jsonify({"error": e.description or str(e)}), 400
     except NotFound as e:
-        return jsonify({'error': e.description or 'File not found'}), 404
+        return jsonify({"error": e.description or "File not found"}), 404
     except InternalServerError as e:
         print(f"Internal error previewing bank file '{filename}': {e}")
-        return jsonify({'error': e.description or 'Internal server error'}), 500
+        return jsonify({"error": e.description or "Internal server error"}), 500
     except Exception as e:
         print(f"Error previewing bank file '{filename}': {e}")
-        return jsonify({'error': f'Internal server error previewing bank file: {str(e)}'}), 500
+        return jsonify(
+            {"error": f"Internal server error previewing bank file: {str(e)}"}
+        ), 500
 
 
 # --- NEW Admin Endpoints for Scores Bank Management ---
 
-@admin_bp.route('/admin/scores-bank/files', methods=['POST'])
+
+@admin_bp.route("/admin/scores-bank/files", methods=["POST"])
 def api_list_scores_bank_files():
     """Lists available scores files (jsonc) in the scores_bank folder."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
+    auth_pw = data.get("pw")
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403)
 
@@ -379,12 +461,13 @@ def api_list_scores_bank_files():
         print(f"Error listing scores bank files: {e}")
         abort(500, description="Internal server error listing scores bank files.")
 
-@admin_bp.route('/admin/scores-bank/load', methods=['POST'])
+
+@admin_bp.route("/admin/scores-bank/load", methods=["POST"])
 def api_load_scores_from_bank():
     """Loads a specified scores file from the scores_bank into SCORE_FILE."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
-    filename = data.get('filename')
+    auth_pw = data.get("pw")
+    filename = data.get("filename")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403)
@@ -393,19 +476,29 @@ def api_load_scores_from_bank():
 
     try:
         load_scores_from_bank(filename)
-        return jsonify({"success": True, "message": f"Successfully loaded scores from '{filename}'."})
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Successfully loaded scores from '{filename}'.",
+            }
+        )
     except (NotFound, BadRequest, InternalServerError) as e:
-         abort(e.code, description=e.description) if e.code else abort(500, description="Internal server error loading scores from bank.")
+        abort(e.code, description=e.description) if e.code else abort(
+            500, description="Internal server error loading scores from bank."
+        )
     except Exception as e:
         print(f"Error loading scores from bank: {e}")
         abort(500, description="Internal server error loading scores from bank.")
 
-@admin_bp.route('/admin/scores-bank/save', methods=['POST'])
+
+@admin_bp.route("/admin/scores-bank/save", methods=["POST"])
 def api_save_scores_to_bank():
     """Saves the current SCORE_FILE to the scores_bank with the provided filename."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
-    filename = data.get('filename_suffix', '') # Frontend sends full filename in 'filename_suffix' field
+    auth_pw = data.get("pw")
+    filename = data.get(
+        "filename_suffix", ""
+    )  # Frontend sends full filename in 'filename_suffix' field
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403)
@@ -414,21 +507,32 @@ def api_save_scores_to_bank():
 
     try:
         save_scores_to_bank(filename)
-        return jsonify({"success": True, "message": f"Successfully saved scores as '{filename}' to bank."})
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Successfully saved scores as '{filename}' to bank.",
+            }
+        )
     except Conflict as e:
         abort(409, description=e.description)
     except (BadRequest, InternalServerError) as e:
-         abort(e.code if hasattr(e, 'code') and e.code is not None else 500, description=getattr(e, 'description', "Internal server error saving scores to bank."))
+        abort(
+            e.code if hasattr(e, "code") and e.code is not None else 500,
+            description=getattr(
+                e, "description", "Internal server error saving scores to bank."
+            ),
+        )
     except Exception as e:
         print(f"Error saving scores to bank: {e}")
         abort(500, description="Internal server error saving scores to bank.")
 
-@admin_bp.route('/admin/scores-bank/delete', methods=['POST'])
+
+@admin_bp.route("/admin/scores-bank/delete", methods=["POST"])
 def api_delete_scores_from_bank():
     """Deletes a specified scores file from the scores_bank."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
-    filename = data.get('filename')
+    auth_pw = data.get("pw")
+    filename = data.get("filename")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403)
@@ -437,23 +541,32 @@ def api_delete_scores_from_bank():
 
     try:
         from utils import delete_scores_from_bank
+
         delete_scores_from_bank(filename)
-        return jsonify({"success": True, "message": f"Successfully deleted '{filename}' from scores bank."})
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Successfully deleted '{filename}' from scores bank.",
+            }
+        )
     except NotFound as e:
-        return jsonify({'error': e.description or 'File not found'}), 404
+        return jsonify({"error": e.description or "File not found"}), 404
     except InternalServerError as e:
         print(f"Internal error deleting scores from bank '{filename}': {e}")
-        return jsonify({'error': e.description or 'Internal server error'}), 500
+        return jsonify({"error": e.description or "Internal server error"}), 500
     except Exception as e:
         print(f"Error deleting scores from bank: {e}")
-        return jsonify({'error': f'Internal server error deleting scores from bank: {str(e)}'}), 500
+        return jsonify(
+            {"error": f"Internal server error deleting scores from bank: {str(e)}"}
+        ), 500
 
-@admin_bp.route('/admin/scores-bank/preview', methods=['POST'])
+
+@admin_bp.route("/admin/scores-bank/preview", methods=["POST"])
 def api_preview_scores_bank_file():
     """Reads and returns the JSON content of a specified file in the scores_bank for preview."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
-    filename = data.get('filename')
+    auth_pw = data.get("pw")
+    filename = data.get("filename")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403)
@@ -466,12 +579,15 @@ def api_preview_scores_bank_file():
         # Note: Previewing scores data might require different frontend rendering than questions
         return jsonify(file_content)
     except (NotFound, BadRequest, InternalServerError) as e:
-         abort(e.code, description=e.description) if e.code and e.description else abort(500, description="Internal server error previewing scores bank file.")
+        abort(e.code, description=e.description) if e.code and e.description else abort(
+            500, description="Internal server error previewing scores bank file."
+        )
     except Exception as e:
         print(f"Error previewing scores bank file '{filename}': {e}")
         abort(500, description="Internal server error previewing scores bank file.")
 
-@admin_bp.route('/admin/scores-bank/override', methods=['POST'])
+
+@admin_bp.route("/admin/scores-bank/override", methods=["POST"])
 def api_override_scores_bank_file():
     """Updates scores in a specific bank file. Required for reviewing archived quiz results."""
     from utils import SCORES_BANK_FOLDER
@@ -483,14 +599,14 @@ def api_override_scores_bank_file():
 
     data = request.get_json(silent=True) or {}
 
-    password = data.get('password')
+    password = data.get("password")
     if not password or password != ADMIN_PW:
         raise Unauthorized(description="Admin authentication failed.")
 
-    filename = data.get('filename')
-    student_id = data.get('student_id')
-    quiz_id = data.get('quiz_id')
-    overrides = data.get('overrides')
+    filename = data.get("filename")
+    student_id = data.get("student_id")
+    quiz_id = data.get("quiz_id")
+    overrides = data.get("overrides")
 
     if not filename:
         raise BadRequest(description="Missing filename.")
@@ -504,46 +620,63 @@ def api_override_scores_bank_file():
         file_path = Path(SCORES_BANK_FOLDER) / safe_filename
 
         if not file_path.exists():
-            raise NotFound(description=f"Scores file '{safe_filename}' not found in bank.")
+            raise NotFound(
+                description=f"Scores file '{safe_filename}' not found in bank."
+            )
 
         lock_path = f"{file_path}.lock"
         lock = FileLock(lock_path, timeout=10)
 
-        updates_info = {'count': 0}
+        updates_info = {"count": 0}
 
         with lock:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 scores = json.load(f)
 
             target_submission = None
             target_submission_index = None
 
             for i, record in enumerate(scores):
-                if record.get('student') == student_id and record.get('quiz_id') == quiz_id:
+                if (
+                    record.get("student") == student_id
+                    and record.get("quiz_id") == quiz_id
+                ):
                     target_submission_index = i
                     target_submission = record
                     break
 
             if target_submission is None:
-                raise NotFound(description=f"Submission not found for student '{student_id}' with quiz_id '{quiz_id}'.")
+                raise NotFound(
+                    description=f"Submission not found for student '{student_id}' with quiz_id '{quiz_id}'."
+                )
 
-            target_submission, updated_count = apply_overrides(target_submission, overrides, student_id)
-            updates_info['count'] = updated_count
+            target_submission, updated_count = apply_overrides(
+                target_submission, overrides, student_id
+            )
+            updates_info["count"] = updated_count
 
             if updated_count > 0:
-                new_raw_points = sum(ans.get('points_awarded', 0) for ans in target_submission['answers'])
-                max_points = target_submission.get('max_points', 0)
-                new_percent = round(new_raw_points / max_points * 100, 2) if max_points else 0
+                new_raw_points = sum(
+                    ans.get("points_awarded", 0) for ans in target_submission["answers"]
+                )
+                max_points = target_submission.get("max_points", 0)
+                new_percent = (
+                    round(new_raw_points / max_points * 100, 2) if max_points else 0
+                )
 
-                target_submission['raw_points'] = round(new_raw_points, 2)
-                target_submission['percent'] = new_percent
-                target_submission['timestamp'] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')
+                target_submission["raw_points"] = round(new_raw_points, 2)
+                target_submission["percent"] = new_percent
+                target_submission["timestamp"] = datetime.datetime.now(
+                    datetime.timezone.utc
+                ).isoformat(timespec="seconds")
 
                 scores[target_submission_index] = target_submission
 
-                temp_fd, temp_path = tempfile.mkstemp(dir=str(file_path.parent), suffix='.tmp')
+                temp_fd, temp_path = tempfile.mkstemp(
+                    dir=str(file_path.parent), suffix=".tmp"
+                )
                 try:
-                    with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
+                    with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
                         json.dump(scores, f, indent=2)
                     os.replace(temp_path, str(file_path))
                 except Exception as e:
@@ -551,21 +684,36 @@ def api_override_scores_bank_file():
                         os.unlink(temp_path)
                     raise e
 
-                print(f"Applied {updated_count} overrides for student '{student_id}', quiz '{quiz_id}' in bank file '{safe_filename}'.")
+                print(
+                    f"Applied {updated_count} overrides for student '{student_id}', quiz '{quiz_id}' in bank file '{safe_filename}'."
+                )
             else:
-                print(f"No effective overrides applied for student '{student_id}', quiz '{quiz_id}' in bank file '{safe_filename}'.")
+                print(
+                    f"No effective overrides applied for student '{student_id}', quiz '{quiz_id}' in bank file '{safe_filename}'."
+                )
 
-        return jsonify({"success": True, "message": f"{updates_info['count']} overrides applied.", "updated_submission": target_submission})
+        return jsonify(
+            {
+                "success": True,
+                "message": f"{updates_info['count']} overrides applied.",
+                "updated_submission": target_submission,
+            }
+        )
 
     except (NotFound, BadRequest, Unauthorized) as e:
         raise e
     except Timeout:
-        raise InternalServerError(description="Could not save scores due to lock timeout. Please try again.")
+        raise InternalServerError(
+            description="Could not save scores due to lock timeout. Please try again."
+        )
     except Exception as e:
         print(f"Error overriding scores in bank file: {e}")
-        raise InternalServerError(description=f"Error overriding scores in bank file: {str(e)}")
+        raise InternalServerError(
+            description=f"Error overriding scores in bank file: {str(e)}"
+        )
 
-@admin_bp.route('/admin/scores/recalculate', methods=['POST'])
+
+@admin_bp.route("/admin/scores/recalculate", methods=["POST"])
 def api_recalculate_all_scores():
     """Re-grades all submissions against the current question bank.
 
@@ -573,7 +721,7 @@ def api_recalculate_all_scores():
     This allows full recalculation even for old submissions without option_order saved.
     """
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
+    auth_pw = data.get("pw")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
@@ -586,9 +734,9 @@ def api_recalculate_all_scores():
         from datetime import datetime
 
         # Create a timestamped backup before recalculation
-        score_file = os.getenv('SCORE_FILE', './scores.jsonc')
+        score_file = os.getenv("SCORE_FILE", "./scores.jsonc")
         if os.path.exists(score_file):
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_file = f"{score_file}.backup_{timestamp}"
             try:
                 shutil.copy2(score_file, backup_file)
@@ -598,38 +746,43 @@ def api_recalculate_all_scores():
 
         # Load questions (read-only, doesn't need lock)
         quiz_data = load_questions()
-        questions = quiz_data['questions']
-        quiz_title = quiz_data.get('title')
+        questions = quiz_data["questions"]
+        quiz_title = quiz_data.get("title")
 
         # Create a question bank map for quick lookup
-        qbank_map = {q['id']: q for q in questions}
+        qbank_map = {q["id"]: q for q in questions}
 
         # Track results outside callback
-        results = {'recalculated_count': 0, 'errors': []}
+        results = {"recalculated_count": 0, "errors": []}
 
         # Define atomic update callback
         def recalculate_callback(scores):
             for score_entry in scores:
                 try:
-                    if 'answers' not in score_entry or not isinstance(score_entry['answers'], list):
-                        results['errors'].append(f"Student {score_entry.get('student')}: Missing or invalid answers field")
+                    if "answers" not in score_entry or not isinstance(
+                        score_entry["answers"], list
+                    ):
+                        results["errors"].append(
+                            f"Student {score_entry.get('student')}: Missing or invalid answers field"
+                        )
                         continue
 
-                    student_id = score_entry.get('student', '')
+                    student_id = score_entry.get("student", "")
 
                     # Check if this submission has option_order data
                     has_option_order = any(
-                        'option_order' in ans and ans.get('option_order')
-                        for ans in score_entry['answers']
+                        "option_order" in ans and ans.get("option_order")
+                        for ans in score_entry["answers"]
                     )
 
                     # Helper function to extract indices from formatted answers like "'text' (Index: 2)"
                     import re
+
                     def extract_indices_from_formatted_answer(formatted_answer):
                         """Extract original indices from formatted answer strings."""
                         if isinstance(formatted_answer, str):
                             # Single answer: "'text' (Index: 2)"
-                            match = re.search(r'\(Index:\s*(\d+)\)', formatted_answer)
+                            match = re.search(r"\(Index:\s*(\d+)\)", formatted_answer)
                             if match:
                                 return int(match.group(1))
                             return None
@@ -638,139 +791,215 @@ def api_recalculate_all_scores():
                             indices = []
                             for item in formatted_answer:
                                 if isinstance(item, str):
-                                    match = re.search(r'\(Index:\s*(\d+)\)', item)
+                                    match = re.search(r"\(Index:\s*(\d+)\)", item)
                                     if match:
                                         indices.append(int(match.group(1)))
                             return indices if indices else None
                         return None
-    
+
                     # Recalculate scores (works with or without option_order)
                     total_score = 0.0
                     max_score = 0.0
-    
-                    for answer_detail in score_entry['answers']:
-                        q_id = answer_detail.get('question_id')
-    
+
+                    for answer_detail in score_entry["answers"]:
+                        q_id = answer_detail.get("question_id")
+
                         if q_id not in qbank_map:
-                            results['errors'].append(f"Student {student_id}: Question {q_id} not found in current question bank")
+                            results["errors"].append(
+                                f"Student {student_id}: Question {q_id} not found in current question bank"
+                            )
                             continue
-    
+
                         current_question = qbank_map[q_id]
-                        q_type = current_question.get('type')
-                        weight = current_question.get('weight', 1)
+                        q_type = current_question.get("type")
+                        weight = current_question.get("weight", 1)
                         max_score += weight
-    
-                        current_correct_answer = current_question.get('correct')
-                        current_options = current_question.get('options', [])
-    
+
+                        current_correct_answer = current_question.get("correct")
+                        current_options = current_question.get("options", [])
+
                         # Helper to get text from an option (string or object)
                         def get_option_text(option):
-                            return option.get('text', '') if isinstance(option, dict) else str(option)
-    
+                            return (
+                                option.get("text", "")
+                                if isinstance(option, dict)
+                                else str(option)
+                            )
+
                         # Update stored correct answer (both raw and formatted)
-                        answer_detail['raw_correct_answer'] = current_correct_answer
-    
+                        answer_detail["raw_correct_answer"] = current_correct_answer
+
                         # Regenerate formatted correct_answer to reflect current question bank
-                        if q_type == 'single' and isinstance(current_correct_answer, int) and 0 <= current_correct_answer < len(current_options):
-                            option_text = get_option_text(current_options[current_correct_answer])
-                            answer_detail['correct_answer'] = f"'{option_text}' (Index: {current_correct_answer})"
-                        elif q_type == 'multiple' and isinstance(current_correct_answer, list):
+                        if (
+                            q_type == "single"
+                            and isinstance(current_correct_answer, int)
+                            and 0 <= current_correct_answer < len(current_options)
+                        ):
+                            option_text = get_option_text(
+                                current_options[current_correct_answer]
+                            )
+                            answer_detail["correct_answer"] = (
+                                f"'{option_text}' (Index: {current_correct_answer})"
+                            )
+                        elif q_type == "multiple" and isinstance(
+                            current_correct_answer, list
+                        ):
                             formatted_correct = [
                                 f"'{get_option_text(current_options[idx])}' (Index: {idx})"
                                 for idx in current_correct_answer
                                 if 0 <= idx < len(current_options)
                             ]
-                            answer_detail['correct_answer'] = formatted_correct
-                        elif q_type == 'open':
+                            answer_detail["correct_answer"] = formatted_correct
+                        elif q_type == "open":
                             # For open questions, keep existing or use keywords/acceptable
-                            if 'acceptable' in current_question:
-                                answer_detail['correct_answer'] = current_question['acceptable']
-                            elif 'keywords' in current_question:
-                                answer_detail['correct_answer'] = {"keywords": current_question['keywords']}
+                            if "acceptable" in current_question:
+                                answer_detail["correct_answer"] = current_question[
+                                    "acceptable"
+                                ]
+                            elif "keywords" in current_question:
+                                answer_detail["correct_answer"] = {
+                                    "keywords": current_question["keywords"]
+                                }
                             # else keep existing formatted answer
-    
+
                         # Calculate score
                         question_score = 0.0
-    
-                        if q_type == 'open':
+
+                        if q_type == "open":
                             # Keep existing score for open questions
-                            question_score = answer_detail.get('points_awarded', 0)
-                        elif q_type == 'single':
+                            question_score = answer_detail.get("points_awarded", 0)
+                        elif q_type == "single":
                             # Extract student's original index from formatted answer
                             student_original_index = None
-    
-                            if has_option_order and 'option_order' in answer_detail:
+
+                            if has_option_order and "option_order" in answer_detail:
                                 # Use option_order if available
-                                raw_student_answer = answer_detail.get('raw_student_answer')
-                                option_order = answer_detail.get('option_order', [])
-                                if isinstance(raw_student_answer, int) and raw_student_answer < len(option_order):
-                                    student_original_index = option_order[raw_student_answer]
+                                raw_student_answer = answer_detail.get(
+                                    "raw_student_answer"
+                                )
+                                option_order = answer_detail.get("option_order", [])
+                                if isinstance(
+                                    raw_student_answer, int
+                                ) and raw_student_answer < len(option_order):
+                                    student_original_index = option_order[
+                                        raw_student_answer
+                                    ]
                             else:
                                 # Parse from formatted student_answer
-                                formatted_answer = answer_detail.get('student_answer', '')
-                                student_original_index = extract_indices_from_formatted_answer(formatted_answer)
-    
-                            if student_original_index is not None and student_original_index == current_correct_answer:
+                                formatted_answer = answer_detail.get(
+                                    "student_answer", ""
+                                )
+                                student_original_index = (
+                                    extract_indices_from_formatted_answer(
+                                        formatted_answer
+                                    )
+                                )
+
+                            if (
+                                student_original_index is not None
+                                and student_original_index == current_correct_answer
+                            ):
                                 question_score = weight
-    
-                        elif q_type == 'multiple':
-                            current_correct_indices = current_correct_answer if isinstance(current_correct_answer, list) else []
+
+                        elif q_type == "multiple":
+                            current_correct_indices = (
+                                current_correct_answer
+                                if isinstance(current_correct_answer, list)
+                                else []
+                            )
                             student_original_indices = None
-    
-                            if has_option_order and 'option_order' in answer_detail:
+
+                            if has_option_order and "option_order" in answer_detail:
                                 # Use option_order if available
-                                raw_student_answer = answer_detail.get('raw_student_answer')
-                                option_order = answer_detail.get('option_order', [])
+                                raw_student_answer = answer_detail.get(
+                                    "raw_student_answer"
+                                )
+                                option_order = answer_detail.get("option_order", [])
                                 if isinstance(raw_student_answer, list):
                                     student_original_indices = []
                                     for shuffled_idx in raw_student_answer:
-                                        if isinstance(shuffled_idx, int) and shuffled_idx < len(option_order):
-                                            student_original_indices.append(option_order[shuffled_idx])
+                                        if isinstance(
+                                            shuffled_idx, int
+                                        ) and shuffled_idx < len(option_order):
+                                            student_original_indices.append(
+                                                option_order[shuffled_idx]
+                                            )
                             else:
                                 # Parse from formatted student_answer
-                                formatted_answer = answer_detail.get('student_answer', [])
-                                student_original_indices = extract_indices_from_formatted_answer(formatted_answer)
-    
+                                formatted_answer = answer_detail.get(
+                                    "student_answer", []
+                                )
+                                student_original_indices = (
+                                    extract_indices_from_formatted_answer(
+                                        formatted_answer
+                                    )
+                                )
+
                             if student_original_indices is not None:
-                                num_options = len(current_question.get('options', []))
+                                num_options = len(current_question.get("options", []))
                                 num_correct_total = len(current_correct_indices)
-                                num_user_correct = len([idx for idx in student_original_indices if idx in current_correct_indices])
-                                num_user_wrong = len([idx for idx in student_original_indices if idx not in current_correct_indices])
-    
+                                num_user_correct = len(
+                                    [
+                                        idx
+                                        for idx in student_original_indices
+                                        if idx in current_correct_indices
+                                    ]
+                                )
+                                num_user_wrong = len(
+                                    [
+                                        idx
+                                        for idx in student_original_indices
+                                        if idx not in current_correct_indices
+                                    ]
+                                )
+
                                 if num_correct_total > 0:
                                     points_per_correct = weight / num_correct_total
-                                    points_per_wrong = weight / (num_options - num_correct_total) if (num_options - num_correct_total) > 0 else weight
-                                    calculated_score = (num_user_correct * points_per_correct) - (num_user_wrong * points_per_wrong)
+                                    points_per_wrong = (
+                                        weight / (num_options - num_correct_total)
+                                        if (num_options - num_correct_total) > 0
+                                        else weight
+                                    )
+                                    calculated_score = (
+                                        num_user_correct * points_per_correct
+                                    ) - (num_user_wrong * points_per_wrong)
                                     question_score = max(0.0, calculated_score)
-    
+
                         # Update both score fields
-                        answer_detail['points_awarded'] = round(question_score, 2)
-                        answer_detail['raw_points'] = round(question_score, 2)
+                        answer_detail["points_awarded"] = round(question_score, 2)
+                        answer_detail["raw_points"] = round(question_score, 2)
                         total_score += question_score
-    
+
                     # Update totals
-                    old_score = score_entry.get('raw_points', 0)
+                    old_score = score_entry.get("raw_points", 0)
                     new_score = round(total_score, 2)
-                    new_percent = round(total_score / max_score * 100, 2) if max_score > 0 else 0
-    
-                    score_entry['raw_points'] = new_score
-                    score_entry['max_points'] = max_score
-                    score_entry['percent'] = new_percent
-    
+                    new_percent = (
+                        round(total_score / max_score * 100, 2) if max_score > 0 else 0
+                    )
+
+                    score_entry["raw_points"] = new_score
+                    score_entry["max_points"] = max_score
+                    score_entry["percent"] = new_percent
+
                     # Add quiz_title if not present
-                    if 'quiz_title' not in score_entry and quiz_title:
-                        score_entry['quiz_title'] = quiz_title
-    
+                    if "quiz_title" not in score_entry and quiz_title:
+                        score_entry["quiz_title"] = quiz_title
+
                     if abs(old_score - new_score) > 0.01:
-                        results['recalculated_count'] += 1
-                        print(f"Recalculated score for {student_id}: {old_score} -> {new_score}")
+                        results["recalculated_count"] += 1
+                        print(
+                            f"Recalculated score for {student_id}: {old_score} -> {new_score}"
+                        )
                     else:
                         print(f"No change for {student_id}: score remains {old_score}")
-    
+
                 except Exception as e:
-                    results['errors'].append(f"Student {score_entry.get('student', 'unknown')}: {str(e)}")
+                    results["errors"].append(
+                        f"Student {score_entry.get('student', 'unknown')}: {str(e)}"
+                    )
                     print(f"Error processing {score_entry.get('student')}: {e}")
                     import traceback
+
                     traceback.print_exc()
                     continue
 
@@ -781,37 +1010,42 @@ def api_recalculate_all_scores():
         updated_scores = update_scores_atomic(recalculate_callback)
 
         result_message = f"Recalculated {results['recalculated_count']} out of {len(updated_scores)} submissions"
-        if results['recalculated_count'] < len(updated_scores):
+        if results["recalculated_count"] < len(updated_scores):
             result_message += f" ({len(updated_scores) - results['recalculated_count']} had no total score change)"
         result_message += "."
-        if results['errors']:
+        if results["errors"]:
             result_message += f" Encountered {len(results['errors'])} errors."
 
-        return jsonify({
-            "success": True,
-            "message": result_message,
-            "updated_count": results['recalculated_count'],
-            "total_count": len(updated_scores),
-            "errors": results['errors'][:10]
-        })
+        return jsonify(
+            {
+                "success": True,
+                "message": result_message,
+                "updated_count": results["recalculated_count"],
+                "total_count": len(updated_scores),
+                "errors": results["errors"][:10],
+            }
+        )
 
     except Exception as e:
         print(f"Error during score recalculation: {e}")
         import traceback
+
         traceback.print_exc()
         abort(500, description=f"Failed to recalculate scores: {str(e)}")
 
-@admin_bp.route('/admin/scores/clear', methods=['POST'])
+
+@admin_bp.route("/admin/scores/clear", methods=["POST"])
 def api_clear_scores():
     """Clears all scores after creating a temporary backup."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
+    auth_pw = data.get("pw")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
 
     try:
         from utils import clear_scores_with_backup
+
         result = clear_scores_with_backup()
         return jsonify(result)
     except InternalServerError as e:
@@ -820,17 +1054,19 @@ def api_clear_scores():
         print(f"Error clearing scores: {e}")
         abort(500, description=f"Failed to clear scores: {str(e)}")
 
-@admin_bp.route('/admin/scores/restore', methods=['POST'])
+
+@admin_bp.route("/admin/scores/restore", methods=["POST"])
 def api_restore_scores():
     """Restores scores from the temporary backup file."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
+    auth_pw = data.get("pw")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
 
     try:
         from utils import restore_scores_from_backup
+
         result = restore_scores_from_backup()
         return jsonify(result)
     except NotFound as e:
@@ -843,23 +1079,25 @@ def api_restore_scores():
         print(f"Error restoring scores: {e}")
         abort(500, description=f"Failed to restore scores: {str(e)}")
 
+
 # --- Email Endpoints ---
 
-@admin_bp.route('/admin/email/send-result', methods=['POST'])
+
+@admin_bp.route("/admin/email/send-result", methods=["POST"])
 def api_send_single_result_email():
     """Send quiz result email to a single student."""
     print("=== Single Email Endpoint Called ===")
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
+    auth_pw = data.get("pw")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         print("Authentication failed")
         abort(403, description="Admin authentication failed.")
 
-    student_email = data.get('student_email')
-    quiz_id = data.get('quiz_id')
-    subject = data.get('subject')  # Optional custom subject
-    include_details = data.get('include_details', True)  # Default to True
+    student_email = data.get("student_email")
+    quiz_id = data.get("quiz_id")
+    subject = data.get("subject")  # Optional custom subject
+    include_details = data.get("include_details", True)  # Default to True
 
     print(f"Attempting to send email to: {student_email} for quiz: {quiz_id}")
     if subject:
@@ -877,18 +1115,26 @@ def api_send_single_result_email():
         submission = None
 
         for score_entry in scores:
-            if score_entry.get('student') == student_email and score_entry.get('quiz_id') == quiz_id:
+            if (
+                score_entry.get("student") == student_email
+                and score_entry.get("quiz_id") == quiz_id
+            ):
                 submission = score_entry
                 print(f"Found submission for {student_email}")
                 break
 
         if not submission:
             print(f"No submission found for {student_email} with quiz_id {quiz_id}")
-            abort(404, description=f"No submission found for {student_email} with quiz_id {quiz_id}")
+            abort(
+                404,
+                description=f"No submission found for {student_email} with quiz_id {quiz_id}",
+            )
 
         # Send email with optional custom subject and include_details
         print(f"Calling send_quiz_result_email for {student_email}")
-        success, message = send_quiz_result_email(student_email, submission, subject, include_details)
+        success, message = send_quiz_result_email(
+            student_email, submission, subject, include_details
+        )
 
         if success:
             print(f"Email sent successfully: {message}")
@@ -900,16 +1146,18 @@ def api_send_single_result_email():
     except Exception as e:
         print(f"Error sending email: {e}")
         import traceback
+
         traceback.print_exc()
         abort(500, description=f"Failed to send email: {str(e)}")
 
-@admin_bp.route('/admin/email/send-all-results', methods=['POST'])
+
+@admin_bp.route("/admin/email/send-all-results", methods=["POST"])
 def api_send_all_results_email():
     """Send quiz result emails to all students."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
-    subject = data.get('subject')  # Optional custom subject
-    include_details = data.get('include_details', True)  # Default to True
+    auth_pw = data.get("pw")
+    subject = data.get("subject")  # Optional custom subject
+    include_details = data.get("include_details", True)  # Default to True
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
@@ -919,42 +1167,51 @@ def api_send_all_results_email():
         scores = load_scores()
 
         # Filter to only valid email addresses
-        valid_submissions = [
-            s for s in scores
-            if is_valid_email(s.get('student', ''))
-        ]
+        valid_submissions = [s for s in scores if is_valid_email(s.get("student", ""))]
 
         if not valid_submissions:
-            return jsonify({
-                "success": True,
-                "message": "No valid email addresses found in submissions.",
-                "success_count": 0,
-                "failed_count": 0,
-                "errors": []
-            })
+            return jsonify(
+                {
+                    "success": True,
+                    "message": "No valid email addresses found in submissions.",
+                    "success_count": 0,
+                    "failed_count": 0,
+                    "errors": [],
+                }
+            )
 
         # Send emails with optional custom subject and include_details
         results = send_bulk_quiz_results(valid_submissions, subject, include_details)
 
-        return jsonify({
-            "success": True,
-            "message": f"Sent {results['success_count']} emails, {results['failed_count']} failed.",
-            "success_count": results['success_count'],
-            "failed_count": results['failed_count'],
-            "errors": results['errors'][:10]  # Limit error list
-        })
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Sent {results['success_count']} emails, {results['failed_count']} failed.",
+                "success_count": results["success_count"],
+                "failed_count": results["failed_count"],
+                "errors": results["errors"][:10],  # Limit error list
+            }
+        )
 
     except Exception as e:
         print(f"Error sending bulk emails: {e}")
         import traceback
+
         traceback.print_exc()
         abort(500, description=f"Failed to send bulk emails: {str(e)}")
 
-@admin_bp.route('/admin/students', methods=['GET'])
+
+@admin_bp.route("/admin/students", methods=["GET"])
 def api_get_students():
     """Get the current students list."""
-    data = request.args if request.method == 'GET' else request.get_json(silent=True) or {}
-    auth_pw = data.get('pw') if isinstance(data, dict) else request.headers.get('X-Admin-Password')
+    data = (
+        request.args if request.method == "GET" else request.get_json(silent=True) or {}
+    )
+    auth_pw = (
+        data.get("pw")
+        if isinstance(data, dict)
+        else request.headers.get("X-Admin-Password")
+    )
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
@@ -967,7 +1224,7 @@ def api_get_students():
         if not students_path.exists():
             return jsonify([])
 
-        with students_path.open(encoding='utf-8') as f:
+        with students_path.open(encoding="utf-8") as f:
             students = commentjson.load(f)
 
         return jsonify(students)
@@ -975,12 +1232,13 @@ def api_get_students():
         print(f"Error loading students: {e}")
         abort(500, description=f"Failed to load students: {str(e)}")
 
-@admin_bp.route('/admin/students', methods=['PUT'])
+
+@admin_bp.route("/admin/students", methods=["PUT"])
 def api_update_students():
     """Update the students list with validation."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
-    students_data = data.get('students')
+    auth_pw = data.get("pw")
+    students_data = data.get("students")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
@@ -997,34 +1255,54 @@ def api_update_students():
         if isinstance(student, str):
             # Simple email string format (backward compatible)
             if not is_valid_email(student):
-                abort(400, description=f"Invalid email format at index {idx}: {student}")
+                abort(
+                    400, description=f"Invalid email format at index {idx}: {student}"
+                )
         elif isinstance(student, dict):
             # Check if it's a group entry with emails array
-            if 'emails' in student:
+            if "emails" in student:
                 # Group format: { "group": "...", "emails": [...] }
-                if 'group' not in student:
-                    abort(400, description=f"Missing 'group' field for emails array at index {idx}.")
-                if not isinstance(student['group'], str):
+                if "group" not in student:
+                    abort(
+                        400,
+                        description=f"Missing 'group' field for emails array at index {idx}.",
+                    )
+                if not isinstance(student["group"], str):
                     abort(400, description=f"Group must be a string at index {idx}.")
-                if not isinstance(student['emails'], list):
+                if not isinstance(student["emails"], list):
                     abort(400, description=f"Emails must be an array at index {idx}.")
                 # Validate each email in the array
-                for email_idx, email in enumerate(student['emails']):
+                for email_idx, email in enumerate(student["emails"]):
                     if not isinstance(email, str):
-                        abort(400, description=f"Email at index {idx}, position {email_idx} must be a string.")
+                        abort(
+                            400,
+                            description=f"Email at index {idx}, position {email_idx} must be a string.",
+                        )
                     if not is_valid_email(email):
-                        abort(400, description=f"Invalid email format at index {idx}, position {email_idx}: {email}")
-            elif 'email' in student:
+                        abort(
+                            400,
+                            description=f"Invalid email format at index {idx}, position {email_idx}: {email}",
+                        )
+            elif "email" in student:
                 # Single student format: { "email": "...", "group": "..." }
-                if not is_valid_email(student['email']):
-                    abort(400, description=f"Invalid email format at index {idx}: {student['email']}")
+                if not is_valid_email(student["email"]):
+                    abort(
+                        400,
+                        description=f"Invalid email format at index {idx}: {student['email']}",
+                    )
                 # Group is optional but must be string if present
-                if 'group' in student and not isinstance(student['group'], str):
+                if "group" in student and not isinstance(student["group"], str):
                     abort(400, description=f"Group must be a string at index {idx}.")
             else:
-                abort(400, description=f"Invalid student entry at index {idx}. Must have 'email' or 'emails' field.")
+                abort(
+                    400,
+                    description=f"Invalid student entry at index {idx}. Must have 'email' or 'emails' field.",
+                )
         else:
-            abort(400, description=f"Invalid student entry at index {idx}. Must be string or object.")
+            abort(
+                400,
+                description=f"Invalid student entry at index {idx}. Must be string or object.",
+            )
 
     try:
         from utils import STUDENTS_FILE
@@ -1034,15 +1312,18 @@ def api_update_students():
 
         # Create backup before saving
         if students_path.exists():
-            backup_path = students_path.with_suffix('.jsonc.bak')
+            backup_path = students_path.with_suffix(".jsonc.bak")
             import shutil
+
             shutil.copy2(students_path, backup_path)
 
         # Save the new students list
-        with students_path.open('w', encoding='utf-8') as f:
+        with students_path.open("w", encoding="utf-8") as f:
             commentjson.dump(students_data, f, indent=2, ensure_ascii=False)
 
-        return jsonify({"success": True, "message": "Students list updated successfully."})
+        return jsonify(
+            {"success": True, "message": "Students list updated successfully."}
+        )
 
     except Exception as e:
         print(f"Error saving students: {e}")
@@ -1051,11 +1332,12 @@ def api_update_students():
 
 # --- Students Bank Endpoints ---
 
-@admin_bp.route('/admin/students-bank/files', methods=['POST'])
+
+@admin_bp.route("/admin/students-bank/files", methods=["POST"])
 def api_list_students_bank_files():
     """Lists available students files (jsonc) in the students_bank folder."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
+    auth_pw = data.get("pw")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
@@ -1068,16 +1350,16 @@ def api_list_students_bank_files():
         abort(500, description=f"Failed to list students bank files: {str(e)}")
 
 
-
 # --- Rename Endpoints ---
 
-@admin_bp.route('/admin/bank/rename', methods=['POST'])
+
+@admin_bp.route("/admin/bank/rename", methods=["POST"])
 def api_rename_bank_file():
     """Renames a quiz file in the question_bank."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
-    filename = data.get('filename')
-    new_filename = data.get('new_filename')
+    auth_pw = data.get("pw")
+    filename = data.get("filename")
+    new_filename = data.get("new_filename")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
@@ -1087,8 +1369,14 @@ def api_rename_bank_file():
 
     try:
         from utils import rename_quiz_in_bank
+
         rename_quiz_in_bank(filename, new_filename)
-        return jsonify({"success": True, "message": f"Successfully renamed '{filename}' to '{new_filename}'."})
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Successfully renamed '{filename}' to '{new_filename}'.",
+            }
+        )
     except (NotFound, Conflict, BadRequest, InternalServerError) as e:
         abort(e.code, description=e.description)
     except Exception as e:
@@ -1096,13 +1384,13 @@ def api_rename_bank_file():
         abort(500, description=f"Failed to rename file: {str(e)}")
 
 
-@admin_bp.route('/admin/scores-bank/rename', methods=['POST'])
+@admin_bp.route("/admin/scores-bank/rename", methods=["POST"])
 def api_rename_scores_bank_file():
     """Renames a scores file in the scores_bank."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
-    filename = data.get('filename')
-    new_filename = data.get('new_filename')
+    auth_pw = data.get("pw")
+    filename = data.get("filename")
+    new_filename = data.get("new_filename")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
@@ -1112,8 +1400,14 @@ def api_rename_scores_bank_file():
 
     try:
         from utils import rename_scores_in_bank
+
         rename_scores_in_bank(filename, new_filename)
-        return jsonify({"success": True, "message": f"Successfully renamed '{filename}' to '{new_filename}'."})
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Successfully renamed '{filename}' to '{new_filename}'.",
+            }
+        )
     except (NotFound, Conflict, BadRequest, InternalServerError) as e:
         abort(e.code, description=e.description)
     except Exception as e:
@@ -1121,13 +1415,13 @@ def api_rename_scores_bank_file():
         abort(500, description=f"Failed to rename file: {str(e)}")
 
 
-@admin_bp.route('/admin/students-bank/rename', methods=['POST'])
+@admin_bp.route("/admin/students-bank/rename", methods=["POST"])
 def api_rename_students_bank_file():
     """Renames a students file in the students_bank."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
-    filename = data.get('filename')
-    new_filename = data.get('new_filename')
+    auth_pw = data.get("pw")
+    filename = data.get("filename")
+    new_filename = data.get("new_filename")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
@@ -1137,8 +1431,14 @@ def api_rename_students_bank_file():
 
     try:
         from utils import rename_students_in_bank
+
         rename_students_in_bank(filename, new_filename)
-        return jsonify({"success": True, "message": f"Successfully renamed '{filename}' to '{new_filename}'."})
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Successfully renamed '{filename}' to '{new_filename}'.",
+            }
+        )
     except (NotFound, Conflict, BadRequest, InternalServerError) as e:
         abort(e.code, description=e.description)
     except Exception as e:
@@ -1146,12 +1446,12 @@ def api_rename_students_bank_file():
         abort(500, description=f"Failed to rename file: {str(e)}")
 
 
-@admin_bp.route('/admin/students-bank/load', methods=['POST'])
+@admin_bp.route("/admin/students-bank/load", methods=["POST"])
 def api_load_students_from_bank():
     """Loads a specified students file from the students_bank into STUDENTS_FILE."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
-    filename = data.get('filename')
+    auth_pw = data.get("pw")
+    filename = data.get("filename")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
@@ -1161,19 +1461,23 @@ def api_load_students_from_bank():
 
     try:
         load_students_from_bank(filename)
-        return jsonify({"success": True, "message": f"Loaded '{filename}' from students bank."})
+        return jsonify(
+            {"success": True, "message": f"Loaded '{filename}' from students bank."}
+        )
     except (NotFound, BadRequest, InternalServerError) as e:
         abort(e.code, description=e.description)
     except Exception as e:
         print(f"Unexpected error loading students from bank: {e}")
         abort(500, description=f"Unexpected error: {str(e)}")
 
+
 # --- Download Endpoints ---
 
-@admin_bp.route('/admin/bank/download/<path:filename>', methods=['GET'])
+
+@admin_bp.route("/admin/bank/download/<path:filename>", methods=["GET"])
 def api_download_bank_file(filename):
     """Downloads a quiz file from the question_bank."""
-    auth_pw = request.args.get('password')
+    auth_pw = request.args.get("password")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
@@ -1181,16 +1485,17 @@ def api_download_bank_file(filename):
     try:
         from utils import QUESTION_BANK_FOLDER
         from flask import send_from_directory
+
         return send_from_directory(QUESTION_BANK_FOLDER, filename, as_attachment=True)
     except Exception as e:
         print(f"Error downloading quiz file: {e}")
         abort(404, description=f"File not found: {str(e)}")
 
 
-@admin_bp.route('/admin/scores-bank/download/<path:filename>', methods=['GET'])
+@admin_bp.route("/admin/scores-bank/download/<path:filename>", methods=["GET"])
 def api_download_scores_bank_file(filename):
     """Downloads a scores file from the scores_bank."""
-    auth_pw = request.args.get('password')
+    auth_pw = request.args.get("password")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
@@ -1198,16 +1503,17 @@ def api_download_scores_bank_file(filename):
     try:
         from utils import SCORES_BANK_FOLDER
         from flask import send_from_directory
+
         return send_from_directory(SCORES_BANK_FOLDER, filename, as_attachment=True)
     except Exception as e:
         print(f"Error downloading scores file: {e}")
         abort(404, description=f"File not found: {str(e)}")
 
 
-@admin_bp.route('/admin/students-bank/download/<path:filename>', methods=['GET'])
+@admin_bp.route("/admin/students-bank/download/<path:filename>", methods=["GET"])
 def api_download_students_bank_file(filename):
     """Downloads a students file from the students_bank."""
-    auth_pw = request.args.get('password')
+    auth_pw = request.args.get("password")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
@@ -1215,17 +1521,19 @@ def api_download_students_bank_file(filename):
     try:
         from utils import STUDENTS_BANK_FOLDER
         from flask import send_from_directory
+
         return send_from_directory(STUDENTS_BANK_FOLDER, filename, as_attachment=True)
     except Exception as e:
         print(f"Error downloading students file: {e}")
         abort(404, description=f"File not found: {str(e)}")
 
-@admin_bp.route('/admin/students-bank/save', methods=['POST'])
+
+@admin_bp.route("/admin/students-bank/save", methods=["POST"])
 def api_save_students_to_bank():
     """Saves the current STUDENTS_FILE to the students_bank with the provided filename."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
-    filename = data.get('filename')
+    auth_pw = data.get("pw")
+    filename = data.get("filename")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
@@ -1235,19 +1543,25 @@ def api_save_students_to_bank():
 
     try:
         save_students_to_bank(filename)
-        return jsonify({"success": True, "message": f"Saved current students list to '{filename}' in students bank."})
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Saved current students list to '{filename}' in students bank.",
+            }
+        )
     except (Conflict, BadRequest, InternalServerError) as e:
         abort(e.code, description=e.description)
     except Exception as e:
         print(f"Unexpected error saving students to bank: {e}")
         abort(500, description=f"Unexpected error: {str(e)}")
 
-@admin_bp.route('/admin/students-bank/delete', methods=['POST'])
+
+@admin_bp.route("/admin/students-bank/delete", methods=["POST"])
 def api_delete_students_from_bank():
     """Deletes a specified students file from the students_bank."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
-    filename = data.get('filename')
+    auth_pw = data.get("pw")
+    filename = data.get("filename")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
@@ -1257,23 +1571,32 @@ def api_delete_students_from_bank():
 
     try:
         from utils import delete_students_from_bank
+
         delete_students_from_bank(filename)
-        return jsonify({"success": True, "message": f"Successfully deleted '{filename}' from students bank."})
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Successfully deleted '{filename}' from students bank.",
+            }
+        )
     except NotFound as e:
-        return jsonify({'error': e.description or 'File not found'}), 404
+        return jsonify({"error": e.description or "File not found"}), 404
     except InternalServerError as e:
         print(f"Internal error deleting students from bank '{filename}': {e}")
-        return jsonify({'error': e.description or 'Internal server error'}), 500
+        return jsonify({"error": e.description or "Internal server error"}), 500
     except Exception as e:
         print(f"Error deleting students from bank: {e}")
-        return jsonify({'error': f'Internal server error deleting students from bank: {str(e)}'}), 500
+        return jsonify(
+            {"error": f"Internal server error deleting students from bank: {str(e)}"}
+        ), 500
 
-@admin_bp.route('/admin/students-bank/preview', methods=['POST'])
+
+@admin_bp.route("/admin/students-bank/preview", methods=["POST"])
 def api_preview_students_bank_file():
     """Reads and returns the JSON content of a specified file in the students_bank for preview."""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
-    filename = data.get('filename')
+    auth_pw = data.get("pw")
+    filename = data.get("filename")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
@@ -1289,7 +1612,7 @@ def api_preview_students_bank_file():
         if not file_path.exists() or not file_path.is_file():
             abort(404, description=f"File '{filename}' not found in students bank.")
 
-        with file_path.open(encoding='utf-8') as f:
+        with file_path.open(encoding="utf-8") as f:
             students_data = json.load(f)
 
         return jsonify({"students": students_data, "filename": filename})
@@ -1305,7 +1628,8 @@ def api_preview_students_bank_file():
 # Quiz Status Endpoints
 # ===========================
 
-@admin_bp.route('/admin/quiz-status', methods=['GET'])
+
+@admin_bp.route("/admin/quiz-status", methods=["GET"])
 def api_get_quiz_status():
     """Get the current quiz enabled/disabled status (public endpoint, no auth required)"""
     try:
@@ -1316,16 +1640,16 @@ def api_get_quiz_status():
         abort(500, description=f"Failed to get quiz status: {str(e)}")
 
 
-@admin_bp.route('/admin/quiz-status', methods=['POST'])
+@admin_bp.route("/admin/quiz-status", methods=["POST"])
 def api_set_quiz_status():
     """Set the quiz enabled/disabled status (requires admin authentication)"""
     data = request.get_json(silent=True) or {}
-    auth_pw = data.get('pw')
+    auth_pw = data.get("pw")
 
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
 
-    enabled = data.get('enabled')
+    enabled = data.get("enabled")
     if enabled is None:
         abort(400, description="Missing 'enabled' field in request body.")
 
@@ -1335,9 +1659,18 @@ def api_set_quiz_status():
     try:
         status = {"enabled": enabled}
         save_quiz_status(status)
-        return jsonify({"success": True, "message": f"Quiz {'enabled' if enabled else 'disabled'} successfully.", "status": status})
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Quiz {'enabled' if enabled else 'disabled'} successfully.",
+                "status": status,
+            }
+        )
     except (BadRequest, InternalServerError) as e:
-        abort(e.code if hasattr(e, 'code') else 500, description=e.description if hasattr(e, 'description') else str(e))
+        abort(
+            e.code if hasattr(e, "code") else 500,
+            description=e.description if hasattr(e, "description") else str(e),
+        )
     except Exception as e:
         print(f"Error setting quiz status: {e}")
         abort(500, description=f"Failed to set quiz status: {str(e)}")
@@ -1347,96 +1680,104 @@ def api_set_quiz_status():
 # Git Sync Endpoints
 # ===========================
 
-@admin_bp.route('/admin/git-sync/status', methods=['POST'])
+
+@admin_bp.route("/admin/git-sync/status", methods=["POST"])
 def api_git_sync_status():
     """Get Git sync configuration and status"""
     print("\n[API] Git sync status request received")
-    password = request.json.get('password')
+    password = request.json.get("password")
     if password != ADMIN_PW:
         print("[API] Git sync status: Authentication failed")
         abort(403, description="Admin authentication failed.")
 
     try:
         from git_sync import get_sync_status
+
         status = get_sync_status()
         print(f"[API] Git sync status response: {status}")
         return jsonify(status)
     except Exception as e:
         print(f"[API] Error getting Git sync status: {e}")
         import traceback
+
         traceback.print_exc()
         abort(500, description=f"Failed to get sync status: {str(e)}")
 
 
-@admin_bp.route('/admin/git-sync/init', methods=['POST'])
+@admin_bp.route("/admin/git-sync/init", methods=["POST"])
 def api_git_sync_init():
     """Initialize Git repository in banks directory"""
-    password = request.json.get('password')
+    password = request.json.get("password")
     if password != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
 
     try:
         from git_sync import init_git_repo
+
         result = init_git_repo()
-        if result['success']:
+        if result["success"]:
             return jsonify(result)
         else:
-            abort(400, description=result['message'])
+            abort(400, description=result["message"])
     except Exception as e:
         print(f"Error initializing Git sync: {e}")
         abort(500, description=f"Failed to initialize: {str(e)}")
 
 
-@admin_bp.route('/admin/git-sync/sync', methods=['POST'])
+@admin_bp.route("/admin/git-sync/sync", methods=["POST"])
 def api_git_sync():
     """Sync banks with remote Git repository"""
     print("\n[API] Git sync request received")
-    password = request.json.get('password')
+    password = request.json.get("password")
     if password != ADMIN_PW:
         print("[API] Git sync: Authentication failed")
         abort(403, description="Admin authentication failed.")
 
-    pull_first = request.json.get('pull_first', True)
+    pull_first = request.json.get("pull_first", True)
     print(f"[API] Starting sync (pull_first={pull_first})")
 
     try:
         from git_sync import sync_banks
+
         result = sync_banks(pull_first=pull_first)
         print(f"[API] Sync result: {result}")
-        if result['success']:
+        if result["success"]:
             return jsonify(result)
         else:
             print(f"[API] Sync failed: {result['message']}")
-            abort(400, description=result['message'])
+            abort(400, description=result["message"])
     except Exception as e:
         print(f"[API] Error syncing banks: {e}")
         import traceback
+
         traceback.print_exc()
         abort(500, description=f"Failed to sync: {str(e)}")
 
 
 # --- Image Management Endpoints ---
 
-@admin_bp.route('/admin/images/upload', methods=['POST'])
+
+@admin_bp.route("/admin/images/upload", methods=["POST"])
 def api_upload_image():
     """Upload an image for a specific quiz"""
-    password = request.form.get('password')
+    password = request.form.get("password")
     if password != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
 
-    quiz_filename = request.form.get('quiz_filename')
+    quiz_filename = request.form.get("quiz_filename")
     if not quiz_filename:
         abort(400, description="quiz_filename is required")
 
-    if 'image' not in request.files:
+    if "image" not in request.files:
         abort(400, description="No image file provided")
 
-    image_file = request.files['image']
-    if image_file.filename == '':
+    image_file = request.files["image"]
+    if image_file.filename == "":
         abort(400, description="No image file selected")
 
     try:
         from utils import upload_image_to_quiz
+
         result = upload_image_to_quiz(quiz_filename, image_file, image_file.filename)
         return jsonify(result)
     except Conflict as e:
@@ -1446,15 +1787,16 @@ def api_upload_image():
         abort(500, description=f"Error uploading image: {str(e)}")
 
 
-@admin_bp.route('/admin/images/list/<path:quiz_filename>', methods=['GET'])
+@admin_bp.route("/admin/images/list/<path:quiz_filename>", methods=["GET"])
 def api_list_quiz_images(quiz_filename):
     """List all images for a specific quiz"""
-    password = request.args.get('password')
+    password = request.args.get("password")
     if password != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
 
     try:
         from utils import list_quiz_images
+
         images = list_quiz_images(quiz_filename)
         return jsonify({"images": images})
     except Exception as e:
@@ -1462,22 +1804,23 @@ def api_list_quiz_images(quiz_filename):
         abort(500, description=f"Error listing images: {str(e)}")
 
 
-@admin_bp.route('/admin/images/delete', methods=['DELETE'])
+@admin_bp.route("/admin/images/delete", methods=["DELETE"])
 def api_delete_quiz_image():
     """Delete an image from a quiz's images folder"""
     data = request.get_json(silent=True) or {}
-    password = data.get('password')
+    password = data.get("password")
     if password != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
 
-    quiz_filename = data.get('quiz_filename')
-    image_filename = data.get('image_filename')
+    quiz_filename = data.get("quiz_filename")
+    image_filename = data.get("image_filename")
 
     if not quiz_filename or not image_filename:
         abort(400, description="quiz_filename and image_filename are required")
 
     try:
         from utils import delete_quiz_image
+
         result = delete_quiz_image(quiz_filename, image_filename)
         return jsonify(result)
     except NotFound as e:
@@ -1487,16 +1830,17 @@ def api_delete_quiz_image():
         abort(500, description=f"Error deleting image: {str(e)}")
 
 
-@admin_bp.route('/admin/images/clear-active', methods=['POST'])
+@admin_bp.route("/admin/images/clear-active", methods=["POST"])
 def api_clear_active_quiz_images():
     """Clear all images from the active quiz images folder"""
     data = request.get_json(silent=True) or {}
-    password = data.get('password')
+    password = data.get("password")
     if password != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
 
     try:
         from utils import clear_active_quiz_images
+
         result = clear_active_quiz_images()
         return jsonify(result)
     except Exception as e:
