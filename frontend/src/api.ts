@@ -272,6 +272,31 @@ export async function saveScoreOverrides(
   return handleResponse<{ success: boolean }>(response);
 }
 
+export interface BankOverridePayload {
+  filename: string;
+  student_id: string;
+  quiz_id: string;
+  overrides: { question_id: string | number; points: number }[];
+  password: string;
+}
+
+export interface BankOverrideResponse {
+  success: boolean;
+  message: string;
+  updated_submission: ScoreEntry;
+}
+
+export async function saveBankScoreOverrides(
+  payload: BankOverridePayload,
+): Promise<BankOverrideResponse> {
+  const response = await fetch(`${API_BASE}/admin/scores-bank/override`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<BankOverrideResponse>(response);
+}
+
 // Define the shape of the response for updating questions
 export interface UpdateQuestionsResponse {
   success: boolean;

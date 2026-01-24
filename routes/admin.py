@@ -471,6 +471,100 @@ def api_preview_scores_bank_file():
         print(f"Error previewing scores bank file '{filename}': {e}")
         abort(500, description="Internal server error previewing scores bank file.")
 
+@admin_bp.route('/admin/scores-bank/override', methods=['POST'])
+def api_override_scores_bank_file():
+    """Updates scores in a specific bank file. Required for reviewing archived quiz results."""
+    from utils import SCORES_BANK_FOLDER
+    from pathlib import Path
+    import commentjson as json
+    from filelock import FileLock, Timeout
+    import tempfile
+    import os
+
+    data = request.get_json(silent=True) or {}
+
+    password = data.get('password')
+    if not password or password != ADMIN_PW:
+        raise Unauthorized(description="Admin authentication failed.")
+
+    filename = data.get('filename')
+    student_id = data.get('student_id')
+    quiz_id = data.get('quiz_id')
+    overrides = data.get('overrides')
+
+    if not filename:
+        raise BadRequest(description="Missing filename.")
+    if not student_id or not quiz_id:
+        raise BadRequest(description="Missing student_id or quiz_id.")
+    if not isinstance(overrides, list):
+        raise BadRequest(description="Invalid 'overrides' format, expected a list.")
+
+    try:
+        safe_filename = os.path.basename(filename)
+        file_path = Path(SCORES_BANK_FOLDER) / safe_filename
+
+        if not file_path.exists():
+            raise NotFound(description=f"Scores file '{safe_filename}' not found in bank.")
+
+        lock_path = f"{file_path}.lock"
+        lock = FileLock(lock_path, timeout=10)
+
+        updates_info = {'count': 0}
+
+        with lock:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                scores = json.load(f)
+
+            target_submission = None
+            target_submission_index = None
+
+            for i, record in enumerate(scores):
+                if record.get('student') == student_id and record.get('quiz_id') == quiz_id:
+                    target_submission_index = i
+                    target_submission = record
+                    break
+
+            if target_submission is None:
+                raise NotFound(description=f"Submission not found for student '{student_id}' with quiz_id '{quiz_id}'.")
+
+            target_submission, updated_count = apply_overrides(target_submission, overrides, student_id)
+            updates_info['count'] = updated_count
+
+            if updated_count > 0:
+                new_raw_points = sum(ans.get('points_awarded', 0) for ans in target_submission['answers'])
+                max_points = target_submission.get('max_points', 0)
+                new_percent = round(new_raw_points / max_points * 100, 2) if max_points else 0
+
+                target_submission['raw_points'] = round(new_raw_points, 2)
+                target_submission['percent'] = new_percent
+                target_submission['timestamp'] = datetime.datetime.utcnow().isoformat(timespec='seconds')
+
+                scores[target_submission_index] = target_submission
+
+                temp_fd, temp_path = tempfile.mkstemp(dir=str(file_path.parent), suffix='.tmp')
+                try:
+                    with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
+                        json.dump(scores, f, indent=2)
+                    os.replace(temp_path, str(file_path))
+                except Exception as e:
+                    if os.path.exists(temp_path):
+                        os.unlink(temp_path)
+                    raise e
+
+                print(f"Applied {updated_count} overrides for student '{student_id}', quiz '{quiz_id}' in bank file '{safe_filename}'.")
+            else:
+                print(f"No effective overrides applied for student '{student_id}', quiz '{quiz_id}' in bank file '{safe_filename}'.")
+
+        return jsonify({"success": True, "message": f"{updates_info['count']} overrides applied.", "updated_submission": target_submission})
+
+    except (NotFound, BadRequest, Unauthorized) as e:
+        raise e
+    except Timeout:
+        raise InternalServerError(description="Could not save scores due to lock timeout. Please try again.")
+    except Exception as e:
+        print(f"Error overriding scores in bank file: {e}")
+        raise InternalServerError(description=f"Error overriding scores in bank file: {str(e)}")
+
 @admin_bp.route('/admin/scores/recalculate', methods=['POST'])
 def api_recalculate_all_scores():
     """Re-grades all submissions against the current question bank.
