@@ -1,7 +1,7 @@
 // frontend/src/pages/AdminScoresBankReviewPage.tsx
 import { useState, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   fetchScoresBankFiles,
   fetchPreviewScoresBankFile,
@@ -9,17 +9,23 @@ import {
   ScoresBankFilesResponse,
   ScoreEntry,
   QuizData,
+  saveBankScoreOverrides,
+  BankOverridePayload,
 } from "../api";
 import SubmissionDetailView from "../components/SubmissionDetailView";
 
 function AdminScoresBankReviewPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const adminPassword = location.state?.adminPassword;
   
   const [selectedFilename, setSelectedFilename] = useState<string | null>(null);
   const [viewBy, setViewBy] = useState<"student" | "question">("student");
   const [selectedStudentSubmission, setSelectedStudentSubmission] = useState<ScoreEntry | null>(null);
+  const [expandedQuestionId, setExpandedQuestionId] = useState<string | number | null>(null);
+  const [questionOverrides, setQuestionOverrides] = useState<Record<string, number>>({});
+  const [savingStudent, setSavingStudent] = useState<string | null>(null);
   
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -114,7 +120,7 @@ function AdminScoresBankReviewPage() {
   const handleSelectFile = (filename: string) => {
     setSelectedFilename(filename);
     setSelectedStudentSubmission(null);
-    
+    setExpandedQuestionId(null);
     setError(null);
     setMessage(`Loaded scores from ${filename}`);
   };
@@ -122,7 +128,66 @@ function AdminScoresBankReviewPage() {
   const handleBack = () => {
     setSelectedFilename(null);
     setSelectedStudentSubmission(null);
+    setExpandedQuestionId(null);
+  };
+
+  const handleSubmissionUpdated = (updatedSubmission: ScoreEntry) => {
+    queryClient.invalidateQueries({ queryKey: ["scoresBankPreview", selectedFilename, adminPassword] });
+    setSelectedStudentSubmission(updatedSubmission);
+  };
+
+  const saveQuestionOverrideMutation = useMutation({
+    mutationFn: saveBankScoreOverrides,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scoresBankPreview", selectedFilename, adminPassword] });
+      setMessage("Score updated successfully!");
+      setSavingStudent(null);
+    },
+    onError: (err: any) => {
+      setError(`Failed to save: ${err.message}`);
+      setSavingStudent(null);
+    },
+  });
+
+  const handleQuestionOverrideChange = (studentEmail: string, newPoints: string, maxPoints: number) => {
+    const key = studentEmail;
+    const points = newPoints === "" ? undefined : parseFloat(newPoints);
     
+    setQuestionOverrides(prev => {
+      const updated = { ...prev };
+      if (points === undefined || isNaN(points)) {
+        delete updated[key];
+      } else {
+        updated[key] = Math.max(0, Math.min(points, maxPoints));
+      }
+      return updated;
+    });
+  };
+
+  const handleSaveQuestionOverride = (studentEmail: string, questionId: string | number, quizId: string) => {
+    if (!selectedFilename || !adminPassword) return;
+    
+    const newPoints = questionOverrides[studentEmail];
+    if (newPoints === undefined) return;
+    
+    setSavingStudent(studentEmail);
+    setError(null);
+    setMessage(null);
+    
+    const payload: BankOverridePayload = {
+      filename: selectedFilename,
+      student_id: studentEmail,
+      quiz_id: quizId,
+      overrides: [{ question_id: questionId, points: newPoints }],
+      password: adminPassword,
+    };
+    
+    saveQuestionOverrideMutation.mutate(payload);
+    setQuestionOverrides(prev => {
+      const updated = { ...prev };
+      delete updated[studentEmail];
+      return updated;
+    });
   };
 
   if (!adminPassword) {
@@ -143,14 +208,22 @@ function AdminScoresBankReviewPage() {
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Scores Bank Review</h1>
-        {selectedFilename && (
+        <div className="flex gap-2">
+          {selectedFilename && (
+            <button
+              onClick={handleBack}
+              className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
+            >
+              ← Back to Files
+            </button>
+          )}
           <button
-            onClick={handleBack}
-            className="px-4 py-2 bg-gray-600 text-white rounded-md"
+            onClick={() => navigate("/admin/dashboard", { state: { adminPassword } })}
+            className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
           >
-            ← Back to Files
+            Back to Dashboard
           </button>
-        )}
+        </div>
       </div>
 
       {error && <div className="text-red-500 mb-4">{error}</div>}
@@ -258,57 +331,155 @@ function AdminScoresBankReviewPage() {
               ))}
             </div>
           ) : (
-            // By Question View
+            // By Question View - click question to expand and edit scores inline
             <div className="space-y-4">
-              {questionSummary.map(({ question, answers, correctCount, avgPoints }) => (
-                <div key={String(question.id)} className="border p-4 rounded-md">
-                  <div className="font-medium mb-2">
-                    Q{question.id}: {question.text.substring(0, 50)}{question.text.length > 50 ? "..." : ""}
-                  </div>
-                  <div className="text-sm text-gray-600 mb-3">
-                    Avg Points: {avgPoints} / {question.weight} | Correct: {correctCount}/{answers.length}
-                  </div>
-                  <div className="text-xs text-gray-500 mb-3">
-                    Type: {question.type} | Weight: {question.weight}
-                  </div>
-                  
-                  {/* Show student answers */}
-                  <div className="border-t pt-3 mt-3">
-                    <div className="text-sm font-medium mb-2">Student Answers:</div>
-                    <div className="space-y-1">
-                      {answers.slice(0, 5).map(({ student, answer }) => (
-                        <div key={student} className="text-xs flex justify-between">
-                          <span className="truncate">{student}</span>
-                          <span className={`ml-2 ${
-                            (answer?.points_awarded || 0) === (answer?.weight || question.weight)
-                              ? "text-green-600"
-                              : (answer?.points_awarded || 0) > 0
-                              ? "text-yellow-600"
-                              : "text-red-600"
-                          }`}>
-                            {(answer?.points_awarded || 0).toString()}/{(answer?.weight || question.weight).toString()}
-                          </span>
+              {questionSummary.map(({ question, answers, correctCount, avgPoints }) => {
+                const isExpanded = expandedQuestionId === question.id;
+                
+                return (
+                  <div key={String(question.id)} className="border rounded-md overflow-hidden">
+                    <div 
+                      className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                      onClick={() => {
+                        setExpandedQuestionId(isExpanded ? null : question.id);
+                        setQuestionOverrides({});
+                      }}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="font-medium mb-1">
+                            Q{question.id}: {question.text}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            Avg: {avgPoints}/{question.weight} | Correct: {correctCount}/{answers.length} | Type: {question.type}
+                          </div>
                         </div>
-                      ))}
-                      {answers.length > 5 && (
-                        <div className="text-xs text-gray-500">
-                          ... and {answers.length - 5} more
-                        </div>
-                      )}
+                        <span className="text-gray-400 text-xl ml-4">
+                          {isExpanded ? "▼" : "▶"}
+                        </span>
+                      </div>
                     </div>
+                    
+                    {isExpanded && (
+                      <div className="border-t bg-gray-50 p-4">
+                        <div className="text-sm font-medium mb-3">
+                          Edit scores for this question ({answers.length} students):
+                        </div>
+                        <div className="space-y-3 max-h-96 overflow-y-auto">
+                          {answers.map(({ student, answer }) => {
+                            const submission = scoresData?.find(s => s.student === student);
+                            const quizId = submission?.quiz_id || "";
+                            const currentPoints = answer?.points_awarded || 0;
+                            const maxPoints = answer?.weight || question.weight;
+                            const hasOverride = questionOverrides[student] !== undefined;
+                            const displayPoints = hasOverride ? questionOverrides[student] : currentPoints;
+                            const isSaving = savingStudent === student;
+                            
+                            return (
+                              <div 
+                                key={student} 
+                                className="bg-white border rounded-md p-3 shadow-sm"
+                              >
+                                <div className="flex flex-col md:flex-row md:items-center gap-3">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-medium text-sm truncate">{student}</div>
+                                    <div className="text-xs text-gray-500 mt-1">
+                                      <span className="font-medium">Answer: </span>
+                                      <span className="font-mono bg-gray-100 px-1 rounded">
+                                        {JSON.stringify(answer?.student_answer ?? "N/A")}
+                                      </span>
+                                    </div>
+                                    <div className="text-xs text-green-700 mt-1">
+                                      <span className="font-medium">Correct: </span>
+                                      <span className="font-mono bg-green-50 px-1 rounded">
+                                        {JSON.stringify(answer?.correct_answer ?? "N/A")}
+                                      </span>
+                                    </div>
+                                    {question.type === 'open' && (answer?.llm_verdict || answer?.llm_feedback) && (
+                                      <div className="mt-2 p-2 bg-purple-50 rounded border border-purple-100 text-xs">
+                                        <div className="font-semibold text-purple-800 mb-1">
+                                          🤖 LLM Evaluation
+                                        </div>
+                                        {answer.llm_verdict && (
+                                          <div className="mb-1">
+                                            <span className="font-medium">Verdict:</span>{" "}
+                                            <span className={`px-1.5 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${
+                                              answer.llm_verdict.toLowerCase() === 'correct' ? 'bg-green-100 text-green-700' :
+                                              answer.llm_verdict.toLowerCase() === 'incorrect' ? 'bg-red-100 text-red-700' :
+                                              'bg-yellow-100 text-yellow-700'
+                                            }`}>
+                                              {answer.llm_verdict}
+                                            </span>
+                                          </div>
+                                        )}
+                                        {answer.llm_feedback && (
+                                          <div>
+                                            <span className="font-medium">Feedback:</span>{" "}
+                                            <span className="text-gray-700 italic">{answer.llm_feedback}</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max={maxPoints}
+                                        step="0.5"
+                                        value={displayPoints}
+                                        onChange={(e) => handleQuestionOverrideChange(student, e.target.value, maxPoints)}
+                                        className="w-16 border rounded px-2 py-1 text-sm text-center"
+                                      />
+                                      <span className="text-sm text-gray-500">/ {maxPoints}</span>
+                                    </div>
+                                    
+                                    <button
+                                      onClick={() => handleSaveQuestionOverride(student, question.id, quizId)}
+                                      disabled={!hasOverride || isSaving}
+                                      className={`px-3 py-1 text-sm rounded transition-colors ${
+                                        hasOverride && !isSaving
+                                          ? "bg-blue-600 text-white hover:bg-blue-700"
+                                          : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                      }`}
+                                    >
+                                      {isSaving ? "..." : "Save"}
+                                    </button>
+                                    
+                                    <span className={`text-lg ${
+                                      currentPoints === maxPoints
+                                        ? "text-green-600"
+                                        : currentPoints > 0
+                                        ? "text-yellow-500"
+                                        : "text-red-500"
+                                    }`}>
+                                      {currentPoints === maxPoints ? "✓" : currentPoints > 0 ? "⚠" : "✗"}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
           
-          {selectedStudentSubmission && (
+          {selectedStudentSubmission && selectedFilename && (
             <div className="mt-6 border-t pt-6">
               <h3 className="text-lg font-semibold mb-4">Student Detail: {selectedStudentSubmission.student}</h3>
               <SubmissionDetailView
                 studentSubmission={selectedStudentSubmission}
                 adminPassword={adminPassword}
                 onClose={() => setSelectedStudentSubmission(null)}
+                bankFilename={selectedFilename}
+                onSubmissionUpdated={handleSubmissionUpdated}
               />
             </div>
           )}

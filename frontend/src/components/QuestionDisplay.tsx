@@ -138,6 +138,11 @@ function QuestionDisplay({
     }
   };
 
+  const cleanMarkdown = (text: string) => {
+    if (!text) return "";
+    return text.replace(/([^\n])```$/g, "$1\n```");
+  };
+
   return (
     <div className="space-y-4" ref={containerRef}>
       {/* --- NEW: Display question image --- */}
@@ -189,7 +194,7 @@ function QuestionDisplay({
             },
           }}
         >
-          {question.text || ""}
+          {cleanMarkdown(question.text || "")}
         </ReactMarkdown>
       </div>
 

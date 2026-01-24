@@ -4,20 +4,24 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ScoreEntry, saveScoreOverrides, OverridePayload } from "../api"; // Import API functions and types
-import LoadingSpinner from "./LoadingSpinner"; // Assuming this exists
-import ErrorDisplay from "./ErrorDisplay"; // Assuming this exists
+import { ScoreEntry, saveScoreOverrides, OverridePayload, saveBankScoreOverrides, BankOverridePayload } from "../api";
+import LoadingSpinner from "./LoadingSpinner";
+import ErrorDisplay from "./ErrorDisplay";
 
 interface Props {
-  studentSubmission: ScoreEntry | null; // Allow null to handle deselection easily
-  adminPassword: string; // Needed for the save API call
-  onClose: () => void; // Function to close this detail view
+  studentSubmission: ScoreEntry | null;
+  adminPassword: string;
+  onClose: () => void;
+  bankFilename?: string;
+  onSubmissionUpdated?: (updatedSubmission: ScoreEntry) => void;
 }
 
 function SubmissionDetailView({
   studentSubmission,
   adminPassword,
   onClose,
+  bankFilename,
+  onSubmissionUpdated,
 }: Props) {
   const queryClient = useQueryClient();
   // State to hold the score overrides keyed by question_id
@@ -30,30 +34,20 @@ function SubmissionDetailView({
     success?: string | null;
   }>({});
 
-  // Effect to reset overrides when the selected submission changes
   useEffect(() => {
-    setOverrides({}); // Clear overrides when a new student is selected or deselected
-    setSaveStatus({}); // Clear status messages
+    setOverrides({});
+    setSaveStatus({});
   }, [studentSubmission]);
 
-  // Mutation hook for saving the overrides
   const saveMutation = useMutation({
-    mutationFn: saveScoreOverrides, // API function to call
-    onSuccess: (data) => {
-      console.log("Overrides saved successfully:", data);
+    mutationFn: saveScoreOverrides,
+    onSuccess: () => {
       setSaveStatus({ success: "Overrides saved successfully!", error: null });
-      setOverrides({}); // Clear local override state after successful save
-
-      // Invalidate queries to refetch data in the dashboard
+      setOverrides({});
       queryClient.invalidateQueries({ queryKey: ["adminScores"] });
-      // Optionally invalidate details if you were fetching them separately
-      // queryClient.invalidateQueries({ queryKey: ['submissionDetails', studentSubmission?.student, studentSubmission?.quiz_id] });
-
-      // Optional: Close the detail view automatically after save
-      setTimeout(onClose, 1500); // Close after 1.5 seconds
+      setTimeout(onClose, 1500);
     },
     onError: (err: any) => {
-      console.error("Failed to save overrides:", err);
       setSaveStatus({
         error: `Failed to save overrides: ${err.message}`,
         success: null,
@@ -61,7 +55,25 @@ function SubmissionDetailView({
     },
   });
 
-  // Handler for changes in the override input fields
+  const saveBankMutation = useMutation({
+    mutationFn: saveBankScoreOverrides,
+    onSuccess: (data) => {
+      setSaveStatus({ success: "Bank scores updated successfully!", error: null });
+      setOverrides({});
+      queryClient.invalidateQueries({ queryKey: ["scoresBankPreview", bankFilename] });
+      if (onSubmissionUpdated && data.updated_submission) {
+        onSubmissionUpdated(data.updated_submission);
+      }
+      setTimeout(onClose, 1500);
+    },
+    onError: (err: any) => {
+      setSaveStatus({
+        error: `Failed to save bank overrides: ${err.message}`,
+        success: null,
+      });
+    },
+  });
+
   const handleOverrideChange = (
     questionId: string | number,
     pointsStr: string,
@@ -107,23 +119,32 @@ function SubmissionDetailView({
       return;
     }
 
-    const payload: OverridePayload = {
-      student_id: studentSubmission.student,
-      quiz_id: studentSubmission.quiz_id,
-      overrides: overridePayloadData,
-      password: adminPassword, // Pass password for backend auth
-    };
-
-    saveMutation.mutate(payload); // Execute the mutation
+    if (bankFilename) {
+      const bankPayload: BankOverridePayload = {
+        filename: bankFilename,
+        student_id: studentSubmission.student,
+        quiz_id: studentSubmission.quiz_id,
+        overrides: overridePayloadData,
+        password: adminPassword,
+      };
+      saveBankMutation.mutate(bankPayload);
+    } else {
+      const payload: OverridePayload = {
+        student_id: studentSubmission.student,
+        quiz_id: studentSubmission.quiz_id,
+        overrides: overridePayloadData,
+        password: adminPassword,
+      };
+      saveMutation.mutate(payload);
+    }
   };
 
-  // Render null if no submission is selected
   if (!studentSubmission) {
     return null;
   }
 
-  // Determine if there are any pending changes
   const hasPendingOverrides = Object.keys(overrides).length > 0;
+  const isSaving = saveMutation.isPending || saveBankMutation.isPending;
 
   function displayOptionImages(images: any, answers: any) {
     // Implement logic to display option images
@@ -322,12 +343,12 @@ function SubmissionDetailView({
 
         <button
           onClick={handleSaveChanges}
-          disabled={saveMutation.isPending || !hasPendingOverrides}
+          disabled={isSaving || !hasPendingOverrides}
           className="px-5 py-2 bg-purple-600 text-white font-medium rounded-md shadow hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          {saveMutation.isPending ? (
+          {isSaving ? (
             <>
-              <LoadingSpinner message="" /> {/* Minimal spinner */}
+              <LoadingSpinner message="" />
               Saving...
             </>
           ) : (
