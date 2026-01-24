@@ -2,6 +2,7 @@ import os
 import sys
 from pathlib import Path
 import importlib
+import json
 
 import pytest
 
@@ -10,9 +11,10 @@ import pytest
 def app_client(tmp_path, monkeypatch):
     monkeypatch.setenv("ADMIN_PW", "testpw")
 
-    (tmp_path / "students.jsonc").write_text(
-        '["student@example.com"]', encoding="utf-8"
-    )
+    student_list = ["student@example.com"] + [
+        f"student{i:03d}@example.com" for i in range(50)
+    ]
+    (tmp_path / "students.jsonc").write_text(json.dumps(student_list), encoding="utf-8")
     (tmp_path / "questions.jsonc").write_text(
         '{"title":"Test Quiz","questions":[{"id":"q1","type":"single","text":"Q1","options":["A","B"],"answer":0,"weight":1}]}',
         encoding="utf-8",
