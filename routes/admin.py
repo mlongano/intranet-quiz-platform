@@ -163,7 +163,7 @@ def api_save_review():
 
             target_submission['raw_points'] = round(new_raw_points, 2)
             target_submission['percent'] = new_percent
-            target_submission['timestamp'] = datetime.datetime.utcnow().isoformat(timespec='seconds')
+            target_submission['timestamp'] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')
 
             scores[target_submission_index] = target_submission
             print(f"Applied {updated_count} overrides for student '{student_id}', quiz '{quiz_id}'.")
@@ -537,7 +537,7 @@ def api_override_scores_bank_file():
 
                 target_submission['raw_points'] = round(new_raw_points, 2)
                 target_submission['percent'] = new_percent
-                target_submission['timestamp'] = datetime.datetime.utcnow().isoformat(timespec='seconds')
+                target_submission['timestamp'] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')
 
                 scores[target_submission_index] = target_submission
 

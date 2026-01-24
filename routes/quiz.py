@@ -156,7 +156,7 @@ def api_start():
         "quiz_id": quiz_id,
         "student": student,
         "quiz_title": quiz_title,  # Store the quiz title
-        "created": datetime.datetime.utcnow().isoformat(timespec='seconds'),
+        "created": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'),
         "plan": quiz_plan_steps
     }
 
@@ -203,7 +203,7 @@ def api_save_answer():
         plan['progression'] = {
             'current_index': 0,
             'answers': {},
-            'last_updated': datetime.datetime.utcnow().isoformat(timespec='seconds')
+            'last_updated': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')
         }
 
     progression = plan['progression']
@@ -224,7 +224,7 @@ def api_save_answer():
     answers[answer_key] = answer
     progression['answers'] = answers
     progression['current_index'] = current_index + 1
-    progression['last_updated'] = datetime.datetime.utcnow().isoformat(timespec='seconds')
+    progression['last_updated'] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')
 
     # Write updated plan atomically
     try:
@@ -318,7 +318,7 @@ def api_submit():
         'raw_points': calc_results['raw_points'],
         'max_points': calc_results['max_points'],
         'percent': calc_results['percent'],
-        'timestamp':  datetime.datetime.utcnow().isoformat(timespec='seconds')
+        'timestamp':  datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')
     }
 
     # Atomically append the score (includes duplicate check within lock)
@@ -361,7 +361,7 @@ def api_resume(quiz_id):
         plan['progression'] = {
             'current_index': 0,
             'answers': {},
-            'last_updated': datetime.datetime.utcnow().isoformat(timespec='seconds')
+            'last_updated': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')
         }
 
     try:

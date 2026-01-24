@@ -7,7 +7,7 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 from typing import Optional
 
@@ -47,12 +47,9 @@ def format_quiz_results_html(submission: dict, include_details: bool = True, sub
     # Format timestamp
     try:
         dt = datetime.fromisoformat(timestamp)
-        # The timestamp is in UTC (from utcnow()), so we need to tell Python it's UTC
-        # then convert to local time
-        import time
-        from datetime import timezone
-        dt_utc = dt.replace(tzinfo=timezone.utc)
-        local_dt = dt_utc.astimezone()
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        local_dt = dt.astimezone()
         formatted_time = local_dt.strftime('%d/%m/%Y %H:%M:%S')
     except:
         formatted_time = timestamp
