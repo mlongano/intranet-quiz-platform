@@ -13,3 +13,14 @@ dependencies = [
     "waitress>=3.0.2",
     "requests>=2.31.0",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore:.*sre_parse.*:DeprecationWarning",
+    "ignore:.*sre_constants.*:DeprecationWarning",
+]
