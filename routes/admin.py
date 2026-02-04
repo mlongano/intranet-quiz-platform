@@ -9,6 +9,7 @@ from werkzeug.exceptions import (
     Conflict,
 )
 import datetime
+import os
 
 # Import necessary functions and data from utils
 from utils import (
@@ -710,6 +711,196 @@ def api_override_scores_bank_file():
         print(f"Error overriding scores in bank file: {e}")
         raise InternalServerError(
             description=f"Error overriding scores in bank file: {str(e)}"
+        )
+
+
+@admin_bp.route("/admin/llm-info", methods=["POST"])
+def api_llm_info():
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get("pw")
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+
+    provider = os.getenv("LLM_PROVIDER", "openai").lower()
+    if provider == "openai":
+        model = os.getenv("LLM_MODEL", "gpt-3.5-turbo")
+    elif provider == "google":
+        model = "gemini-pro"
+    else:
+        model = "unknown"
+
+    return jsonify(
+        {
+            "provider": provider,
+            "model": model,
+            "enabled": os.getenv("USE_LLM_EVAL", "0") == "1",
+        }
+    )
+
+
+@admin_bp.route("/admin/scores-bank/regrade-open", methods=["POST"])
+def api_regrade_open_scores_bank_file():
+    """Re-grades only open questions in a specific scores bank file."""
+    from utils import SCORES_BANK_FOLDER, load_questions, score_open
+    from pathlib import Path
+    import commentjson as json
+    from filelock import FileLock, Timeout
+    import tempfile
+    import os
+
+    data = request.get_json(silent=True) or {}
+    auth_pw = data.get("pw")
+    filename = data.get("filename")
+    force_llm = data.get("use_llm")
+
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403, description="Admin authentication failed.")
+    if not filename:
+        abort(400, description="Missing filename.")
+
+    try:
+        quiz_data = load_questions()
+        questions = quiz_data.get("questions", [])
+        qbank_map = {q.get("id"): q for q in questions}
+    except Exception as e:
+        print(f"Error loading questions for regrade: {e}")
+        raise InternalServerError(description="Failed to load question bank.")
+
+    try:
+        safe_filename = os.path.basename(filename)
+        file_path = Path(SCORES_BANK_FOLDER) / safe_filename
+
+        if not file_path.exists():
+            raise NotFound(
+                description=f"Scores file '{safe_filename}' not found in bank."
+            )
+
+        lock_path = f"{file_path}.lock"
+        lock = FileLock(lock_path, timeout=10)
+
+        results = {"updated_submissions": 0, "updated_answers": 0, "errors": []}
+
+        with lock:
+            with open(file_path, "r", encoding="utf-8") as f:
+                scores = json.load(f)
+
+            for idx, score_entry in enumerate(scores):
+                answers = score_entry.get("answers")
+                if not isinstance(answers, list):
+                    results["errors"].append(
+                        f"Student {score_entry.get('student')}: invalid answers list"
+                    )
+                    continue
+
+                updated_any = False
+                for answer_detail in answers:
+                    q_id = answer_detail.get("question_id")
+                    if q_id not in qbank_map:
+                        results["errors"].append(
+                            f"Student {score_entry.get('student')}: Question {q_id} not found"
+                        )
+                        continue
+
+                    q = qbank_map[q_id]
+                    if q.get("type") != "open":
+                        continue
+
+                    student_ans = answer_detail.get("student_answer", "")
+                    weight = answer_detail.get("weight", q.get("weight", 1))
+
+                    use_llm = (
+                        force_llm
+                        if isinstance(force_llm, bool)
+                        else (os.getenv("USE_LLM_EVAL", "0") == "1")
+                    )
+
+                    llm_feedback = None
+                    llm_verdict = None
+
+                    if use_llm:
+                        try:
+                            from llm_evaluator import evaluate_open_question
+
+                            correct_answers = (
+                                q.get("acceptable") or q.get("keywords") or []
+                            )
+                            llm_result = evaluate_open_question(
+                                q.get("text", ""),
+                                str(student_ans or ""),
+                                correct_answers,
+                            )
+                            open_score_fraction = float(llm_result.get("score", 0))
+                            llm_feedback = llm_result.get("llm_feedback")
+                            llm_verdict = llm_result.get("verdict")
+                        except Exception as e:
+                            print(
+                                f"LLM evaluation failed: {e}. Falling back to classic scoring."
+                            )
+                            open_score_fraction = score_open(str(student_ans or ""), q)
+                    else:
+                        open_score_fraction = score_open(str(student_ans or ""), q)
+
+                    answer_detail["points_awarded"] = round(
+                        weight * open_score_fraction, 2
+                    )
+                    answer_detail["llm_feedback"] = llm_feedback
+                    answer_detail["llm_verdict"] = llm_verdict
+
+                    if "acceptable" in q:
+                        answer_detail["correct_answer"] = q["acceptable"]
+                    elif "keywords" in q:
+                        answer_detail["correct_answer"] = {"keywords": q["keywords"]}
+
+                    updated_any = True
+                    results["updated_answers"] += 1
+
+                if updated_any:
+                    new_raw_points = sum(
+                        ans.get("points_awarded", 0) for ans in answers
+                    )
+                    max_points = score_entry.get("max_points", 0)
+                    new_percent = (
+                        round(new_raw_points / max_points * 100, 2) if max_points else 0
+                    )
+                    score_entry["raw_points"] = round(new_raw_points, 2)
+                    score_entry["percent"] = new_percent
+                    score_entry["timestamp"] = datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat(timespec="seconds")
+                    scores[idx] = score_entry
+                    results["updated_submissions"] += 1
+
+            temp_fd, temp_path = tempfile.mkstemp(
+                dir=str(file_path.parent), suffix=".tmp"
+            )
+            try:
+                with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
+                    json.dump(scores, f, indent=2)
+                os.replace(temp_path, str(file_path))
+            except Exception as e:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+                raise e
+
+        return jsonify(
+            {
+                "success": True,
+                "message": "Open questions regraded successfully.",
+                **results,
+            }
+        )
+
+    except (NotFound, BadRequest, Unauthorized) as e:
+        raise e
+    except Timeout:
+        raise InternalServerError(
+            description="Could not save scores due to lock timeout. Please try again."
+        )
+    except Exception as e:
+        print(f"Error regrading open questions in bank file: {e}")
+        raise InternalServerError(
+            description=f"Error regrading open questions in bank file: {str(e)}"
         )
 
 
