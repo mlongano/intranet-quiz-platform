@@ -54,37 +54,55 @@ os.makedirs(QUESTION_BANK_FOLDER, exist_ok=True) # Ensure question_bank folder e
 os.makedirs(SCORES_BANK_FOLDER, exist_ok=True) # NEW: Ensure scores_bank folder exists
 os.makedirs(STUDENTS_BANK_FOLDER, exist_ok=True) # NEW: Ensure students_bank folder exists
 
-# --- Load initial student data ---
-try:
-    with open(STUDENTS_FILE, encoding='utf-8') as f:
-        students_data = json.load(f)
-        VALID_STUDENTS = set()
+_students_cache = None
+_students_mtime = 0
 
-        # Handle different student formats
-        for item in students_data:
-            if isinstance(item, str):
-                # Simple string format: "email@example.com"
-                VALID_STUDENTS.add(item.lower())
-            elif isinstance(item, dict):
-                if 'email' in item:
-                    # Individual format: {"email": "...", "group": "..."}
-                    VALID_STUDENTS.add(item['email'].lower())
-                elif 'emails' in item:
-                    # Group format: {"group": "...", "emails": [...]}
-                    for email in item.get('emails', []):
-                        VALID_STUDENTS.add(email.lower())
+def load_valid_students() -> set:
+    """Loads valid students from file with auto-reload when file changes."""
+    global _students_cache, _students_mtime
+    
+    try:
+        current_mtime = os.path.getmtime(STUDENTS_FILE)
+    except OSError:
+        if _students_cache is None:
+            print(f"Error: {STUDENTS_FILE} not found. Quiz start will likely fail.")
+        return set()
+    
+    if _students_cache is not None and current_mtime == _students_mtime:
+        return _students_cache
+    
+    try:
+        with open(STUDENTS_FILE, encoding='utf-8') as f:
+            students_data = json.load(f)
+            valid_students = set()
 
-        if not VALID_STUDENTS:
-            print(f"Warning: No valid students found in {STUDENTS_FILE}. Quiz start may fail.")
-except FileNotFoundError:
-    print(f"Error: {STUDENTS_FILE} not found. Quiz start will likely fail.")
-    VALID_STUDENTS = set()
-except ValueError as e:
-    print(f"Error loading {STUDENTS_FILE}: {e}. Quiz start may fail.")
-    VALID_STUDENTS = set()
-except Exception as e:
-    print(f"Unexpected error loading {STUDENTS_FILE}: {e}. Quiz start may fail.")
-    VALID_STUDENTS = set()
+            for item in students_data:
+                if isinstance(item, str):
+                    valid_students.add(item.lower())
+                elif isinstance(item, dict):
+                    if 'email' in item:
+                        valid_students.add(item['email'].lower())
+                    elif 'emails' in item:
+                        for email in item.get('emails', []):
+                            valid_students.add(email.lower())
+
+            if not valid_students:
+                print(f"Warning: No valid students found in {STUDENTS_FILE}. Quiz start may fail.")
+            else:
+                print(f"[UTILS] Loaded {len(valid_students)} students from {STUDENTS_FILE}")
+            
+            _students_cache = valid_students
+            _students_mtime = current_mtime
+            return valid_students
+            
+    except ValueError as e:
+        print(f"Error loading {STUDENTS_FILE}: {e}. Quiz start may fail.")
+        return _students_cache if _students_cache else set()
+    except Exception as e:
+        print(f"Unexpected error loading {STUDENTS_FILE}: {e}. Quiz start may fail.")
+        return _students_cache if _students_cache else set()
+
+VALID_STUDENTS = None
 
 
 # --- Utilities ---

@@ -11,7 +11,7 @@ import os
 
 # Import necessary functions and data from utils
 from utils import (
-    VALID_STUDENTS,
+    load_valid_students,
     QUIZ_FOLDER,
     format_image_url,
     load_scores,
@@ -130,8 +130,9 @@ def api_start():
         # If we can't read status, allow quiz to proceed (fail-open)
         pass
 
+    valid_students = load_valid_students()
     if (
-        VALID_STUDENTS and student not in VALID_STUDENTS
+        valid_students and student not in valid_students
     ):  # Check if VALID_STUDENTS is populated
         return jsonify(error="Email non riconosciuta"), 403
 
