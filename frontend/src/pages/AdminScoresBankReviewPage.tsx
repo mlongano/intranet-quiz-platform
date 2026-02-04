@@ -11,6 +11,10 @@ import {
   QuizData,
   saveBankScoreOverrides,
   BankOverridePayload,
+  regradeOpenScoresBank,
+  RegradeOpenBankResponse,
+  fetchLlmInfo,
+  LlmInfoResponse,
 } from "../api";
 import SubmissionDetailView from "../components/SubmissionDetailView";
 
@@ -19,14 +23,14 @@ function AdminScoresBankReviewPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const adminPassword = location.state?.adminPassword;
-  
+
   const [selectedFilename, setSelectedFilename] = useState<string | null>(null);
   const [viewBy, setViewBy] = useState<"student" | "question">("student");
   const [selectedStudentSubmission, setSelectedStudentSubmission] = useState<ScoreEntry | null>(null);
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | number | null>(null);
   const [questionOverrides, setQuestionOverrides] = useState<Record<string, number>>({});
   const [savingStudent, setSavingStudent] = useState<string | null>(null);
-  
+
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -60,6 +64,17 @@ function AdminScoresBankReviewPage() {
     enabled: !!adminPassword,
   });
 
+  const { data: llmInfo } = useQuery<LlmInfoResponse, Error>({
+    queryKey: ["llmInfo", adminPassword],
+    queryFn: () => {
+      if (!adminPassword) {
+        throw new Error("Admin password not available.");
+      }
+      return fetchLlmInfo(adminPassword);
+    },
+    enabled: !!adminPassword,
+  });
+
   // Fetch selected scores file
   const {
     data: scoresData,
@@ -78,13 +93,13 @@ function AdminScoresBankReviewPage() {
   // Calculate statistics
   const stats = useMemo(() => {
     if (!scoresData) return null;
-    
+
     const totalStudents = scoresData.length;
     const completedStudents = scoresData.filter(s => s.percent > 0).length;
-    const avgScore = totalStudents > 0 
-      ? scoresData.reduce((sum, s) => sum + s.percent, 0) / totalStudents 
+    const avgScore = totalStudents > 0
+      ? scoresData.reduce((sum, s) => sum + s.percent, 0) / totalStudents
       : 0;
-    
+
     return {
       totalStudents,
       completedStudents,
@@ -95,7 +110,7 @@ function AdminScoresBankReviewPage() {
   // Calculate question summary for question view
   const questionSummary = useMemo(() => {
     if (!scoresData || !questionsData) return [];
-    
+
     return questionsData.questions.map((question) => {
       const questionAnswers = scoresData.map((student) => {
         const answer = student.answers.find((a) => String(a.question_id) === String(question.id));
@@ -104,10 +119,10 @@ function AdminScoresBankReviewPage() {
           answer,
         };
       });
-      
+
       const correctCount = questionAnswers.filter((q) => q.answer && q.answer.points_awarded === q.answer.weight).length;
       const avgPoints = questionAnswers.reduce((sum, q) => sum + (q.answer?.points_awarded || 0), 0) / scoresData.length;
-      
+
       return {
         question,
         answers: questionAnswers,
@@ -149,10 +164,28 @@ function AdminScoresBankReviewPage() {
     },
   });
 
+  const regradeOpenMutation = useMutation<RegradeOpenBankResponse, Error, { filename: string; useLLM?: boolean }>({
+    mutationFn: ({ filename, useLLM }) => {
+      if (!adminPassword) {
+        throw new Error("Admin password not available.");
+      }
+      setError(null);
+      setMessage(null);
+      return regradeOpenScoresBank(filename, adminPassword, useLLM);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["scoresBankPreview", selectedFilename, adminPassword] });
+      setMessage(`Regraded open questions. Updated ${data.updated_answers} answers in ${data.updated_submissions} submissions.`);
+    },
+    onError: (err: any) => {
+      setError(`Failed to regrade open questions: ${err.message}`);
+    },
+  });
+
   const handleQuestionOverrideChange = (studentEmail: string, newPoints: string, maxPoints: number) => {
     const key = studentEmail;
     const points = newPoints === "" ? undefined : parseFloat(newPoints);
-    
+
     setQuestionOverrides(prev => {
       const updated = { ...prev };
       if (points === undefined || isNaN(points)) {
@@ -166,14 +199,14 @@ function AdminScoresBankReviewPage() {
 
   const handleSaveQuestionOverride = (studentEmail: string, questionId: string | number, quizId: string) => {
     if (!selectedFilename || !adminPassword) return;
-    
+
     const newPoints = questionOverrides[studentEmail];
     if (newPoints === undefined) return;
-    
+
     setSavingStudent(studentEmail);
     setError(null);
     setMessage(null);
-    
+
     const payload: BankOverridePayload = {
       filename: selectedFilename,
       student_id: studentEmail,
@@ -181,7 +214,7 @@ function AdminScoresBankReviewPage() {
       overrides: [{ question_id: questionId, points: newPoints }],
       password: adminPassword,
     };
-    
+
     saveQuestionOverrideMutation.mutate(payload);
     setQuestionOverrides(prev => {
       const updated = { ...prev };
@@ -235,7 +268,7 @@ function AdminScoresBankReviewPage() {
           <p className="text-sm text-gray-600 mb-4">
             Select a scores file to review:
           </p>
-          
+
           {isLoadingFiles ? (
             <div>Loading scores bank files...</div>
           ) : filesError ? (
@@ -265,7 +298,7 @@ function AdminScoresBankReviewPage() {
             <h2 className="text-xl font-semibold mb-2">
               Reviewing: {selectedFilename}
             </h2>
-            
+
             {/* Statistics */}
             {stats && (
               <div className="grid grid-cols-3 gap-4 mb-4 p-4 bg-gray-50 rounded-md">
@@ -285,27 +318,41 @@ function AdminScoresBankReviewPage() {
             )}
 
             {/* View toggle */}
-            <div className="flex gap-2 mb-4">
-              <button
-                onClick={() => setViewBy("student")}
-                className={`px-4 py-2 rounded-md ${
-                  viewBy === "student"
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-300 text-gray-700"
-                }`}
-              >
-                By Student
-              </button>
-              <button
-                onClick={() => setViewBy("question")}
-                className={`px-4 py-2 rounded-md ${
-                  viewBy === "question"
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-300 text-gray-700"
-                }`}
-              >
-                By Question
-              </button>
+            <div className="flex flex-col gap-2 mb-4 md:flex-row md:items-center md:justify-between">
+              <div className="text-sm text-gray-600">
+                LLM regrade: {llmInfo ? `${llmInfo.provider}/${llmInfo.model}` : "Unknown"}
+                {llmInfo ? ` (${llmInfo.enabled ? "enabled" : "disabled"})` : ""}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => selectedFilename && regradeOpenMutation.mutate({ filename: selectedFilename })}
+                  disabled={regradeOpenMutation.isPending}
+                  className={`px-4 py-2 rounded-md ${regradeOpenMutation.isPending
+                      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                      : "bg-purple-600 text-white hover:bg-purple-700"
+                    }`}
+                >
+                  {regradeOpenMutation.isPending ? "Regrading..." : "Regrade Open Questions"}
+                </button>
+                <button
+                  onClick={() => setViewBy("student")}
+                  className={`px-4 py-2 rounded-md ${viewBy === "student"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-300 text-gray-700"
+                    }`}
+                >
+                  By Student
+                </button>
+                <button
+                  onClick={() => setViewBy("question")}
+                  className={`px-4 py-2 rounded-md ${viewBy === "question"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-300 text-gray-700"
+                    }`}
+                >
+                  By Question
+                </button>
+              </div>
             </div>
           </div>
 
@@ -335,10 +382,10 @@ function AdminScoresBankReviewPage() {
             <div className="space-y-4">
               {questionSummary.map(({ question, answers, correctCount, avgPoints }) => {
                 const isExpanded = expandedQuestionId === question.id;
-                
+
                 return (
                   <div key={String(question.id)} className="border rounded-md overflow-hidden">
-                    <div 
+                    <div
                       className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
                       onClick={() => {
                         setExpandedQuestionId(isExpanded ? null : question.id);
@@ -359,7 +406,7 @@ function AdminScoresBankReviewPage() {
                         </span>
                       </div>
                     </div>
-                    
+
                     {isExpanded && (
                       <div className="border-t bg-gray-50 p-4">
                         <div className="text-sm font-medium mb-3">
@@ -374,10 +421,10 @@ function AdminScoresBankReviewPage() {
                             const hasOverride = questionOverrides[student] !== undefined;
                             const displayPoints = hasOverride ? questionOverrides[student] : currentPoints;
                             const isSaving = savingStudent === student;
-                            
+
                             return (
-                              <div 
-                                key={student} 
+                              <div
+                                key={student}
                                 className="bg-white border rounded-md p-3 shadow-sm"
                               >
                                 <div className="flex flex-col md:flex-row md:items-center gap-3">
@@ -403,11 +450,10 @@ function AdminScoresBankReviewPage() {
                                         {answer.llm_verdict && (
                                           <div className="mb-1">
                                             <span className="font-medium">Verdict:</span>{" "}
-                                            <span className={`px-1.5 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${
-                                              answer.llm_verdict.toLowerCase() === 'correct' ? 'bg-green-100 text-green-700' :
-                                              answer.llm_verdict.toLowerCase() === 'incorrect' ? 'bg-red-100 text-red-700' :
-                                              'bg-yellow-100 text-yellow-700'
-                                            }`}>
+                                            <span className={`px-1.5 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${answer.llm_verdict.toLowerCase() === 'correct' ? 'bg-green-100 text-green-700' :
+                                                answer.llm_verdict.toLowerCase() === 'incorrect' ? 'bg-red-100 text-red-700' :
+                                                  'bg-yellow-100 text-yellow-700'
+                                              }`}>
                                               {answer.llm_verdict}
                                             </span>
                                           </div>
@@ -421,7 +467,7 @@ function AdminScoresBankReviewPage() {
                                       </div>
                                     )}
                                   </div>
-                                  
+
                                   <div className="flex items-center gap-2">
                                     <div className="flex items-center gap-1">
                                       <input
@@ -435,26 +481,24 @@ function AdminScoresBankReviewPage() {
                                       />
                                       <span className="text-sm text-gray-500">/ {maxPoints}</span>
                                     </div>
-                                    
+
                                     <button
                                       onClick={() => handleSaveQuestionOverride(student, question.id, quizId)}
                                       disabled={!hasOverride || isSaving}
-                                      className={`px-3 py-1 text-sm rounded transition-colors ${
-                                        hasOverride && !isSaving
+                                      className={`px-3 py-1 text-sm rounded transition-colors ${hasOverride && !isSaving
                                           ? "bg-blue-600 text-white hover:bg-blue-700"
                                           : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                                      }`}
+                                        }`}
                                     >
                                       {isSaving ? "..." : "Save"}
                                     </button>
-                                    
-                                    <span className={`text-lg ${
-                                      currentPoints === maxPoints
+
+                                    <span className={`text-lg ${currentPoints === maxPoints
                                         ? "text-green-600"
                                         : currentPoints > 0
-                                        ? "text-yellow-500"
-                                        : "text-red-500"
-                                    }`}>
+                                          ? "text-yellow-500"
+                                          : "text-red-500"
+                                      }`}>
                                       {currentPoints === maxPoints ? "✓" : currentPoints > 0 ? "⚠" : "✗"}
                                     </span>
                                   </div>
@@ -470,7 +514,7 @@ function AdminScoresBankReviewPage() {
               })}
             </div>
           )}
-          
+
           {selectedStudentSubmission && selectedFilename && (
             <div className="mt-6 border-t pt-6">
               <h3 className="text-lg font-semibold mb-4">Student Detail: {selectedStudentSubmission.student}</h3>

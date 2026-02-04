@@ -286,6 +286,20 @@ export interface BankOverrideResponse {
   updated_submission: ScoreEntry;
 }
 
+export interface LlmInfoResponse {
+  provider: string;
+  model: string;
+  enabled: boolean;
+}
+
+export interface RegradeOpenBankResponse {
+  success: boolean;
+  message: string;
+  updated_submissions: number;
+  updated_answers: number;
+  errors?: string[];
+}
+
 export async function saveBankScoreOverrides(
   payload: BankOverridePayload,
 ): Promise<BankOverrideResponse> {
@@ -295,6 +309,28 @@ export async function saveBankScoreOverrides(
     body: JSON.stringify(payload),
   });
   return handleResponse<BankOverrideResponse>(response);
+}
+
+export async function regradeOpenScoresBank(
+  filename: string,
+  password: string,
+  useLLM?: boolean,
+): Promise<RegradeOpenBankResponse> {
+  const response = await fetch(`${API_BASE}/admin/scores-bank/regrade-open`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename, pw: password, use_llm: useLLM }),
+  });
+  return handleResponse<RegradeOpenBankResponse>(response);
+}
+
+export async function fetchLlmInfo(password: string): Promise<LlmInfoResponse> {
+  const response = await fetch(`${API_BASE}/admin/llm-info`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pw: password }),
+  });
+  return handleResponse<LlmInfoResponse>(response);
 }
 
 // Define the shape of the response for updating questions
