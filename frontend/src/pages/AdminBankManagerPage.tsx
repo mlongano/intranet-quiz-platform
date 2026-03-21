@@ -465,6 +465,13 @@ function AdminBankManagerPage() {
                               : "Preview"}
                         </button>
                         <button
+                          onClick={() => navigate(`/admin/questions?bankFile=${encodeURIComponent(filename)}`, { state: { adminPassword } })}
+                          className="bg-teal-600 text-white p-1 text-sm rounded mr-2 disabled:bg-gray-400"
+                          disabled={!adminPassword}
+                        >
+                          Edit
+                        </button>
+                        <button
                           onClick={() => handleLoadClick(filename)}
                           className="bg-yellow-500 text-white p-1 text-sm rounded mr-2 disabled:bg-gray-400"
                           disabled={isLoading || !adminPassword}

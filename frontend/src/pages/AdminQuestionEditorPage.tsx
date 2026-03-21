@@ -4,8 +4,8 @@ import React, { useState, useEffect, useCallback, useMemo, Suspense } from "reac
 import { parse, ParseError } from "jsonc-parser"; // Import parse from jsonc-parser
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchAdminQuestions, updateAdminQuestions, QuizData, Question, clearActiveQuizImages, listQuizImages } from "../api"; // Import both QuizData and Question
-import { useLocation, useNavigate } from "react-router-dom";
+import { fetchAdminQuestions, updateAdminQuestions, fetchBankQuizData, updateBankQuiz, QuizData, Question, clearActiveQuizImages, listQuizImages } from "../api";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import QuestionDisplay from "../components/QuestionDisplay";
 import { ImagePicker } from "../components/ImagePicker";
 const JsonSafeField = React.lazy(() => import("../components/JsonSafeField"));
@@ -13,8 +13,11 @@ const JsonSafeField = React.lazy(() => import("../components/JsonSafeField"));
 const QuestionEditor: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   // Attempt to get password from navigation state (insecure, lost on refresh)
   const adminPassword = location.state?.adminPassword;
+  // Bank edit mode: if bankFile param is present, edit that bank file instead of active quiz
+  const bankFile = searchParams.get("bankFile");
   // Local state for the editable JSON string and password
   const [questionsJson, setQuestionsJson] = useState<string>("");
   const [lengthOfQuestions, setLengthOfQuestions] = useState<number>(0);
@@ -67,7 +70,9 @@ const QuestionEditor: React.FC = () => {
   const queryClient = useQueryClient();
 
   // --- Fetch Questions using useQuery ---
-  const queryKey = ["adminQuestions", adminPassword]; // Query key depends on password
+  const queryKey = bankFile
+    ? ["bankQuizData", bankFile, adminPassword]
+    : ["adminQuestions", adminPassword];
 
   const {
     data: questionsData, // The actual data returned by the API
@@ -81,29 +86,30 @@ const QuestionEditor: React.FC = () => {
     queryKey: queryKey,
     queryFn: () => {
       if (!adminPassword) {
-        // Should not happen if 'enabled' is false, but defensively return empty array or throw
         return Promise.reject(new Error("Password not available"));
+      }
+      if (bankFile) {
+        return fetchBankQuizData(bankFile, adminPassword);
       }
       return fetchAdminQuestions(adminPassword);
     },
     enabled: !!adminPassword, // Only run the query if password exists
     staleTime: 5 * 60 * 1000, // Keep data fresh for 5 minutes
-    // Keep previous data while refetching after password entry or manual refetch
-    // placeholderData: (previousData) => previousData, // TanStack Query v5 syntax
     refetchOnWindowFocus: false, // Optional: disable refetch on window focus
   });
 
   // --- Fetch Images List using useQuery ---
+  const imageQuizFilename = bankFile || "questions.jsonc";
   const { data: imagesData } = useQuery({
-    queryKey: ["quizImages", "questions.jsonc", adminPassword],
+    queryKey: ["quizImages", imageQuizFilename, adminPassword],
     queryFn: () => {
       if (!adminPassword) {
         return Promise.reject(new Error("Password not available"));
       }
-      return listQuizImages("questions.jsonc", adminPassword);
+      return listQuizImages(imageQuizFilename, adminPassword);
     },
     enabled: !!adminPassword,
-    staleTime: 30 * 1000, // Refetch every 30 seconds
+    staleTime: 30 * 1000,
     refetchOnWindowFocus: false,
   });
 
@@ -154,14 +160,19 @@ const QuestionEditor: React.FC = () => {
       if (!adminPassword) {
         return Promise.reject(new Error("Password not available for saving"));
       }
+      if (bankFile) {
+        return updateBankQuiz(bankFile, updatedQuizData, adminPassword);
+      }
       return updateAdminQuestions(updatedQuizData, adminPassword);
     },
     onSuccess: (data) => {
-      // Invalidate the questions query cache to trigger a refetch
       queryClient.invalidateQueries({ queryKey: queryKey });
-      // Set success message from API response or a default one
+      if (bankFile) {
+        // Also invalidate bank-related queries so bank manager shows updated data
+        queryClient.invalidateQueries({ queryKey: ["questionBankFiles"] });
+        queryClient.invalidateQueries({ queryKey: ["quizBankFilePreview", bankFile] });
+      }
       showToast("success", data.message || "Questions saved successfully!", 2000);
-      // Optionally clear local JSON or rely on refetch to update it
     },
     onError: (err) => {
       // Error message is handled via isSaveError/saveError state
@@ -367,21 +378,37 @@ const QuestionEditor: React.FC = () => {
 
   return (
     <div className="container mx-auto p-4">
+      {/* Bank edit mode banner */}
+      {bankFile && (
+        <div className="bg-blue-100 border-l-4 border-blue-500 text-blue-800 p-3 mb-4 flex items-center justify-between rounded">
+          <span>
+            <strong>Editing Bank File:</strong> <span className="font-mono text-sm">{bankFile}</span>
+          </span>
+          <button
+            onClick={() => navigate("/admin/questions-bank", { state: { adminPassword } })}
+            className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+          >
+            Back to Bank Manager
+          </button>
+        </div>
+      )}
+
       <div className="flex justify-start items-center mb-2">
-        {/* Reduced bottom margin */}
         <button
           onClick={() => {
-            navigate("/admin/dashboard", {
-              state: { adminPassword: adminPassword },
-            });
+            if (bankFile) {
+              navigate("/admin/questions-bank", { state: { adminPassword } });
+            } else {
+              navigate("/admin/dashboard", { state: { adminPassword } });
+            }
           }}
           className="px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Go to admin dashboard
+          {bankFile ? "Go to Bank Manager" : "Go to admin dashboard"}
         </button>
       </div>
       <h2 className="text-2xl font-bold mb-4">
-        Question Editor
+        {bankFile ? "Question Editor (Bank)" : "Question Editor"}
         {quizTitle && <span className="text-gray-600 font-normal"> - {quizTitle}</span>}
       </h2>
 
@@ -438,41 +465,43 @@ const QuestionEditor: React.FC = () => {
         >
           📷 Manage Images
         </button>
-        {!showClearConfirm ? (
-          <button
-            onClick={() => setShowClearConfirm(true)}
-            disabled={isClearingImages || !adminPassword}
-            className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
-            title="Clear all images from active quiz folder"
-          >
-            🗑️ Clear Images
-          </button>
-        ) : (
-          <div className="flex gap-2 items-center bg-red-50 px-3 py-2 rounded border border-red-300">
-            <div className="flex flex-col gap-1">
-              <span className="text-red-700 text-sm font-semibold">Clear all active quiz images?</span>
-              <span className="text-red-600 text-xs">
-                Deletes all images in questions_images/. Bank quiz images are NOT affected.
-              </span>
+        {!bankFile && (
+          !showClearConfirm ? (
+            <button
+              onClick={() => setShowClearConfirm(true)}
+              disabled={isClearingImages || !adminPassword}
+              className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
+              title="Clear all images from active quiz folder"
+            >
+              🗑️ Clear Images
+            </button>
+          ) : (
+            <div className="flex gap-2 items-center bg-red-50 px-3 py-2 rounded border border-red-300">
+              <div className="flex flex-col gap-1">
+                <span className="text-red-700 text-sm font-semibold">Clear all active quiz images?</span>
+                <span className="text-red-600 text-xs">
+                  Deletes all images in questions_images/. Bank quiz images are NOT affected.
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  clearImagesMutation();
+                  setShowClearConfirm(false);
+                }}
+                disabled={isClearingImages}
+                className="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded text-sm disabled:opacity-50 whitespace-nowrap"
+              >
+                {isClearingImages ? "Clearing..." : "Yes, Clear"}
+              </button>
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                disabled={isClearingImages}
+                className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-1 px-3 rounded text-sm disabled:opacity-50"
+              >
+                Cancel
+              </button>
             </div>
-            <button
-              onClick={() => {
-                clearImagesMutation();
-                setShowClearConfirm(false);
-              }}
-              disabled={isClearingImages}
-              className="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded text-sm disabled:opacity-50 whitespace-nowrap"
-            >
-              {isClearingImages ? "Clearing..." : "Yes, Clear"}
-            </button>
-            <button
-              onClick={() => setShowClearConfirm(false)}
-              disabled={isClearingImages}
-              className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-1 px-3 rounded text-sm disabled:opacity-50"
-            >
-              Cancel
-            </button>
-          </div>
+          )
         )}
         <div className="flex items-center gap-4">
           <p>Total Questions: {lengthOfQuestions}</p>
@@ -582,7 +611,7 @@ const QuestionEditor: React.FC = () => {
       {/* Image Picker Modal */}
       {showImagePicker && adminPassword && questionsData && (
         <ImagePicker
-          quizFilename={`questions.jsonc`}
+          quizFilename={imageQuizFilename}
           password={adminPassword}
           onSelect={async (imagePath) => {
             const success = await copyToClipboard(imagePath);

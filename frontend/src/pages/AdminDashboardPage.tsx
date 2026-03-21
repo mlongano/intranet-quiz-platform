@@ -388,7 +388,7 @@ export default function AdminRootPage() {
           </button>
 
           <button
-            onClick={() => navigateTo("/admin/bank")}
+            onClick={() => navigateTo("/admin/questions-bank")}
             className="bg-white rounded-lg shadow-md p-6 border-l-4 border-orange-500 hover:shadow-lg transition-shadow text-left flex flex-col cursor-pointer"
           >
             <div className="flex items-start justify-between mb-3">
@@ -401,7 +401,7 @@ export default function AdminRootPage() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      navigateTo("/admin/bank");
+                      navigateTo("/admin/questions-bank");
                     }}
                     className="block hover:text-blue-600 hover:underline cursor-pointer"
                   >
@@ -495,7 +495,7 @@ export default function AdminRootPage() {
                 <div className="text-sm text-blue-700">Modify quiz content and answers</div>
               </button>
               <button
-                onClick={() => navigateTo("/admin/bank")}
+                onClick={() => navigateTo("/admin/questions-bank")}
                 className="w-full text-left px-4 py-3 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
               >
                 <div className="font-semibold text-blue-900">Question Bank</div>
