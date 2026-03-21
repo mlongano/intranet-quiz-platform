@@ -1141,6 +1141,77 @@ def save_questions(data):
         print(f"Error: Could not acquire lock on {QUEST_FILE} within timeout")
         raise InternalServerError(description="Could not save questions due to lock timeout. Please try again.")
 
+def save_questions_to_bank(filename, data):
+    """Saves questions data directly to a bank file (banks/question_bank/{filename}) with backup and file locking."""
+    # Sanitize: only allow simple filenames, no path traversal
+    if not filename or '/' in filename or '\\' in filename or '..' in filename:
+        raise BadRequest(description=f"Invalid filename: '{filename}'")
+
+    file_path = os.path.join(QUESTION_BANK_FOLDER, filename)
+    if not os.path.exists(file_path):
+        raise NotFound(description=f"Bank file '{filename}' not found.")
+
+    # Validate data structure
+    if not isinstance(data, dict):
+        raise BadRequest(description="Invalid data format: Must be an object with 'title' and 'questions' fields")
+    if 'questions' not in data:
+        raise BadRequest(description="Invalid data format: Missing 'questions' field")
+    if not isinstance(data['questions'], list):
+        raise BadRequest(description="Invalid data format: 'questions' field must be an array")
+
+    backup_file_path = f"{file_path}.bak"
+    lock_path = f"{file_path}.lock"
+    lock = FileLock(lock_path, timeout=10)
+
+    try:
+        with lock:
+            # Backup
+            copy_file(
+                source=file_path,
+                destination=backup_file_path,
+                messages={
+                    'success': f'Backup created of {file_path} in {backup_file_path}',
+                    'error': f'Warning: Could not create backup file of {file_path}:'})
+
+            # Atomic write
+            try:
+                temp_fd, temp_path = tempfile.mkstemp(dir=QUESTION_BANK_FOLDER, suffix='.tmp')
+                try:
+                    with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
+                        json.dump(data, f, indent=2)
+                    os.replace(temp_path, file_path)
+                except Exception as e:
+                    if os.path.exists(temp_path):
+                        os.unlink(temp_path)
+                    raise e
+            except (ValueError, TypeError) as e:
+                copy_file(
+                    source=backup_file_path,
+                    destination=file_path,
+                    messages={
+                        'success': f"Error saving bank file. Restored from backup.",
+                        'error': f"CRITICAL: Failed to save AND restore bank file:"})
+                raise BadRequest(description=f"Invalid question data: {e}")
+            except IOError as e:
+                if os.path.exists(backup_file_path):
+                    try:
+                        shutil.copy2(backup_file_path, file_path)
+                        print(f"Error saving bank file. Restored from backup.")
+                    except Exception as restore_e:
+                        print(f"CRITICAL: Failed to save AND restore bank file: {restore_e}")
+                raise InternalServerError(description=f"I/O error saving bank file: {e}")
+            except Exception as e:
+                if os.path.exists(backup_file_path):
+                    try:
+                        shutil.copy2(backup_file_path, file_path)
+                        print(f"Error saving bank file. Restored from backup.")
+                    except Exception as restore_e:
+                        print(f"CRITICAL: Failed to save AND restore bank file: {restore_e}")
+                raise InternalServerError(description=f"Unexpected error saving bank file: {e}")
+    except Timeout:
+        print(f"Error: Could not acquire lock on {file_path} within timeout")
+        raise InternalServerError(description="Could not save bank file due to lock timeout. Please try again.")
+
 # --- Grading Logic ---
 def normalise(txt: str) -> str:
     """Normalizes text for comparison (lowercase, NFKD, strip whitespace)."""
