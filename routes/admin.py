@@ -22,6 +22,7 @@ from utils import (
     save_scores_to_bank,  # NEW import
     load_questions,
     save_questions,
+    save_questions_to_bank,
     list_question_bank_files,  # New function
     load_quiz_from_bank,  # New function
     save_quiz_to_bank,
@@ -427,7 +428,8 @@ def api_preview_bank_file():
 
     try:
         # Use the updated load_questions function to read the file from the bank
-        file_content = load_questions(filename=filename)
+        lenient = data.get("lenient", False)
+        file_content = load_questions(filename=filename, lenient=lenient)
         return jsonify(file_content)
     except BadRequest as e:
         # Return detailed validation error to client
@@ -442,6 +444,35 @@ def api_preview_bank_file():
         return jsonify(
             {"error": f"Internal server error previewing bank file: {str(e)}"}
         ), 500
+
+
+@admin_bp.route("/admin/bank/update", methods=["PUT"])
+def api_update_bank_file():
+    """Updates a question bank file in-place."""
+    auth_pw = request.headers.get("X-Admin-Pass")
+    if not auth_pw or auth_pw != ADMIN_PW:
+        abort(403)
+
+    data = request.get_json(silent=True) or {}
+    filename = data.get("filename")
+    if not filename:
+        abort(400, description="Missing filename in request body.")
+
+    quiz_data = {"title": data.get("title", ""), "questions": data.get("questions", [])}
+
+    try:
+        save_questions_to_bank(filename, quiz_data)
+        return jsonify({"success": True, "message": f"Bank file '{filename}' updated successfully."})
+    except BadRequest as e:
+        return jsonify({"error": e.description or str(e)}), 400
+    except NotFound as e:
+        return jsonify({"error": e.description or "File not found"}), 404
+    except InternalServerError as e:
+        print(f"Internal error updating bank file '{filename}': {e}")
+        return jsonify({"error": e.description or "Internal server error"}), 500
+    except Exception as e:
+        print(f"Error updating bank file: {e}")
+        return jsonify({"error": f"Internal server error updating bank file: {str(e)}"}), 500
 
 
 # --- NEW Admin Endpoints for Scores Bank Management ---
