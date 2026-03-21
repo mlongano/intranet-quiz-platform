@@ -65,7 +65,7 @@ const router = createBrowserRouter([
         element: <AdminQuestionEditorPage />,
       },
       {
-        path: "bank", // This will make the route /admin/bank
+        path: "questions-bank", // This will make the route /admin/questions-bank
         element: <AdminBankManagerPage />, // The component to manage bank files
       },
       {
