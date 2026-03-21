@@ -474,6 +474,42 @@ export async function fetchPreviewBankFile(
   return quizData.questions;
 }
 
+/**
+ * Fetches the full quiz data from a bank file for editing (lenient mode).
+ */
+export async function fetchBankQuizData(
+  filename: string,
+  password: string,
+): Promise<QuizData> {
+  const response = await fetch(`${API_BASE}/admin/bank/preview`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ filename, pw: password, lenient: true }),
+  });
+  return handleResponse<QuizData>(response);
+}
+
+/**
+ * Updates a bank quiz file in-place.
+ */
+export async function updateBankQuiz(
+  filename: string,
+  quizData: QuizData,
+  password: string,
+): Promise<UpdateQuestionsResponse> {
+  const response = await fetch(`${API_BASE}/admin/bank/update`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Admin-Pass": password,
+    },
+    body: JSON.stringify({ filename, ...quizData }),
+  });
+  return handleResponse<UpdateQuestionsResponse>(response);
+}
+
 // --- NEW Admin Functions for Scores Bank Management ---
 
 /**
