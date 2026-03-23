@@ -1165,6 +1165,7 @@ Access the admin panel at `/admin` with the password set in `.env`:
   - Integrated image picker for adding images to questions/answers
   - Image count display in editor header
   - Toast notifications for all operations
+  - Bank edit mode: edit bank files in-place without loading them into the active quiz
 - **Students Management**:
   - Edit student list via JSONC editor with live preview
   - Email validation with visual indicators
@@ -1173,7 +1174,8 @@ Access the admin panel at `/admin` with the password set in `.env`:
   - Save/load student lists from students bank for different classes
   - Delete student files from bank with inline confirmation
 - **Bank Management**:
-  - **Question Bank**: Save/load question sets for different quizzes with delete functionality
+  - **Question Bank**: Save/load/edit question sets for different quizzes with delete functionality
+    - Edit bank files directly using the full question editor without affecting the active quiz
   - **Scores Bank**: Archive and restore quiz results with delete functionality
   - **Students Bank**: Save/load student lists with delete and load confirmations
   - All bank operations use inline confirmations (no browser alerts)
@@ -1469,6 +1471,7 @@ After migration, restart the server. Your banks will now be in the correct locat
 - [x] Image management system for questions and answers (upload, delete, integrated picker)
 - [x] Replace all browser alerts with inline confirmation UI and toast notifications
 - [x] Delete functionality for all bank types (questions, scores, students)
+- [x] Edit bank quiz files in-place without affecting the active quiz
 - [x] Smart CSV export filenames with date and quiz title
 - [x] Centralized utility functions (slugify) for code reusability
 - [ ] Implement a timer for quizzes
