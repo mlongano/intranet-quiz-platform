@@ -180,9 +180,10 @@ function AdminDashboardPage() {
   };
 
   const handleSendAllEmails = () => {
-    // Open modal to ask for subject
     setBulkEmailModal(true);
-    setEmailSubject("Quiz Results");
+    // Use the first available quiz title as default subject (user can always edit it)
+    const title = scores?.find(s => s.quiz_title)?.quiz_title ?? null;
+    setEmailSubject(title ? `Risultati - ${title}` : "Quiz Results");
     setIncludeDetails(true);
   };
 
