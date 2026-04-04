@@ -4,11 +4,11 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { parse, ParseError } from "jsonc-parser";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchStudents, updateStudents, StudentEntry } from "../api";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation } from "react-router-dom";
+import AdminLayout from "../layouts/AdminLayout";
 
 const AdminStudentsPage = () => {
   const location = useLocation();
-  const navigate = useNavigate();
   const adminPassword = location.state?.adminPassword;
 
   const [studentsJson, setStudentsJson] = useState<string>("");
@@ -257,119 +257,124 @@ const AdminStudentsPage = () => {
   const isProcessing = isLoadingStudents || isSaving || isFetchingStudents;
 
   if (adminPassword === null && !userMessage) {
-    return <div>Loading editor...</div>;
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center">
+        <div className="text-on-surface-variant font-body">Loading editor...</div>
+      </div>
+    );
   }
 
   if (userMessage?.type === "error" && adminPassword === null) {
-    return <div className="text-red-500 font-bold p-4">{userMessage.text}</div>;
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center p-8">
+        <div className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg font-body font-bold">
+          {userMessage.text}
+        </div>
+      </div>
+    );
   }
 
   if (isLoadingStudents && !studentsData) {
-    return <div className="p-4">Loading students...</div>;
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center">
+        <div className="text-on-surface-variant font-body">Loading students...</div>
+      </div>
+    );
   }
 
   return (
-    <div className="container mx-auto p-4">
-      <div className="flex justify-start items-center mb-2">
-        <button
-          onClick={() => {
-            navigate("/admin/dashboard", {
-              state: { adminPassword: adminPassword },
-            });
-          }}
-          className="px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Go to admin dashboard
-        </button>
-      </div>
-
-      <h2 className="text-2xl font-bold mb-4">Student List Editor</h2>
-
-      {/* Error/Success Messages */}
-      {isLoadError && (
-        <div
-          className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4"
-          role="alert"
-        >
-          Load failed: {loadError?.message || "Unknown error"}
-        </div>
-      )}
-      {isSaveError && !isSaving && (
-        <div
-          className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4"
-          role="alert"
-        >
-          Save failed: {saveError?.message || "Unknown error"}
-        </div>
-      )}
-      {userMessage && (
-        <div
-          className={`border px-4 py-3 rounded relative mb-4 ${userMessage.type === "success"
-              ? "bg-green-100 border-green-400 text-green-700"
-              : "bg-yellow-100 border-yellow-400 text-yellow-700"
+    <AdminLayout
+      activePath="/admin/students"
+      adminPassword={adminPassword || ""}
+      pageTitle="Students"
+    >
+      <div className="max-w-5xl">
+        {/* Error/Success Messages */}
+        {isLoadError && (
+          <div
+            className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg mb-4 font-body"
+            role="alert"
+          >
+            Load failed: {loadError?.message || "Unknown error"}
+          </div>
+        )}
+        {isSaveError && !isSaving && (
+          <div
+            className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg mb-4 font-body"
+            role="alert"
+          >
+            Save failed: {saveError?.message || "Unknown error"}
+          </div>
+        )}
+        {userMessage && (
+          <div
+            className={`border px-4 py-3 rounded-lg mb-4 font-body ${
+              userMessage.type === "success"
+                ? "bg-tertiary/10 border-tertiary/20 text-tertiary"
+                : "bg-error/10 border-error/20 text-error"
             }`}
-          role="alert"
-        >
-          {userMessage.text}
+            role="alert"
+          >
+            {userMessage.text}
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        <div className="flex flex-wrap gap-4 mb-6">
+          <button
+            onClick={() => refetchStudents()}
+            disabled={isProcessing || !adminPassword}
+            className="bg-surface-container-high border border-primary/30 text-primary hover:bg-primary/10 font-bold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-body"
+          >
+            {isFetchingStudents ? "Refreshing..." : "Refresh Students"}
+          </button>
+          <button
+            title="⌘s or <ctrl-s> to save"
+            onClick={handleSaveChanges}
+            disabled={isProcessing || !adminPassword}
+            className="bg-primary text-on-primary font-bold py-2 px-4 rounded-lg shadow-[0_0_15px_rgba(129,236,255,0.3)] hover:shadow-[0_0_20px_rgba(129,236,255,0.5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed font-body"
+          >
+            {isSaving ? "Saving..." : "Save Changes"}
+          </button>
         </div>
-      )}
 
-      {/* Action Buttons */}
-      <div className="flex flex-wrap gap-4 mb-4">
-        <button
-          onClick={() => refetchStudents()}
-          disabled={isProcessing || !adminPassword}
-          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
-        >
-          {isFetchingStudents ? "Refreshing..." : "Refresh Students"}
-        </button>
-        <button
-          title="⌘s or <ctrl-s> to save"
-          onClick={handleSaveChanges}
-          disabled={isProcessing || !adminPassword}
-          className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
-        >
-          {isSaving ? "Saving..." : "Save Changes"}
-        </button>
-      </div>
-
-      {/* Format Help */}
-      <div className="mb-4 border rounded bg-blue-50">
-        <button
-          onClick={() => setIsFormatGuideOpen(!isFormatGuideOpen)}
-          className="w-full p-4 text-left flex justify-between items-center hover:bg-blue-100 transition-colors"
-        >
-          <h3 className="text-lg font-semibold">Format Guide</h3>
-          <span className="text-2xl">{isFormatGuideOpen ? '−' : '+'}</span>
-        </button>
-        {isFormatGuideOpen && (
-          <div className="p-4 pt-0">
-            <p className="text-sm text-gray-700 mb-2">
-              Students can be defined in three formats:
-            </p>
-            <div className="space-y-2 text-sm">
-              <div>
-                <strong>1. Simple format (email only):</strong>
-                <pre className="bg-gray-100 p-2 rounded mt-1 overflow-x-auto">
-                  {`[
+        {/* Format Help */}
+        <div className="mb-6 border border-outline-variant/20 rounded-lg overflow-hidden">
+          <button
+            onClick={() => setIsFormatGuideOpen(!isFormatGuideOpen)}
+            className="w-full p-4 text-left flex justify-between items-center bg-surface-container-low hover:bg-surface-container-high transition-colors"
+          >
+            <h3 className="font-headline font-bold text-on-surface">Format Guide</h3>
+            <span className="text-primary text-xl font-light">{isFormatGuideOpen ? '−' : '+'}</span>
+          </button>
+          {isFormatGuideOpen && (
+            <div className="bg-surface-container border-x border-b border-outline-variant/20 p-4">
+              <p className="font-body text-sm text-on-surface-variant mb-4">
+                Students can be defined in three formats:
+              </p>
+              <div className="space-y-4 text-sm font-body">
+                <div>
+                  <strong className="text-on-surface">1. Simple format (email only):</strong>
+                  <pre className="bg-surface-container-low border border-outline-variant/20 p-3 rounded mt-2 overflow-x-auto text-tertiary">
+{`[
   "student1@example.com",
   "student2@example.com"
 ]`}
-                </pre>
-              </div>
-              <div>
-                <strong>2. Extended format (individual with groups):</strong>
-                <pre className="bg-gray-100 p-2 rounded mt-1 overflow-x-auto">
-                  {`[
+                  </pre>
+                </div>
+                <div>
+                  <strong className="text-on-surface">2. Extended format (individual with groups):</strong>
+                  <pre className="bg-surface-container-low border border-outline-variant/20 p-3 rounded mt-2 overflow-x-auto text-tertiary">
+{`[
   { "email": "student1@example.com", "group": "5CI" },
   { "email": "student2@example.com", "group": "4BI" }
 ]`}
-                </pre>
-              </div>
-              <div>
-                <strong>3. Group format (multiple students in same group):</strong>
-                <pre className="bg-gray-100 p-2 rounded mt-1 overflow-x-auto">
-                  {`[
+                  </pre>
+                </div>
+                <div>
+                  <strong className="text-on-surface">3. Group format (multiple students in same group):</strong>
+                  <pre className="bg-surface-container-low border border-outline-variant/20 p-3 rounded mt-2 overflow-x-auto text-tertiary">
+{`[
   {
     "group": "5CI",
     "emails": [
@@ -379,79 +384,82 @@ const AdminStudentsPage = () => {
   },
   { "group": "4BI", "emails": ["student3@example.com"] }
 ]`}
-                </pre>
+                  </pre>
+                </div>
+                <p className="text-on-surface-variant">
+                  <strong className="text-on-surface">Note:</strong> All entries must have valid email addresses.
+                  You can mix all three formats in the same list.
+                </p>
               </div>
-              <p className="text-gray-600">
-                <strong>Note:</strong> All entries must have valid email addresses.
-                You can mix all three formats in the same list.
-              </p>
             </div>
-          </div>
+          )}
+        </div>
+
+        {/* JSON Editor Area */}
+        <textarea
+          value={studentsJson}
+          onChange={(e) => setStudentsJson(e.target.value)}
+          disabled={isProcessing || !adminPassword || isLoadingStudents}
+          placeholder={
+            isLoadingStudents
+              ? "Loading students..."
+              : isLoadError
+                ? "Error loading students. Check console."
+                : "Edit students JSON here..."
+          }
+          rows={20}
+          className="bg-surface-container-low border border-outline-variant/30 text-on-surface focus:border-primary/50 focus:outline-none rounded-lg font-mono text-sm w-full p-3 disabled:opacity-50 disabled:cursor-not-allowed"
+          spellCheck="false"
+        />
+
+        {/* Preview Area */}
+        <div className="mt-6 p-4 border border-outline-variant/20 rounded-lg bg-surface-container-low">
+          <h3 className="font-headline font-bold text-on-surface text-lg mb-4">Preview</h3>
+          {previewParsed.error ? (
+            <div className="bg-secondary/10 border border-secondary/20 text-secondary px-3 py-2 rounded-lg mb-4 font-body">
+              {previewParsed.error}
+            </div>
+          ) : null}
+          {(() => {
+            const students = previewParsed.students;
+            if (!students) return null;
+            if (students.length === 0)
+              return <div className="text-on-surface-variant font-body">No students to preview.</div>;
+
+            return (
+              <div className="space-y-4">
+                <div className="text-sm text-on-surface-variant font-body">
+                  Total students: <strong className="text-on-surface">{totalEmails}</strong>
+                </div>
+                {Object.entries(groupedStudents).map(([group, emails]) => (
+                  <div key={group} className="border border-outline-variant/20 rounded-lg p-4 bg-surface-container">
+                    <h4 className="font-headline font-bold text-on-surface text-base mb-3">{group}</h4>
+                    <ul className="space-y-2">
+                      {emails.map((email, idx) => (
+                        <li key={idx} className="text-sm flex items-center gap-3 font-body">
+                          <span className="text-outline-variant">{idx + 1}.</span>
+                          <span className={isValidEmail(email) ? "text-tertiary" : "text-error"}>
+                            {isValidEmail(email) ? "✓" : "✗"}
+                          </span>
+                          <span className={isValidEmail(email) ? "text-on-surface" : "text-error"}>
+                            {email}
+                            {!isValidEmail(email) && " ⚠️ Invalid email"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+
+        {isProcessing && (
+          <div className="mt-4 text-primary font-body animate-pulse">Processing...</div>
         )}
       </div>
-
-      {/* JSON Editor Area */}
-      <textarea
-        value={studentsJson}
-        onChange={(e) => setStudentsJson(e.target.value)}
-        disabled={isProcessing || !adminPassword || isLoadingStudents}
-        placeholder={
-          isLoadingStudents
-            ? "Loading students..."
-            : isLoadError
-              ? "Error loading students. Check console."
-              : "Edit students JSON here..."
-        }
-        rows={20}
-        className="w-full p-2 border rounded font-mono text-sm bg-gray-50 disabled:opacity-70"
-        spellCheck="false"
-      />
-
-      {/* Preview Area */}
-      <div className="mt-6 p-4 border rounded bg-white">
-        <h3 className="text-xl font-semibold mb-3">Preview</h3>
-        {previewParsed.error ? (
-          <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-3 py-2 rounded mb-3">
-            {previewParsed.error}
-          </div>
-        ) : null}
-        {(() => {
-          const students = previewParsed.students;
-          if (!students) return null;
-          if (students.length === 0)
-            return <div className="text-gray-600">No students to preview.</div>;
-
-          return (
-            <div className="space-y-4">
-              <div className="text-sm text-gray-600">
-                Total students: <strong>{totalEmails}</strong>
-              </div>
-              {Object.entries(groupedStudents).map(([group, emails]) => (
-                <div key={group} className="border rounded p-3">
-                  <h4 className="font-semibold text-lg mb-2">{group}</h4>
-                  <ul className="space-y-1">
-                    {emails.map((email, idx) => (
-                      <li key={idx} className="text-sm flex items-center gap-2">
-                        <span className="text-gray-400">{idx + 1}.</span>
-                        <span className={isValidEmail(email) ? "text-green-700" : "text-red-700"}>
-                          {isValidEmail(email) ? "✓" : "✗"}
-                        </span>
-                        <span className={isValidEmail(email) ? "text-gray-900" : "text-red-600"}>
-                          {email}
-                          {!isValidEmail(email) && " ⚠️ Invalid email"}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          );
-        })()}
-      </div>
-
-      {isProcessing && <div className="mt-2 text-blue-600">Processing...</div>}
-    </div>
+    </AdminLayout>
   );
 };
 
