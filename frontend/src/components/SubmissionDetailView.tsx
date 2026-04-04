@@ -174,43 +174,37 @@ function SubmissionDetailView({
   }
 
   return (
-    // Container for the detail view with styling
-    <div className="mt-8 p-6 border border-gray-300 rounded-lg shadow-lg bg-white space-y-4 relative">
-      {/* Close Button */}
+    <div className="mt-8 p-6 border border-outline-variant/30 rounded-lg bg-surface-container space-y-4 relative">
       <button
         onClick={onClose}
-        className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 text-2xl font-bold"
+        className="absolute top-2 right-2 text-on-surface-variant hover:text-on-surface text-2xl font-bold"
         aria-label="Close details"
       >
-        &times; {/* Multiplication sign as close icon */}
+        &times;
       </button>
 
-      {/* Header */}
-      <div className="border-b pb-2 mb-4">
-        <h3 className="text-xl font-semibold text-gray-800">
+      <div className="border-b border-outline-variant/20 pb-2 mb-4">
+        <h3 className="text-xl font-semibold text-on-surface">
           Reviewing: {studentSubmission.student}
         </h3>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-on-surface-variant">
           Quiz ID: {studentSubmission.quiz_id}
         </p>
-        <p className="text-sm text-gray-600 font-medium">
+        <p className="text-sm text-on-surface-variant font-medium">
           Overall Score: {studentSubmission.raw_points} /{" "}
           {studentSubmission.max_points} ({studentSubmission.percent}%)
         </p>
       </div>
 
-      {/* List of Answers */}
       <div className="space-y-5 max-h-[60vh] overflow-y-auto pr-2">
         {studentSubmission.answers.map((ans, index) => {
-          // Default weight to 1 if missing in the data (for older records)
           const questionWeight = ans.weight ?? 1;
           return (
             <div
               key={index}
-              className="p-4 border rounded-md bg-gray-50 shadow-sm"
+              className="p-4 border border-outline-variant/20 rounded-md bg-surface-container-low"
             >
-              {/* Question Info */}
-              <div className="font-semibold text-gray-800 mb-1">
+              <div className="font-semibold text-on-surface mb-1">
                 <span className="mr-1">{index + 1}.</span>
                 <span className="align-middle">
                   <ReactMarkdown
@@ -220,7 +214,7 @@ function SubmissionDetailView({
                     {ans.question_text || ""}
                   </ReactMarkdown>
                 </span>
-                <span className="text-xs text-gray-400 ml-2 align-middle">
+                <span className="text-xs text-on-surface-variant ml-2 align-middle">
                   (ID: {ans.question_id})
                 </span>
               </div>
@@ -232,12 +226,11 @@ function SubmissionDetailView({
                 />
               )}
 
-              {/* Student Answer */}
               <div className="flex justify-start items-center gap-2 ml-4 mb-2 text-sm">
-                <span className="font-medium text-gray-600">
+                <span className="font-medium text-on-surface-variant">
                   Student Answer:{" "}
                 </span>
-                <pre className="inline-block font-mono bg-gray-100 p-1 rounded text-xs whitespace-pre-wrap break-words">
+                <pre className="inline-block font-mono bg-surface-container-high p-1 rounded text-xs whitespace-pre-wrap break-words text-on-surface">
                   {JSON.stringify(ans.student_answer, null, 2)}
                 </pre>
                 {displayOptionImages(
@@ -245,22 +238,21 @@ function SubmissionDetailView({
                   ans.student_answer,
                 )}
                 {ans.points_awarded === ans.weight && (
-                  <span className="font-bold text-xl text-green-700">✓</span>
+                  <span className="font-bold text-xl text-tertiary">✓</span>
                 )}
                 {ans.points_awarded > 0 && ans.points_awarded < ans.weight && (
                   <span className="font-bold text-xl text-yellow-400">⚠</span>
                 )}
                 {ans.points_awarded === 0 && (
-                  <span className="font-bold text-xl text-red-700">❌</span>
+                  <span className="font-bold text-xl text-error">❌</span>
                 )}
               </div>
 
-              {/* Correct Answer */}
               <div className="flex justify-start items-center gap-2 ml-4 mb-2 text-sm">
-                <span className="font-medium text-green-700">
+                <span className="font-medium text-tertiary">
                   Correct Answer:{" "}
                 </span>
-                <pre className="inline-block font-mono bg-green-50 p-1 rounded text-xs whitespace-pre-wrap break-words">
+                <pre className="inline-block font-mono bg-tertiary/10 p-1 rounded text-xs whitespace-pre-wrap break-words text-tertiary">
                   {JSON.stringify(ans.correct_answer, null, 2)}
                 </pre>
                 {displayOptionImages(
@@ -269,33 +261,31 @@ function SubmissionDetailView({
                 )}
               </div>
 
-              {/* Points and Override Input */}
               <div
-                className={`ml-4 mt-2 flex items-center gap-3 text-sm ${ans.points_awarded !== ans.raw_points && "text-red-500"}`}
+                className={`ml-4 mt-2 flex items-center gap-3 text-sm ${ans.points_awarded !== ans.raw_points && "text-error"}`}
               >
-                <span className="font-medium">
+                <span className="font-medium text-on-surface">
                   Points Awarded:{" "}
                   <span className="font-bold">{ans.points_awarded}</span>
                 </span>
-                <span className="text-gray-400">|</span>
+                <span className="text-on-surface-variant">|</span>
                 <label
                   htmlFor={`override-${ans.question_id}`}
-                  className="text-gray-600"
+                  className="text-on-surface-variant"
                 >
                   Override Score:
                 </label>
                 <input
                   id={`override-${ans.question_id}`}
                   type="number"
-                  min="0" // Minimum score is 0
-                  max={questionWeight} // Maximum score is the question's weight
-                  step="0.5" // Or "1" if only whole points
-                  className="w-24 border border-gray-300 p-1 text-sm rounded shadow-sm focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                  min="0"
+                  max={questionWeight}
+                  step="0.5"
+                  className="w-24 border border-outline-variant/30 bg-surface-container-low text-on-surface p-1 text-sm rounded focus:ring-1 focus:ring-primary/50 focus:border-primary/50"
                   placeholder={ans.raw_points.toString()}
                   value={
                     overrides[ans.question_id] ?? ans.raw_points.toString()
                   }
-                  // Pass max weight to handler for clamping
                   onChange={(e) =>
                     handleOverrideChange(
                       ans.question_id,
@@ -304,23 +294,21 @@ function SubmissionDetailView({
                     )
                   }
                 />
-                {/* Display max points for clarity */}
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-on-surface-variant">
                   (Max: {questionWeight})
                 </span>
               </div>
 
-              {/* LLM Verdict and Feedback (teacher-only) */}
               {(ans.llm_verdict || ans.llm_feedback) && (
-                <div className="ml-4 mt-2 bg-yellow-50 border border-yellow-200 p-3 rounded text-sm">
-                  <div className="font-semibold text-sm text-yellow-800 mb-1">LLM Evaluation</div>
+                <div className="ml-4 mt-2 bg-secondary/10 border border-secondary/20 p-3 rounded text-sm">
+                  <div className="font-semibold text-sm text-secondary mb-1">LLM Evaluation</div>
                   {ans.llm_verdict && (
-                    <div className="text-xs text-yellow-900 mb-1">
+                    <div className="text-xs text-secondary mb-1">
                       <strong>Verdict:</strong> {String(ans.llm_verdict)}
                     </div>
                   )}
                   {ans.llm_feedback && (
-                    <div className="text-xs text-yellow-900">
+                    <div className="text-xs text-secondary">
                       <strong>Feedback:</strong> {String(ans.llm_feedback)}
                     </div>
                   )}
@@ -331,12 +319,10 @@ function SubmissionDetailView({
         })}
       </div>
 
-      {/* Save Button and Status Messages */}
-      <div className="mt-6 flex justify-end items-center gap-4 border-t pt-4">
-        {/* Display Success/Error Messages */}
+      <div className="mt-6 flex justify-end items-center gap-4 border-t border-outline-variant/20 pt-4">
         {saveStatus.error && <ErrorDisplay message={saveStatus.error} />}
         {saveStatus.success && (
-          <div className="p-2 bg-green-50 border border-green-300 text-green-800 rounded-lg text-sm">
+          <div className="p-2 bg-tertiary/10 border border-tertiary/30 text-tertiary rounded-lg text-sm">
             {saveStatus.success}
           </div>
         )}
@@ -344,7 +330,7 @@ function SubmissionDetailView({
         <button
           onClick={handleSaveChanges}
           disabled={isSaving || !hasPendingOverrides}
-          className="px-5 py-2 bg-purple-600 text-white font-medium rounded-md shadow hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
+          className="px-5 py-2 bg-secondary text-on-secondary font-medium rounded-md hover:bg-secondary/80 focus:outline-none focus:ring-2 focus:ring-secondary/30 disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {isSaving ? (
             <>

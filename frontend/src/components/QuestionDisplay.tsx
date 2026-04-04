@@ -8,8 +8,7 @@ import rehypePrism from "rehype-prism-plus";
 import { Question, Answer, OptionObject } from "../api"; // Import types
 import Prism from "prismjs";
 
-// Import Prism theme and line numbers
-import "prismjs/themes/prism-coy.css";
+import "../prism-themes.css";
 import "prismjs/plugins/line-numbers/prism-line-numbers.css";
 import "prismjs/plugins/line-numbers/prism-line-numbers";
 
@@ -156,7 +155,7 @@ function QuestionDisplay({
 
       {/* Render question text as Markdown */}
       <div
-        className="text-lg font-medium mb-4 prose prose-sm max-w-none"
+        className="text-lg font-medium mb-4 prose prose-sm max-w-none dark:prose-invert"
         onCopy={(e) => {
           if (disableCopy) e.preventDefault();
         }}
@@ -203,7 +202,7 @@ function QuestionDisplay({
           value={(currentAnswer as string) || ""}
           onChange={handleOpenChange}
           rows={4}
-          className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+          className={`w-full p-2 border rounded-md shadow-sm focus:ring focus:ring-opacity-50 bg-surface-container-low border-outline-variant/40 text-on-surface placeholder-on-surface-variant focus:border-primary/50 focus:ring-primary/20`}
           placeholder="Enter your answer..."
           disabled={readOnly}
         />
@@ -223,8 +222,11 @@ function QuestionDisplay({
             return (
               <div
                 key={index}
-                className={`p-3 border rounded cursor-pointer ${isHighlighted ? "border-green-500 bg-green-50" : "hover:bg-gray-50"
-                  }`}
+                className={`p-3 border rounded cursor-pointer transition-colors ${
+                  isHighlighted
+                    ? "border-tertiary/60 bg-tertiary/10 text-on-surface"
+                    : "border-outline-variant/30 hover:bg-surface-container-high text-on-surface"
+                }`}
               >
                 <div className="flex items-start">
                   <input
@@ -236,14 +238,14 @@ function QuestionDisplay({
                     onChange={handleOptionChange}
                     className={
                       question.type === "single"
-                        ? "mt-1 h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"
-                        : "mt-1 h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                        ? "mt-1 h-4 w-4 text-primary border-outline-variant focus:ring-primary/30"
+                        : "mt-1 h-4 w-4 text-primary border-outline-variant rounded focus:ring-primary/30"
                     }
                     disabled={readOnly}
                   />
                   <label
                     htmlFor={inputId}
-                    className="ml-3 flex-1 text-gray-800 prose prose-sm max-w-none"
+                    className="ml-3 flex-1 prose prose-sm max-w-none dark:prose-invert text-on-surface"
                     onCopy={(e) => {
                       if (disableCopy) e.preventDefault();
                     }}
