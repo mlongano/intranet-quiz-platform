@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchScores } from "../api"; // Import to validate password
+import ThemeToggle from "../components/ThemeToggle";
 
 function AdminLoginPage() {
   const [password, setPassword] = useState("");
@@ -34,28 +35,39 @@ function AdminLoginPage() {
   };
 
   return (
-    <div className="max-w-sm mx-auto mt-10">
-      <h2 className="text-xl font-semibold mb-4">Admin Login</h2>
-      <form onSubmit={handleLogin} className="space-y-3">
-        <label className="block">
-          <span className="text-gray-700">Password:</span>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="mt-1 p-2 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={isValidating}
-          className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isValidating ? "Validating..." : "Login"}
-        </button>
-        {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
-      </form>
+    <div className="min-h-screen bg-surface flex items-center justify-center p-4">
+      <div className="fixed top-4 right-4 z-50">
+        <ThemeToggle />
+      </div>
+      <div className="bg-surface-container rounded-xl border border-outline-variant/20 p-8 w-full max-w-sm">
+        <div className="mb-6 text-center">
+          <h1 className="text-2xl font-headline font-bold text-on-surface mb-1">QuizParty</h1>
+          <p className="text-sm text-on-surface-variant">Admin Panel</p>
+        </div>
+        <form onSubmit={handleLogin} className="space-y-4">
+          <label className="block">
+            <span className="text-sm font-medium text-on-surface-variant mb-1.5 block">Password</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              placeholder="Enter admin password"
+              className="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/30 rounded-lg text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-colors"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={isValidating}
+            className="w-full px-4 py-2.5 bg-primary text-on-primary font-semibold rounded-lg hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {isValidating ? "Validating…" : "Login"}
+          </button>
+          {error && (
+            <p className="text-error text-sm text-center">{error}</p>
+          )}
+        </form>
+      </div>
     </div>
   );
 }
