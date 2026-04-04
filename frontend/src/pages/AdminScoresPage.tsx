@@ -331,7 +331,7 @@ function AdminDashboardPage() {
     : null;
 
   return (
-    <AdminLayout activePath="/admin/scores" adminPassword={adminPassword} pageTitle="Scores">
+    <AdminLayout activePath="/admin/scores" adminPassword={adminPassword} pageTitle="Scores" titleClassName="from-secondary to-secondary/60">
       <div className="space-y-6">
         <div className="flex justify-between items-center mb-2">
           {/* Reduced bottom margin */}

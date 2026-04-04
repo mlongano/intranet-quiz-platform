@@ -37,10 +37,11 @@ interface AdminLayoutProps {
   adminPassword: string;
   children: ReactNode;
   pageTitle?: string;
+  titleClassName?: string;
   headerActions?: ReactNode;
 }
 
-export default function AdminLayout({ activePath, adminPassword, children, pageTitle, headerActions }: AdminLayoutProps) {
+export default function AdminLayout({ activePath, adminPassword, children, pageTitle, titleClassName, headerActions }: AdminLayoutProps) {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const navigateTo = (path: string) => navigate(path, { state: { adminPassword } });
@@ -156,7 +157,7 @@ export default function AdminLayout({ activePath, adminPassword, children, pageT
       <div className={`flex flex-col flex-1 transition-all duration-300 ${sidebarOpen ? "ml-64" : "ml-16"}`}>
         <header className="sticky top-0 z-30 bg-surface/80 backdrop-blur-xl border-b border-outline-variant/20 px-8 py-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <h1 className="font-headline text-xl font-bold bg-gradient-to-r from-primary to-primary-dim bg-clip-text text-transparent">
+            <h1 className={`font-headline text-xl font-bold bg-gradient-to-r ${titleClassName ?? "from-primary to-primary-dim"} bg-clip-text text-transparent`}>
               {pageTitle || "Admin"}
             </h1>
             <div className="flex items-center gap-4">

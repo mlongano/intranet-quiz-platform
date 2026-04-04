@@ -287,6 +287,7 @@ const AdminStudentsPage = () => {
       activePath="/admin/students"
       adminPassword={adminPassword || ""}
       pageTitle="Students"
+      titleClassName="from-tertiary to-tertiary/60"
     >
       <div className="max-w-5xl">
         {/* Error/Success Messages */}

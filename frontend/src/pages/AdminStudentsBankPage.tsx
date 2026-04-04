@@ -8,6 +8,7 @@ import {
   saveStudentsToBank,
   previewStudentsBankFile,
   deleteStudentsFromBank,
+  fetchStudents,
   StudentEntry,
   getStudentsDownloadUrl,
   renameStudentsInBank,
@@ -29,6 +30,34 @@ function AdminStudentsBankPage() {
   const [newFilename, setNewFilename] = useState("");
 
   const queryClient = useQueryClient();
+
+  // Excluded group (e.g. "Teacher") – same pattern as AdminDashboardPage
+  const EXCLUDED_GROUP = import.meta.env.VITE_EXCLUDED_GROUP || "Theacher";
+
+  // Fetch current students to display group list
+  const { data: currentStudents } = useQuery<StudentEntry[], Error>({
+    queryKey: ["adminStudents", adminPassword],
+    queryFn: () => {
+      if (!adminPassword) throw new Error("Admin password not available.");
+      return fetchStudents(adminPassword);
+    },
+    enabled: !!adminPassword,
+    staleTime: 30 * 1000,
+  });
+
+  // Derive unique group names, excluding the teacher group
+  const currentGroupNames = useMemo(() => {
+    if (!currentStudents) return [];
+    return currentStudents
+      .flatMap((student) => {
+        if (typeof student === "string") return [];
+        if ("emails" in student)
+          return student.group !== EXCLUDED_GROUP ? [student.group] : [];
+        const g = (student as { email: string; group?: string }).group;
+        return g && g !== EXCLUDED_GROUP ? [g] : [];
+      })
+      .filter((v, i, a) => a.indexOf(v) === i);
+  }, [currentStudents, EXCLUDED_GROUP]);
 
   // Generate default filename
   const defaultFilename = useMemo(() => {
@@ -303,6 +332,7 @@ function AdminStudentsBankPage() {
       activePath="/admin/students-bank"
       adminPassword={adminPassword || ""}
       pageTitle="Students Bank"
+      titleClassName="from-tertiary to-tertiary/60"
     >
       {/* Messages */}
       {error && (
@@ -318,7 +348,12 @@ function AdminStudentsBankPage() {
 
       {/* Save Section */}
       <div className="mb-8 p-6 bg-surface-container border border-outline-variant/20 rounded-xl">
-        <h2 className="text-lg font-bold font-headline text-on-surface mb-4">Save Current Students to Bank</h2>
+        <h2 className="text-lg font-bold font-headline text-tertiary mb-4">Save Current Students to Bank</h2>
+        {currentGroupNames.length > 0 && (
+          <p className="text-sm text-on-surface-variant mb-4">
+            Groups: {currentGroupNames.join(", ")}
+          </p>
+        )}
         <div className="flex gap-3 items-start">
           <div className="flex-grow">
             <input
@@ -326,7 +361,7 @@ function AdminStudentsBankPage() {
               value={saveFilename}
               onChange={(e) => setSaveFilename(e.target.value)}
               placeholder="Enter filename (e.g., 2025-10-25_students.jsonc)"
-              className="w-full p-3 bg-surface-container-low border border-outline-variant/30 text-on-surface rounded-lg focus:border-primary/50 focus:outline-none placeholder:text-outline-variant/50"
+              className="w-full p-3 bg-surface-container-low border border-outline-variant/30 text-on-surface rounded-lg focus:border-primary/50 focus:outline-none placeholder:text-outline-variant/50 font-mono text-sm"
             />
             <p className="text-sm text-on-surface-variant mt-2">
               Default format: YYYY-MM-DD_HH-MM_students.jsonc
@@ -334,17 +369,17 @@ function AdminStudentsBankPage() {
           </div>
           <button
             onClick={handleSave}
-            disabled={saveMutation.isPending}
-            className="px-6 py-3 bg-tertiary text-on-tertiary font-bold rounded-lg hover:bg-tertiary/90 transition-all disabled:opacity-50"
+            disabled={saveMutation.isPending || !saveFilename.trim()}
+            className="bg-tertiary text-on-tertiary font-bold px-6 py-3 rounded-lg hover:bg-tertiary/90 transition-all text-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {saveMutation.isPending ? "Saving..." : "Save to Bank"}
+            {saveMutation.isPending ? "Saving..." : "Save"}
           </button>
         </div>
       </div>
 
       {/* Load Section */}
       <div className="mb-8">
-        <h2 className="text-lg font-bold font-headline text-on-surface mb-4">Available Students Files</h2>
+        <h2 className="text-lg font-bold font-headline text-tertiary mb-4">Available Students Files</h2>
         {isLoadingFiles && <p className="text-on-surface-variant">Loading files...</p>}
         {currentError && (
           <p className="text-error text-sm">
@@ -404,13 +439,13 @@ function AdminStudentsBankPage() {
                           <span className="text-on-surface font-bold">Overwrite current?</span>
                           <button
                             onClick={() => handleLoadConfirm(file)}
-                            className="bg-error/20 border border-error/30 text-error hover:bg-error/30 px-2 py-0.5 text-xs rounded transition-all"
+                            className="bg-error/20 border border-error/50 text-error hover:bg-error/30 px-2 py-0.5 text-xs rounded transition-colors disabled:opacity-50"
                           >
                             Yes
                           </button>
                           <button
                             onClick={handleLoadCancel}
-                            className="bg-surface-bright text-on-surface px-2 py-0.5 text-xs rounded hover:bg-surface-bright/80 transition-all"
+                            className="bg-surface-container-high border border-outline-variant/30 text-on-surface-variant hover:text-on-surface px-2 py-0.5 text-xs rounded transition-colors"
                           >
                             No
                           </button>
@@ -419,14 +454,14 @@ function AdminStudentsBankPage() {
                         <button
                           onClick={() => handleLoad(file)}
                           disabled={isLoading}
-                          className="bg-primary text-on-primary font-bold py-1 px-3 rounded transition-all text-sm disabled:opacity-50"
+                          className="bg-primary text-on-primary font-bold py-1 px-3 rounded transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Load
                         </button>
                       )}
                       <button
                         onClick={() => handleRenameClick(file)}
-                        className="bg-surface-container-high border border-outline-variant/30 text-on-surface-variant hover:text-on-surface py-1 px-3 rounded text-sm transition-all disabled:opacity-50"
+                        className="bg-surface-container-high border border-outline-variant/30 text-on-surface-variant hover:text-on-surface py-1 px-3 rounded text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled={isLoading}
                       >
                         Rename
@@ -444,14 +479,14 @@ function AdminStudentsBankPage() {
                           <span className="text-error font-semibold">Delete?</span>
                           <button
                             onClick={() => handleDeleteConfirm(file)}
-                            className="bg-error/20 border border-error/30 text-error hover:bg-error/30 px-2 py-0.5 text-xs rounded transition-all disabled:opacity-50"
+                            className="bg-error/20 border border-error/50 text-error hover:bg-error/30 px-2 py-0.5 text-xs rounded transition-colors disabled:opacity-50"
                             disabled={deleteMutation.isPending}
                           >
                             {deleteMutation.isPending ? "Deleting..." : "Yes"}
                           </button>
                           <button
                             onClick={handleDeleteCancel}
-                            className="bg-surface-bright text-on-surface px-2 py-0.5 text-xs rounded hover:bg-surface-bright/80 transition-all disabled:opacity-50"
+                            className="bg-surface-container-high border border-outline-variant/30 text-on-surface-variant hover:text-on-surface px-2 py-0.5 text-xs rounded transition-colors disabled:opacity-50"
                             disabled={deleteMutation.isPending}
                           >
                             No
@@ -460,7 +495,7 @@ function AdminStudentsBankPage() {
                       ) : (
                         <button
                           onClick={() => handleDeleteClick(file)}
-                          className="bg-error/10 border border-error/30 text-error hover:bg-error/20 py-1 px-3 rounded text-sm transition-all disabled:opacity-50"
+                          className="bg-error/10 border border-error/30 text-error hover:bg-error/20 py-1 px-3 rounded text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           disabled={isLoading}
                         >
                           Delete

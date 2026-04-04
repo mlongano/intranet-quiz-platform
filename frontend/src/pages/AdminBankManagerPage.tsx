@@ -291,6 +291,7 @@ function AdminBankManagerPage() {
       activePath="/admin/questions-bank"
       adminPassword={adminPassword || ""}
       pageTitle="Question Banks"
+      titleClassName="from-primary to-primary-dim"
     >
       <div>
         {!adminPassword && (
@@ -325,7 +326,7 @@ function AdminBankManagerPage() {
         )}
 
         <div className="mb-8 p-6 bg-surface-container border border-outline-variant/20 rounded-xl">
-          <h2 className="font-headline text-lg font-bold text-on-surface mb-4">
+          <h2 className="font-headline text-lg font-bold text-primary mb-4">
             Save Current Quiz to Bank
           </h2>
           {currentQuizData?.title && (
@@ -358,7 +359,7 @@ function AdminBankManagerPage() {
         </div>
 
         <div>
-          <h2 className="font-headline text-lg font-bold text-on-surface mb-4">
+          <h2 className="font-headline text-lg font-bold text-primary mb-4">
             Available Quiz Files in Bank
           </h2>
           {isLoadingFiles ? (
@@ -410,13 +411,6 @@ function AdminBankManagerPage() {
                                 : "Preview"}
                           </button>
                           <button
-                            onClick={() => navigate(`/admin/questions?bankFile=${encodeURIComponent(filename)}`, { state: { adminPassword } })}
-                            className="bg-surface-container-high border border-primary/30 text-primary hover:bg-primary/10 font-bold py-1 px-3 rounded transition-colors text-sm"
-                            disabled={!adminPassword}
-                          >
-                            Edit
-                          </button>
-                          <button
                             onClick={() => handleLoadClick(filename)}
                             className="bg-primary text-on-primary font-bold py-1 px-3 rounded transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                             disabled={isLoading || !adminPassword}
@@ -426,8 +420,15 @@ function AdminBankManagerPage() {
                               : "Load"}
                           </button>
                           <button
+                            onClick={() => navigate(`/admin/questions?bankFile=${encodeURIComponent(filename)}`, { state: { adminPassword } })}
+                            className="bg-secondary/10 border border-secondary/30 text-secondary hover:bg-secondary/20 font-bold py-1 px-3 rounded transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={!adminPassword}
+                          >
+                            Edit
+                          </button>
+                          <button
                             onClick={() => handleRenameClick(filename)}
-                            className="bg-surface-container-high border border-secondary/30 text-secondary hover:bg-secondary/10 font-bold py-1 px-3 rounded transition-colors text-sm disabled:opacity-50"
+                            className="bg-surface-container-high border border-outline-variant/30 text-on-surface-variant hover:text-on-surface py-1 px-3 rounded transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                             disabled={isLoading || !adminPassword}
                           >
                             Rename
@@ -461,7 +462,7 @@ function AdminBankManagerPage() {
                           ) : (
                             <button
                               onClick={() => handleDeleteClick(filename)}
-                              className="bg-error/10 border border-error/30 text-error py-1 px-3 rounded text-sm hover:bg-error/20 transition-colors disabled:opacity-50"
+                              className="bg-error/10 border border-error/30 text-error hover:bg-error/20 py-1 px-3 rounded text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                               disabled={isLoading || !adminPassword}
                             >
                               Delete

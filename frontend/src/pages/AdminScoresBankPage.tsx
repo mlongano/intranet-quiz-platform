@@ -269,6 +269,7 @@ function AdminScoresBankPage() {
       activePath="/admin/scores-bank"
       adminPassword={adminPassword || ""}
       pageTitle="Scores Bank"
+      titleClassName="from-secondary to-secondary/60"
     >
       <div>
         {/* Message if password is not available */}
@@ -295,7 +296,7 @@ function AdminScoresBankPage() {
         )}
 
         <div className="mb-8 p-6 bg-surface-container border border-outline-variant/20 rounded-xl">
-          <h2 className="text-lg font-bold font-headline text-on-surface mb-4">
+          <h2 className="text-lg font-bold font-headline text-secondary mb-4">
             Save Current Scores to Bank
           </h2>
           {currentQuizData?.title && (
@@ -328,7 +329,7 @@ function AdminScoresBankPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-bold font-headline text-on-surface mb-4">
+          <h2 className="text-lg font-bold font-headline text-secondary mb-4">
             Available Scores Files in Bank
           </h2>
           {isLoadingFiles ? (
@@ -398,7 +399,7 @@ function AdminScoresBankPage() {
                           </button>
                           <button
                             onClick={() => handleRenameClick(filename)}
-                            className="bg-surface-container-high border border-primary/30 text-primary hover:bg-primary/10 font-bold py-1 px-3 rounded transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="bg-surface-container-high border border-outline-variant/30 text-on-surface-variant hover:text-on-surface py-1 px-3 rounded transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                             disabled={isLoading || !adminPassword}
                           >
                             Rename
@@ -417,14 +418,14 @@ function AdminScoresBankPage() {
                               <span className="text-error font-semibold">Delete?</span>
                               <button
                                 onClick={() => deleteFileMutation.mutate(filename)}
-                                className="bg-error/20 border border-error/50 text-error px-2 py-0.5 text-xs rounded hover:bg-error/30 disabled:opacity-50"
+                                className="bg-error/20 border border-error/50 text-error px-2 py-0.5 text-xs rounded hover:bg-error/30 transition-colors disabled:opacity-50"
                                 disabled={deleteFileMutation.isPending}
                               >
                                 {deleteFileMutation.isPending ? "Deleting..." : "Yes"}
                               </button>
                               <button
                                 onClick={() => setDeleteConfirmFile(null)}
-                                className="bg-surface-container-high border border-outline-variant/30 text-on-surface-variant hover:text-on-surface px-2 py-0.5 text-xs rounded disabled:opacity-50"
+                                className="bg-surface-container-high border border-outline-variant/30 text-on-surface-variant hover:text-on-surface px-2 py-0.5 text-xs rounded transition-colors disabled:opacity-50"
                                 disabled={deleteFileMutation.isPending}
                               >
                                 No
