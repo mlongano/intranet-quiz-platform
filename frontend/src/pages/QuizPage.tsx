@@ -4,12 +4,13 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { resumeQuiz, saveAnswer, submitQuiz, Question, Answer, getQuizStatus } from "../api";
 import QuestionDisplay from "../components/QuestionDisplay";
+import ThemeToggle from "../components/ThemeToggle";
 
 // Re-usable ErrorDisplay component
 function ErrorDisplay({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <div className="my-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+    <div className="my-4 p-3 bg-error/10 border border-error/40 text-error rounded-lg">
       <p>{message}</p>
     </div>
   );
@@ -17,7 +18,7 @@ function ErrorDisplay({ message }: { message: string | null }) {
 
 // Re-usable Loading component
 function LoadingSpinner() {
-  return <div className="text-center p-4">Loading...</div>;
+  return <div className="min-h-screen flex items-center justify-center text-on-surface-variant">Loading...</div>;
 }
 
 function QuizPage() {
@@ -155,17 +156,14 @@ function QuizPage() {
   // Check if quiz is disabled
   if (quizStatusData && !quizStatusData.enabled) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full text-center">
+      <div className="min-h-screen bg-surface flex items-center justify-center p-4">
+        <div className="bg-surface-container rounded-lg border border-outline-variant/30 p-8 max-w-md w-full text-center">
           <div className="text-6xl mb-4">🚫</div>
-          <h2 className="text-2xl font-bold text-gray-800 mb-4">Quiz Disabled</h2>
-          <p className="text-gray-600 mb-6">
+          <h2 className="text-2xl font-bold text-on-surface mb-4">Quiz Disabled</h2>
+          <p className="text-on-surface-variant mb-6">
             The quiz is currently disabled by the administrator. Please check back later or contact your instructor.
           </p>
-          <button
-            onClick={() => navigate("/")}
-            className="px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors font-medium"
-          >
+          <button onClick={() => navigate("/")} className="px-6 py-2 bg-primary text-on-primary rounded-lg hover:bg-primary/90 transition-colors font-medium">
             Back to Home
           </button>
         </div>
@@ -182,22 +180,19 @@ function QuizPage() {
   // Handle quiz completion
   if (isComplete) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full text-center">
+      <div className="min-h-screen bg-surface flex items-center justify-center p-4">
+        <div className="bg-surface-container rounded-lg border border-outline-variant/30 p-8 max-w-md w-full text-center">
           <div className="text-6xl mb-4">✅</div>
-          <h2 className="text-2xl font-bold text-gray-800 mb-4">Quiz Complete!</h2>
-          <p className="text-gray-600 mb-6">
+          <h2 className="text-2xl font-bold text-on-surface mb-4">Quiz Complete!</h2>
+          <p className="text-on-surface-variant mb-6">
             You have answered all questions. Click the button below to submit your quiz.
           </p>
           {quizData?.message && (
-            <p className="text-sm text-gray-500 mb-4">{quizData.message}</p>
+            <p className="text-sm text-on-surface-variant mb-4">{quizData.message}</p>
           )}
           <ErrorDisplay message={localError} />
-          <button
-            onClick={handleSubmit}
-            disabled={submitMutation.isPending}
-            className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-          >
+          <button onClick={handleSubmit} disabled={submitMutation.isPending}
+            className="px-6 py-2 bg-tertiary text-on-tertiary font-semibold rounded-lg hover:bg-tertiary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
             {submitMutation.isPending ? "Submitting..." : "Submit Quiz"}
           </button>
         </div>
@@ -214,13 +209,16 @@ function QuizPage() {
 
   return (
     <main onContextMenu={preventContextMenu} className="w-dvw h-dvh">
+      <div className="fixed top-4 right-4 z-50">
+        <ThemeToggle />
+      </div>
       <div
         id="quiz-container"
         className="container mx-auto p-4 max-w-3xl quiz-no-select"
       >
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold">Quiz: {quizData.student}</h2>
-          <span className="text-sm text-gray-600">
+          <h2 className="text-xl font-semibold text-on-surface">Quiz: {quizData.student}</h2>
+          <span className="text-sm text-on-surface-variant">
             Question {currentIndex + 1} / {totalQuestions}
           </span>
         </div>
@@ -228,7 +226,7 @@ function QuizPage() {
         {/* Display local errors */}
         <ErrorDisplay message={localError} />
 
-        <div className="bg-white p-6 rounded shadow-md border border-gray-200 select-none">
+        <div className="bg-surface-container p-6 rounded-lg border border-outline-variant/30 select-none">
           <QuestionDisplay
             question={currentQuestion}
             currentAnswer={currentAnswer}
@@ -241,7 +239,7 @@ function QuizPage() {
           <button
             onClick={handleNext}
             disabled={!isCurrentAnswered || saveAnswerMutation.isPending}
-            className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-tertiary text-on-tertiary font-semibold rounded-md px-6 py-2 hover:bg-tertiary/90 focus:outline-none focus:ring-2 focus:ring-tertiary/50 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {saveAnswerMutation.isPending
               ? "Saving..."
