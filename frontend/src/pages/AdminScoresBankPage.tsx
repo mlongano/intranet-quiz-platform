@@ -4,7 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   fetchScoresBankFiles,
   loadScoresFromBank,
@@ -27,6 +27,7 @@ const SCORES_BANK_FOLDER = "banks/scores_bank";
 
 function AdminScoresBankPage() {
   const location = useLocation();
+  const navigate = useNavigate();
 
   const adminPassword = location.state?.adminPassword;
 
@@ -387,6 +388,13 @@ function AdminScoresBankPage() {
                               loadFileMutation.variables === filename
                               ? "Loading..."
                               : "Load"}
+                          </button>
+                          <button
+                            onClick={() => navigate("/admin/scores-bank-review", { state: { adminPassword, filename } })}
+                            className="bg-secondary/10 border border-secondary/30 text-secondary hover:bg-secondary/20 font-bold py-1 px-3 rounded transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={!adminPassword}
+                          >
+                            Edit
                           </button>
                           <button
                             onClick={() => handleRenameClick(filename)}

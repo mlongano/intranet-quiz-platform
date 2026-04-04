@@ -25,7 +25,7 @@ function AdminScoresBankReviewPage() {
   const queryClient = useQueryClient();
   const adminPassword = location.state?.adminPassword;
 
-  const [selectedFilename, setSelectedFilename] = useState<string | null>(null);
+  const [selectedFilename, setSelectedFilename] = useState<string | null>(location.state?.filename ?? null);
   const [viewBy, setViewBy] = useState<"student" | "question">("student");
   const [selectedStudentSubmission, setSelectedStudentSubmission] = useState<ScoreEntry | null>(null);
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | number | null>(null);
