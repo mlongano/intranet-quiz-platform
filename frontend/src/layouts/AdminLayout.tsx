@@ -1,14 +1,35 @@
 import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Archive, BarChart3, FileText, LayoutDashboard, Menu, Users } from "lucide-react";
+import { Archive, BarChart3, ChevronDown, ChevronRight, FileText, LayoutDashboard, Menu, Users } from "lucide-react";
 import ThemeToggle from "../components/ThemeToggle";
 
-const NAV_ITEMS = [
+interface NavChild {
+  label: string;
+  path: string;
+}
+
+interface NavItem {
+  label: string;
+  Icon: React.ComponentType<{ size?: number; className?: string }>;
+  path: string;
+  children?: NavChild[];
+}
+
+const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard",  Icon: LayoutDashboard, path: "/admin/dashboard" },
   { label: "Questions",  Icon: FileText,         path: "/admin/questions" },
   { label: "Scores",     Icon: BarChart3,        path: "/admin/scores" },
   { label: "Students",   Icon: Users,            path: "/admin/students" },
-  { label: "Archives",   Icon: Archive,          path: "/admin/questions-bank" },
+  {
+    label: "Archives",
+    Icon: Archive,
+    path: "/admin/questions-bank",
+    children: [
+      { label: "Question Banks", path: "/admin/questions-bank" },
+      { label: "Scores Bank",    path: "/admin/scores-bank" },
+      { label: "Students Bank",  path: "/admin/students-bank" },
+    ],
+  },
 ];
 
 interface AdminLayoutProps {
@@ -23,6 +44,25 @@ export default function AdminLayout({ activePath, adminPassword, children, pageT
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const navigateTo = (path: string) => navigate(path, { state: { adminPassword } });
+
+  const [openSections, setOpenSections] = useState<Set<string>>(() => {
+    const initial = new Set<string>();
+    for (const item of NAV_ITEMS) {
+      if (item.children?.some((c) => activePath === c.path || activePath.startsWith(c.path + "?"))) {
+        initial.add(item.label);
+      }
+    }
+    return initial;
+  });
+
+  const toggleSection = (label: string) => {
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  };
 
   return (
     <div className="flex min-h-screen bg-surface text-on-surface selection:bg-primary/30">
@@ -41,22 +81,63 @@ export default function AdminLayout({ activePath, adminPassword, children, pageT
           )}
         </div>
         <nav className="flex-1 py-4 overflow-hidden">
-          {NAV_ITEMS.map(({ label, Icon, path }) => {
-            const isActive = activePath === path || activePath.startsWith(path + "?");
+          {NAV_ITEMS.map(({ label, Icon, path, children: subItems }) => {
+            const hasChildren = !!subItems?.length;
+            const isChildActive = hasChildren && subItems!.some((c) => activePath === c.path || activePath.startsWith(c.path + "?"));
+            const isActive = !hasChildren && (activePath === path || activePath.startsWith(path + "?"));
+            const isOpen = openSections.has(label);
+
             return (
-              <button
-                key={path}
-                title={!sidebarOpen ? label : undefined}
-                onClick={() => navigateTo(path)}
-                className={`w-full flex items-center gap-3 px-4 py-3 transition-all border-l-4 ${
-                  isActive
-                    ? "bg-surface-bright text-primary border-primary translate-x-0.5"
-                    : "text-on-surface-variant hover:text-primary hover:bg-surface-container-high border-transparent"
-                } ${!sidebarOpen ? "justify-center" : ""}`}
-              >
-                <Icon size={18} className="flex-shrink-0" />
-                {sidebarOpen && <span className="text-sm font-medium font-body whitespace-nowrap">{label}</span>}
-              </button>
+              <div key={label}>
+                <button
+                  title={!sidebarOpen ? label : undefined}
+                  onClick={() => {
+                    if (hasChildren) {
+                      if (sidebarOpen) toggleSection(label);
+                      else navigateTo(path);
+                    } else {
+                      navigateTo(path);
+                    }
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 transition-all border-l-4 ${
+                    isActive || isChildActive
+                      ? "bg-surface-bright text-primary border-primary translate-x-0.5"
+                      : "text-on-surface-variant hover:text-primary hover:bg-surface-container-high border-transparent"
+                  } ${!sidebarOpen ? "justify-center" : ""}`}
+                >
+                  <Icon size={18} className="flex-shrink-0" />
+                  {sidebarOpen && (
+                    <>
+                      <span className="text-sm font-medium font-body whitespace-nowrap flex-1 text-left">{label}</span>
+                      {hasChildren && (
+                        isOpen
+                          ? <ChevronDown size={14} className="flex-shrink-0 opacity-60" />
+                          : <ChevronRight size={14} className="flex-shrink-0 opacity-60" />
+                      )}
+                    </>
+                  )}
+                </button>
+                {sidebarOpen && hasChildren && isOpen && (
+                  <div className="ml-4 border-l border-outline-variant/30">
+                    {subItems!.map((child) => {
+                      const isChildItemActive = activePath === child.path || activePath.startsWith(child.path + "?");
+                      return (
+                        <button
+                          key={child.path}
+                          onClick={() => navigateTo(child.path)}
+                          className={`w-full flex items-center gap-2 pl-6 pr-4 py-2.5 transition-all border-l-2 -ml-px text-left ${
+                            isChildItemActive
+                              ? "text-primary border-primary bg-primary/5"
+                              : "text-on-surface-variant hover:text-primary hover:bg-surface-container-high border-transparent"
+                          }`}
+                        >
+                          <span className="text-xs font-medium font-body whitespace-nowrap">{child.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </nav>
