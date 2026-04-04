@@ -376,7 +376,7 @@ const QuestionEditor: React.FC = () => {
         )}
 
   
-        <div className="flex flex-wrap gap-4 mb-4">
+        <div className="sticky top-16 z-20 -mx-8 px-8 py-3 mb-4 bg-surface/90 backdrop-blur-sm border-b border-outline-variant/15 flex flex-wrap gap-4 items-center">
           <button
             onClick={() => refetchQuestions()}
             disabled={isProcessing || !adminPassword}
