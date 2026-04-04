@@ -1,22 +1,7 @@
 import os
 import time
 import random
-import requests
-from requests.exceptions import RequestException
-
-OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
-GOOGLE_GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
-
-# Strict system prompt to encourage consistent JSON-only replies and give two short examples
-# SYSTEM_PROMPT = (
-#     "You are an unbiased quiz grader.\n"
-#     "Return JSON only with exactly these keys: {\"score\": float (0-1), \"verdict\": string, \"llm_feedback\": string}.\n"
-#     "Score must be 1.0 for full credit, 0.0 for no credit, and fractions for partial credit. Keep llm_feedback shot (<=170 chars).\n"
-#     "Examples:\n"
-#     "1) Question: 'Capital of France?'; Correct answers: ['Paris']; Student answer: 'Paris' -> {\"score\":1.0,\"verdict\":\"correct\",\"llm_feedback\":\"Exact match\"}\n"
-#     "2) Question: 'Name three noble gases.'; Correct answers include ['helium','neon','argon','krypton','xenon','radon']; Student answer: 'helium, neon' -> {\"score\":0.5,\"verdict\":\"partial\",\"llm_feedback\":\"Two valid gases, needs 3\"}\n"
-#     "Respond with JSON only and nothing else."
-# )
+import llm
 
 SYSTEM_PROMPT = (
     "You are an expert AI evaluator tasked with grading a student's answer against a rubric.\n"
@@ -38,9 +23,10 @@ SYSTEM_PROMPT = (
     "Respond with JSON only and nothing else."
 )
 
+
 def evaluate_open_question(question_text, user_answer, correct_answers):
     """
-    Evaluate an open question using the selected LLM provider.
+    Evaluate an open question using the configured LLM model.
     Args:
         question_text (str): The question being asked.
         user_answer (str): The answer provided by the user.
@@ -48,117 +34,35 @@ def evaluate_open_question(question_text, user_answer, correct_answers):
     Returns:
         dict: { 'score': float, 'verdict': str, 'llm_feedback': str }
     """
-    provider = os.getenv("LLM_PROVIDER", "openai").lower()
-    if provider == "openai":
-        return _evaluate_with_openai(question_text, user_answer, correct_answers)
-    elif provider == "google":
-        return _evaluate_with_google_gemini(question_text, user_answer, correct_answers)
-    else:
-        raise ValueError(f"Unsupported LLM provider: {provider}")
-
-def _evaluate_with_openai(question_text, user_answer, correct_answers):
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY environment variable not set.")
-    # Configurable params
-    model = os.getenv("LLM_MODEL", "gpt-3.5-turbo")
-    timeout = float(os.getenv("LLM_TIMEOUT_SEC", "10"))
+    model_id = os.getenv("LLM_MODEL", "gpt-4o-mini")
     retries = int(os.getenv("LLM_RETRIES", "2"))
     backoff = float(os.getenv("LLM_BACKOFF_FACTOR", "0.5"))
 
+    try:
+        model = llm.get_model(model_id)
+    except Exception as e:
+        raise RuntimeError(
+            f"Cannot load model '{model_id}': {e}. "
+            f"Make sure the llm plugin for this provider is installed "
+            f"(e.g. 'uv add llm-anthropic' or 'uv add llm-ollama')."
+        )
+
     prompt = _build_prompt(question_text, user_answer, correct_answers)
-    # Use strict system prompt + concise user prompt for reliability
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt}
-        ],
-        "max_tokens": 256
-    }
 
     attempt = 0
     last_exc = None
     while attempt <= retries:
         try:
-            resp = requests.post(OPENAI_API_URL, headers=headers, json=data, timeout=timeout)
-            resp.raise_for_status()
-            content = resp.json()
-            # Safe access - may raise KeyError which will be handled
-            text = content.get("choices", [])[0].get("message", {}).get("content")
-            return _parse_llm_response(text)
-        except RequestException as e:
+            response = model.prompt(prompt, system=SYSTEM_PROMPT)
+            return _parse_llm_response(response.text())
+        except Exception as e:
             last_exc = e
-            # For 4xx errors (except 429) don't retry
-            status = None
-            try:
-                status = getattr(e.response, 'status_code', None)
-            except Exception:
-                status = None
-            if status and 400 <= status < 500 and status != 429:
-                raise
-            # Sleep with jittered exponential backoff
             sleep_time = backoff * (2 ** attempt) + random.uniform(0, 0.1)
             time.sleep(sleep_time)
             attempt += 1
 
-    # If we exhausted retries, raise the last exception
-    raise RuntimeError(f"OpenAI request failed after {retries+1} attempts: {last_exc}")
+    raise RuntimeError(f"LLM request failed after {retries + 1} attempts: {last_exc}")
 
-def _evaluate_with_google_gemini(question_text, user_answer, correct_answers):
-    api_key = os.getenv("GOOGLE_GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError("GOOGLE_GEMINI_API_KEY environment variable not set.")
-    prompt = _build_prompt(question_text, user_answer, correct_answers)
-    # Prepend the strict system prompt to the user prompt for Gemini
-    full_prompt = SYSTEM_PROMPT + "\n\n" + prompt
-    timeout = float(os.getenv("LLM_TIMEOUT_SEC", "10"))
-    retries = int(os.getenv("LLM_RETRIES", "2"))
-    backoff = float(os.getenv("LLM_BACKOFF_FACTOR", "0.5"))
-
-    headers = {"Content-Type": "application/json"}
-    data = {
-        "contents": [{
-            "role": "user",
-            "parts": [{"text": full_prompt}]
-        }]
-    }
-    url = f"{GOOGLE_GEMINI_API_URL}?key={api_key}"
-
-    attempt = 0
-    last_exc = None
-    while attempt <= retries:
-        try:
-            resp = requests.post(url, headers=headers, json=data, timeout=timeout)
-            resp.raise_for_status()
-            content = resp.json()
-            # Attempt to navigate Gemini response safely
-            candidates = content.get('candidates') or []
-            if candidates:
-                parts = candidates[0].get('content', {}).get('parts') or []
-                if parts:
-                    return _parse_llm_response(parts[0].get('text'))
-            # If format not as expected, fallback to parsing top-level text if present
-            text = content.get('output', {}).get('text') or str(content)
-            return _parse_llm_response(text)
-        except RequestException as e:
-            last_exc = e
-            status = None
-            try:
-                status = getattr(e.response, 'status_code', None)
-            except Exception:
-                status = None
-            if status and 400 <= status < 500 and status != 429:
-                raise
-            sleep_time = backoff * (2 ** attempt) + random.uniform(0, 0.1)
-            time.sleep(sleep_time)
-            attempt += 1
-
-    raise RuntimeError(f"Google Gemini request failed after {retries+1} attempts: {last_exc}")
 
 def _build_prompt(question_text, user_answer, correct_answers):
     return (
@@ -169,29 +73,27 @@ def _build_prompt(question_text, user_answer, correct_answers):
         "Reply in JSON: {score: float (0-1), verdict: string, llm_feedback: string}"
     )
 
+
 def _parse_llm_response(response_text):
-    import json
+    import json, re
     try:
-        # Ensure response_text is a string
         if response_text is None:
             return {"score": 0.0, "verdict": "empty", "llm_feedback": "No response text from model."}
         if not isinstance(response_text, str):
             response_text = str(response_text)
         parsed = json.loads(response_text)
-        # Ensure keys exist and score is clamped
         score = float(parsed.get('score', 0.0)) if isinstance(parsed.get('score', 0.0), (int, float, str)) else 0.0
         try:
             score = float(score)
         except Exception:
             score = 0.0
-        # Clamp
         score = max(0.0, min(1.0, score))
-        verdict = parsed.get('verdict', '')
-        llm_feedback = parsed.get('llm_feedback', '')
-        return {"score": score, "verdict": verdict, "llm_feedback": llm_feedback}
+        return {
+            "score": score,
+            "verdict": parsed.get('verdict', ''),
+            "llm_feedback": parsed.get('llm_feedback', ''),
+        }
     except Exception:
-        # fallback: try to extract JSON from text
-        import re
         match = re.search(r'\{.*\}', response_text, re.DOTALL)
         if match:
             try:
@@ -202,7 +104,11 @@ def _parse_llm_response(response_text):
                 except Exception:
                     score = 0.0
                 score = max(0.0, min(1.0, score))
-                return {"score": score, "verdict": parsed.get('verdict', ''), "llm_feedback": parsed.get('llm_feedback', '')}
+                return {
+                    "score": score,
+                    "verdict": parsed.get('verdict', ''),
+                    "llm_feedback": parsed.get('llm_feedback', ''),
+                }
             except Exception:
                 pass
         return {"score": 0.0, "verdict": "unparseable", "llm_feedback": response_text}

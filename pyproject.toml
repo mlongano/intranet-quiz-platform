@@ -8,10 +8,13 @@ dependencies = [
     "commentjson>=0.9.0",
     "filelock>=3.16.1",
     "flask>=3.1.0",
+    "llm>=0.19",
+    "llm-anthropic>=0.24",
+    "llm-deepseek>=0.1.6",
+    "llm-ollama>=0.15.1",
     "python-dotenv>=1.1.0",
     "python-magic>=0.4.27",
     "waitress>=3.0.2",
-    "requests>=2.31.0",
 ]
 
 [project.optional-dependencies]
