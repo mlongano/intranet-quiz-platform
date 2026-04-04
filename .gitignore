@@ -20,3 +20,4 @@ scores*
 
 # Banks directory - synced separately with Git
 banks/
+.vscode/
