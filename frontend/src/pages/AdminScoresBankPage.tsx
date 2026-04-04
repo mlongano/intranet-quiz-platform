@@ -22,8 +22,8 @@ import {
 import { slugify } from "../lib/utils";
 import AdminLayout from "../layouts/AdminLayout";
 
-// Define the name of the scores bank folder for display purposes
-const SCORES_BANK_FOLDER = "scores_bank";
+// Define the path of the scores bank folder for display purposes
+const SCORES_BANK_FOLDER = "banks/scores_bank";
 
 function AdminScoresBankPage() {
   const location = useLocation();
@@ -269,7 +269,7 @@ function AdminScoresBankPage() {
       adminPassword={adminPassword || ""}
       pageTitle="Scores Bank"
     >
-      <div className="max-w-5xl">
+      <div>
         {/* Message if password is not available */}
         {!adminPassword && (
           <div className="bg-error/10 border border-error/30 text-error px-4 py-3 rounded-lg mb-6">
@@ -293,8 +293,8 @@ function AdminScoresBankPage() {
           </div>
         )}
 
-        <div className="mb-8">
-          <h2 className="text-lg font-semibold text-on-surface mb-3">
+        <div className="mb-8 p-6 bg-surface-container border border-outline-variant/20 rounded-xl">
+          <h2 className="text-lg font-bold font-headline text-on-surface mb-4">
             Save Current Scores to Bank
           </h2>
           {currentQuizData?.title && (
@@ -302,30 +302,32 @@ function AdminScoresBankPage() {
               Quiz title: <span className="font-medium text-on-surface">"{currentQuizData.title}"</span>
             </p>
           )}
-          <div className="flex items-center gap-3">
-            <input
-              type="text"
-              placeholder="Enter filename (e.g., 2025-10-25_20-56_risultati_quiz-title.jsonc)"
-              className="bg-surface-container-low border border-outline-variant/30 text-on-surface placeholder-on-surface-variant/50 rounded px-3 py-2 flex-grow font-mono text-sm focus:border-primary/50 focus:outline-none"
-              value={saveFilename}
-              onChange={(e) => setSaveFilename(e.target.value)}
-              disabled={isLoading || !adminPassword}
-            />
+          <div className="flex gap-3 items-start">
+            <div className="flex-grow">
+              <input
+                type="text"
+                placeholder="Enter filename (e.g., 2025-10-25_20-56_risultati_quiz-title.jsonc)"
+                className="w-full p-3 bg-surface-container-low border border-outline-variant/30 text-on-surface focus:border-primary/50 focus:outline-none rounded-lg placeholder:text-outline-variant/50 font-mono text-sm"
+                value={saveFilename}
+                onChange={(e) => setSaveFilename(e.target.value)}
+                disabled={isLoading || !adminPassword}
+              />
+              <p className="text-sm text-on-surface-variant mt-2">
+                You can edit the filename. The .jsonc extension will be added automatically if missing.
+              </p>
+            </div>
             <button
               onClick={handleSaveClick}
-              className="bg-tertiary text-on-tertiary font-bold py-2 px-5 rounded transition-all text-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-tertiary text-on-tertiary font-bold px-6 py-3 rounded-lg hover:bg-tertiary/90 transition-all text-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={isLoading || !adminPassword || !saveFilename.trim()}
             >
               {saveFileMutation.isPending ? "Saving..." : "Save"}
             </button>
           </div>
-          <p className="text-xs text-on-surface-variant/60 mt-2">
-            You can edit the filename. The .jsonc extension will be added automatically if missing.
-          </p>
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-on-surface mb-3">
+          <h2 className="text-lg font-bold font-headline text-on-surface mb-4">
             Available Scores Files in Bank
           </h2>
           {isLoadingFiles ? (
@@ -359,7 +361,7 @@ function AdminScoresBankPage() {
                         </button>
                       </div>
                     ) : (
-                      <span className="text-on-surface font-medium">{filename}</span>
+                      <span className="font-mono text-sm text-on-surface-variant">{filename}</span>
                     )}
 
                     <div className="flex items-center gap-2">
@@ -395,7 +397,7 @@ function AdminScoresBankPage() {
                           </button>
                           <a
                             href={getScoresDownloadUrl(filename, adminPassword || "")}
-                            className="text-on-surface-variant hover:text-primary text-sm transition-colors"
+                            className="bg-tertiary/10 border border-tertiary/30 text-tertiary hover:bg-tertiary/20 py-1 px-3 rounded text-sm transition-all inline-block"
                             target="_blank"
                             rel="noopener noreferrer"
                           >

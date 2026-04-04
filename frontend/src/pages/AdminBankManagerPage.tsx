@@ -1,4 +1,3 @@
-// frontend/src/pages/AdminBankManagerPage.tsx
 import { useState, useMemo, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -21,6 +20,9 @@ import {
 } from "../api";
 import { slugify } from "../lib/utils";
 import AdminLayout from "../layouts/AdminLayout";
+
+// Define the path of the question bank folder for display purposes
+const QUESTION_BANK_FOLDER = "banks/question_bank";
 
 function AdminBankManagerPage() {
   const location = useLocation();
@@ -290,7 +292,7 @@ function AdminBankManagerPage() {
       adminPassword={adminPassword || ""}
       pageTitle="Question Banks"
     >
-      <div className="max-w-5xl">
+      <div>
         {!adminPassword && (
           <div className="bg-error/10 border border-error/30 rounded-lg px-4 py-3 mb-6 text-sm text-error">
             Admin password not provided via navigation state. Please log in via the admin login page.
@@ -322,8 +324,8 @@ function AdminBankManagerPage() {
           </div>
         )}
 
-        <div className="mb-8">
-          <h2 className="font-headline text-lg font-bold text-on-surface mb-3">
+        <div className="mb-8 p-6 bg-surface-container border border-outline-variant/20 rounded-xl">
+          <h2 className="font-headline text-lg font-bold text-on-surface mb-4">
             Save Current Quiz to Bank
           </h2>
           {currentQuizData?.title && (
@@ -331,30 +333,32 @@ function AdminBankManagerPage() {
               Quiz title: <span className="text-on-surface font-medium">"{currentQuizData.title}"</span>
             </p>
           )}
-          <div className="flex items-center gap-3">
-            <input
-              type="text"
-              placeholder="Enter filename (e.g., 20251025_123456_quiz-title.jsonc)"
-              className="bg-surface-container-low border border-outline-variant/30 text-on-surface focus:border-primary/50 focus:outline-none rounded px-3 py-2 flex-grow font-mono text-sm placeholder:text-outline-variant"
-              value={saveFilename}
-              onChange={(e) => setSaveFilename(e.target.value)}
-              disabled={isLoading || !adminPassword}
-            />
+          <div className="flex gap-3 items-start">
+            <div className="flex-grow">
+              <input
+                type="text"
+                placeholder="Enter filename (e.g., 20251025_123456_quiz-title.jsonc)"
+                className="w-full p-3 bg-surface-container-low border border-outline-variant/30 text-on-surface focus:border-primary/50 focus:outline-none rounded-lg placeholder:text-outline-variant/50 font-mono text-sm"
+                value={saveFilename}
+                onChange={(e) => setSaveFilename(e.target.value)}
+                disabled={isLoading || !adminPassword}
+              />
+              <p className="text-sm text-on-surface-variant mt-2">
+                You can edit the filename. The .jsonc extension will be added automatically if missing.
+              </p>
+            </div>
             <button
               onClick={handleSaveClick}
-              className="bg-primary text-on-primary font-bold py-2 px-5 rounded transition-all text-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-tertiary text-on-tertiary font-bold px-6 py-3 rounded-lg hover:bg-tertiary/90 transition-all text-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={isLoading || !adminPassword || !saveFilename.trim()}
             >
               {saveFileMutation.isPending ? "Saving..." : "Save"}
             </button>
           </div>
-          <p className="text-xs text-on-surface-variant mt-2">
-            You can edit the filename. The .jsonc extension will be added automatically if missing.
-          </p>
         </div>
 
         <div>
-          <h2 className="font-headline text-lg font-bold text-on-surface mb-3">
+          <h2 className="font-headline text-lg font-bold text-on-surface mb-4">
             Available Quiz Files in Bank
           </h2>
           {isLoadingFiles ? (
@@ -388,7 +392,7 @@ function AdminBankManagerPage() {
                         </button>
                       </div>
                     ) : (
-                      <span className="text-on-surface font-body text-sm">{filename}</span>
+                      <span className="font-mono text-sm text-on-surface-variant">{filename}</span>
                     )}
 
                     <div className="flex items-center gap-2">
@@ -430,7 +434,7 @@ function AdminBankManagerPage() {
                           </button>
                           <a
                             href={getQuizDownloadUrl(filename, adminPassword || "")}
-                            className="text-on-surface-variant hover:text-primary text-sm transition-colors px-2 py-1"
+                            className="bg-tertiary/10 border border-tertiary/30 text-tertiary hover:bg-tertiary/20 py-1 px-3 rounded text-sm transition-all inline-block"
                             target="_blank"
                             rel="noopener noreferrer"
                           >
@@ -546,7 +550,7 @@ function AdminBankManagerPage() {
             </ul>
           ) : (
             !isLoadingFiles && !currentError && (
-              <p className="text-on-surface-variant text-sm">No quiz files found in the questionbank_folder directory.</p>
+              <p className="text-on-surface-variant text-sm">No quiz files found in the '{QUESTION_BANK_FOLDER}' directory.</p>
             )
           )}
         </div>
