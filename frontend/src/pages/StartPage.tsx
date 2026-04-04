@@ -2,8 +2,10 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { FileText, Mail, AlertTriangle } from "lucide-react";
 import { startQuiz, getQuizStatus, getQuizInfo } from "../api";
 import ThemeToggle from "../components/ThemeToggle";
+import AccessibilityPanel from "../components/AccessibilityPanel";
 
 function ErrorDisplay({ message }: { message: string | null }) {
   if (!message) return null;
@@ -66,7 +68,8 @@ function StartPage() {
 
   return (
     <div className="min-h-screen bg-surface flex items-center justify-center p-4">
-      <div className="fixed top-4 right-4 z-50">
+      <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+        <AccessibilityPanel />
         <ThemeToggle />
       </div>
       <div className="w-full max-w-md">
@@ -75,7 +78,7 @@ function StartPage() {
         <div className="bg-surface-container rounded-t-2xl border border-b-0 border-outline-variant/30 p-8">
           <div className="text-center mb-6">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 border border-primary/30 rounded-full mb-4">
-              <span className="text-3xl">📝</span>
+              <FileText size={28} className="text-primary" />
             </div>
             <h1 className="text-3xl font-bold text-on-surface mb-2">
               {quizInfo?.title || "Quiz"}
@@ -128,7 +131,7 @@ function StartPage() {
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <span className="text-on-surface-variant text-lg">✉️</span>
+                  <Mail size={18} className="text-on-surface-variant" />
                 </div>
                 <input
                   id="email"
@@ -187,7 +190,7 @@ function StartPage() {
           {/* Footer Info */}
           <div className="mt-6 pt-6 border-t border-outline-variant/30">
             <div className="flex items-start space-x-3 text-xs text-on-surface-variant">
-              <span className="text-lg flex-shrink-0">💡</span>
+              <AlertTriangle size={16} className="text-secondary flex-shrink-0 mt-0.5" />
               <div className="space-y-1">
                 <p className="font-medium text-on-surface-variant">Informazioni importanti:</p>
                 <ul className="list-disc list-inside space-y-1 text-on-surface-variant/70">

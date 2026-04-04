@@ -150,3 +150,95 @@
 label:has(.option-image) {
     align-items: center;
 }
+
+/* ============================================================
+   Accessibility overrides (applied via HTML classes by useAccessibility hook)
+   ============================================================ */
+
+/* --- Font sizes --- */
+html.a11y-font-lg  { font-size: 18px; }
+html.a11y-font-xl  { font-size: 20px; }
+html.a11y-font-xxl { font-size: 22px; }
+
+/* --- Text spacing --- */
+html.a11y-spacing-relaxed body {
+  line-height: 1.9 !important;
+  letter-spacing: 0.05em;
+  word-spacing: 0.12em;
+}
+html.a11y-spacing-loose body {
+  line-height: 2.2 !important;
+  letter-spacing: 0.12em;
+  word-spacing: 0.25em;
+}
+
+/* --- Dyslexia-friendly font (OpenDyslexic via cdnfonts CDN) --- */
+html.a11y-font-dyslexic,
+html.a11y-font-dyslexic * {
+  font-family: 'OpenDyslexic', 'Comic Sans MS', sans-serif !important;
+}
+
+/* --- High contrast (specificity 0,1,1 beats :root 0,1,0 and .light 0,1,0) --- */
+html.a11y-contrast-high {
+  --surface: #ffffff;
+  --surface-container-low: #f5f5f5;
+  --surface-container: #ebebeb;
+  --surface-container-high: #e0e0e0;
+  --surface-bright: #ffffff;
+  --surface-container-highest: #d8d8d8;
+  --surface-container-rgb: 235, 235, 235;
+  --outline-variant: #333333;
+  --on-surface: #000000;
+  --on-surface-variant: #111111;
+  --primary: #0055bb;
+  --primary-dim: #003d88;
+  --secondary: #990000;
+  --tertiary: #006600;
+  --error: #cc0000;
+  --on-primary: #ffffff;
+  --on-secondary: #ffffff;
+  --on-tertiary: #ffffff;
+}
+
+/* --- Isolation shield: keeps the AccessibilityPanel dropdown immune to its own overrides ---
+   zoom counteracts the rem-scale shift caused by changing html font-size;
+   !important overrides undo spacing and dyslexic-font cascade into the panel. */
+html.a11y-font-lg   .a11y-isolated { zoom: calc(16 / 18); }
+html.a11y-font-xl   .a11y-isolated { zoom: calc(16 / 20); }
+html.a11y-font-xxl  .a11y-isolated { zoom: calc(16 / 22); }
+
+html.a11y-spacing-relaxed .a11y-isolated,
+html.a11y-spacing-relaxed .a11y-isolated *,
+html.a11y-spacing-loose   .a11y-isolated,
+html.a11y-spacing-loose   .a11y-isolated * {
+  line-height: 1.5 !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+}
+
+html.a11y-font-dyslexic .a11y-isolated,
+html.a11y-font-dyslexic .a11y-isolated * {
+  font-family: 'Manrope', system-ui, sans-serif !important;
+}
+
+/* --- Yellow-on-black contrast --- */
+html.a11y-contrast-yellow {
+  --surface: #000000;
+  --surface-container-low: #0a0a00;
+  --surface-container: #111100;
+  --surface-container-high: #1a1a00;
+  --surface-bright: #222200;
+  --surface-container-highest: #1f1f00;
+  --surface-container-rgb: 17, 17, 0;
+  --outline-variant: #555500;
+  --on-surface: #ffff00;
+  --on-surface-variant: #cccc00;
+  --primary: #ffff00;
+  --primary-dim: #dddd00;
+  --secondary: #ffaa00;
+  --tertiary: #00ff88;
+  --error: #ff4444;
+  --on-primary: #000000;
+  --on-secondary: #000000;
+  --on-tertiary: #000000;
+}

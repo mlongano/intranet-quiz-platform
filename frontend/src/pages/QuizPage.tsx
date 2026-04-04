@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { resumeQuiz, saveAnswer, submitQuiz, Question, Answer, getQuizStatus } from "../api";
 import QuestionDisplay from "../components/QuestionDisplay";
 import ThemeToggle from "../components/ThemeToggle";
+import AccessibilityPanel from "../components/AccessibilityPanel";
 
 // Re-usable ErrorDisplay component
 function ErrorDisplay({ message }: { message: string | null }) {
@@ -209,7 +210,8 @@ function QuizPage() {
 
   return (
     <main onContextMenu={preventContextMenu} className="w-dvw h-dvh">
-      <div className="fixed top-4 right-4 z-50">
+      <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+        <AccessibilityPanel />
         <ThemeToggle />
       </div>
       <div
