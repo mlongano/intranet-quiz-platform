@@ -1,28 +1,30 @@
-// frontend/src/pages/AdminBankManagerPage.tsx
 import { useState, useMemo, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useLocation, useNavigate } from "react-router-dom"; // Import useLocation for password
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   fetchQuestionBankFiles,
   loadQuizFromBank,
   saveQuizToBank,
-  deleteQuizFromBank, // New import for delete
-  fetchPreviewBankFile, // We'll add this new API function next
+  deleteQuizFromBank,
+  fetchPreviewBankFile,
   BankOperationResponse,
   QuestionBankFilesResponse,
-  Question, // Import the Question type for preview content
+  Question,
   fetchAdminQuestions,
   QuizData,
   getQuizDownloadUrl,
-  renameQuizInBank, // New import for rename
+  renameQuizInBank,
 } from "../api";
-import { slugify } from "../lib/utils"; // Assuming api.ts is in src/
+import { slugify } from "../lib/utils";
+import AdminLayout from "../layouts/AdminLayout";
+
+// Define the path of the question bank folder for display purposes
+const QUESTION_BANK_FOLDER = "banks/question_bank";
 
 function AdminBankManagerPage() {
-  // RETRIEVE PASSWORD USING useLocation STATE AS PER YOUR CODE'S PATTERN (NOTE: INSECURE)
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -32,15 +34,14 @@ function AdminBankManagerPage() {
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [previewingFile, setPreviewingFile] = useState<string | null>(null); // State to track which file is being previewed
-  const [justLoadedFile, setJustLoadedFile] = useState(false); // Track if we just loaded a file to avoid clearing messages
-  const [deleteConfirmFile, setDeleteConfirmFile] = useState<string | null>(null); // Track which file is being confirmed for deletion
-  const [renameTargetFile, setRenameTargetFile] = useState<string | null>(null); // Track which file is being renamed
-  const [newFilename, setNewFilename] = useState(""); // State for the new filename input
+  const [previewingFile, setPreviewingFile] = useState<string | null>(null);
+  const [justLoadedFile, setJustLoadedFile] = useState(false);
+  const [deleteConfirmFile, setDeleteConfirmFile] = useState<string | null>(null);
+  const [renameTargetFile, setRenameTargetFile] = useState<string | null>(null);
+  const [newFilename, setNewFilename] = useState("");
 
-  const queryClient = useQueryClient(); // Get Query Client instance
+  const queryClient = useQueryClient();
 
-  // --- Fetch current quiz data to get the title ---
   const { data: currentQuizData, error: questionsError } = useQuery<QuizData, Error>({
     queryKey: ["adminQuestions", adminPassword],
     queryFn: () => {
@@ -51,28 +52,21 @@ function AdminBankManagerPage() {
     },
     enabled: !!adminPassword,
     staleTime: 5 * 60 * 1000,
-    retry: false, // Don't retry on error
+    retry: false,
   });
 
-  // Handle questionsError changes - ignore error if we just loaded a file
   useEffect(() => {
     if (questionsError && justLoadedFile) {
-      // Suppress the questions error when we just loaded a file
-      // The load operation's warning/message should remain visible
       console.log("Questions query error suppressed after file load:", questionsError.message);
-      // Reset the flag after a brief delay
       const timer = setTimeout(() => setJustLoadedFile(false), 2000);
       return () => clearTimeout(timer);
     } else if (!questionsError && justLoadedFile) {
-      // Questions loaded successfully after file load
       setJustLoadedFile(false);
     }
   }, [questionsError, justLoadedFile]);
 
-  // Generate default filename based on current quiz title
   const defaultFilename = useMemo(() => {
     const now = new Date();
-    // Format: 2025-10-25_18-46
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
@@ -87,58 +81,48 @@ function AdminBankManagerPage() {
     return `${datePrefix}_quiz.jsonc`;
   }, [currentQuizData?.title]);
 
-  // Pre-fill the filename input when default changes
   useMemo(() => {
     if (defaultFilename) {
       setSaveFilename(defaultFilename);
     }
   }, [defaultFilename]);
 
-  // --- Fetch list of files in the question_bank using React Query ---
   const {
     data: bankFilesData,
     isLoading: isLoadingFiles,
     error: filesError,
     refetch: refetchFiles,
   } = useQuery<QuestionBankFilesResponse, Error>({
-    // Specify types for data and error
-    queryKey: ["questionBankFiles", adminPassword], // Query key, include password (handle cache if password changes)
+    queryKey: ["questionBankFiles", adminPassword],
     queryFn: () => {
       if (!adminPassword) {
-        // If no password, we can't fetch. Throwing will set isError state.
         throw new Error("Admin password not available.");
       }
-      // Don't clear messages here - let mutations handle message lifecycle
-      return fetchQuestionBankFiles(adminPassword); // Call your API function
+      return fetchQuestionBankFiles(adminPassword);
     },
-    enabled: !!adminPassword, // Only run this query if adminPassword exists
-    // staleTime: 5 * 60 * 1000, // Optional: data is considered fresh for 5 minutes
+    enabled: !!adminPassword,
   });
 
-  // --- Mutation for Loading a file from the bank ---
   const loadFileMutation = useMutation<BankOperationResponse, Error, string>({
-    // Specify types: result, error, variables (filename)
     mutationFn: (filename: string) => {
       if (!adminPassword) {
-        throw new Error("Admin password not available."); // Should not happen if button is disabled
+        throw new Error("Admin password not available.");
       }
-      setError(null); // Clear errors before mutation
-      setWarning(null); // Clear warnings before mutation
-      setMessage(null); // Clear messages before mutation
+      setError(null);
+      setWarning(null);
+      setMessage(null);
       console.log("Loading quiz from bank:", filename);
-      return loadQuizFromBank(filename, adminPassword); // Call your API function
+      return loadQuizFromBank(filename, adminPassword);
     },
-    retry: false, // Don't retry on error
+    retry: false,
     onSuccess: (data) => {
       console.log("Load success, response:", data);
-      setJustLoadedFile(true); // Mark that we just loaded a file
+      setJustLoadedFile(true);
       if (data.warning) {
-        // Show warning if present
         console.log("Setting warning:", data.warning);
         setWarning(data.warning);
       }
       setMessage(data.message || "File loaded successfully!");
-      // Invalidate query for the active questions so it refetches with the new data
       queryClient.invalidateQueries({ queryKey: ["adminQuestions"] });
     },
     onError: (err: any) => {
@@ -146,61 +130,51 @@ function AdminBankManagerPage() {
       setError(`Failed to load file: ${err.message}`);
     },
     onSettled: () => {
-      // Optional: Refetch file list just in case (e.g., if load creates backups)
       refetchFiles();
     },
   });
 
-  // --- Mutation for Saving the current file to the bank ---
   const saveFileMutation = useMutation<BankOperationResponse, Error, string>({
-    // Specify types: result, error, variables (suffix)
     mutationFn: (filename_suffix: string) => {
       if (!adminPassword) {
-        throw new Error("Admin password not available."); // Should not happen if button is disabled
+        throw new Error("Admin password not available.");
       }
-      setError(null); // Clear errors before mutation
-      setWarning(null); // Clear warnings before mutation
-      setMessage(null); // Clear messages before mutation
-      return saveQuizToBank(filename_suffix, adminPassword); // Call your API function
+      setError(null);
+      setWarning(null);
+      setMessage(null);
+      return saveQuizToBank(filename_suffix, adminPassword);
     },
     onSuccess: (data) => {
       setMessage(data.message || "File saved successfully!");
-      // Clear input on success - will be reset to default on next render
       setSaveFilename("");
-      // Refetch the list of bank files after saving
-      queryClient.invalidateQueries({ queryKey: ["questionBankFiles"] }); // Invalidate to refetch
+      queryClient.invalidateQueries({ queryKey: ["questionBankFiles"] });
     },
     onError: (err: any) => {
       setError(`Failed to save file: ${err.message}`);
     },
   });
 
-  // --- Mutation for Deleting a file from the bank ---
   const deleteFileMutation = useMutation<BankOperationResponse, Error, string>({
-    // Specify types: result, error, variables (filename)
     mutationFn: (filename: string) => {
       if (!adminPassword) {
         throw new Error("Admin password not available.");
       }
-      setError(null); // Clear errors before mutation
-      setWarning(null); // Clear warnings before mutation
-      setMessage(null); // Clear messages before mutation
+      setError(null);
+      setWarning(null);
+      setMessage(null);
       return deleteQuizFromBank(filename, adminPassword);
     },
     onSuccess: (data, filename) => {
-      setDeleteConfirmFile(null); // Close confirmation
+      setDeleteConfirmFile(null);
       setMessage(data.message || `File '${filename}' deleted successfully!`);
-      // Refetch the list of bank files after deleting
       queryClient.invalidateQueries({ queryKey: ["questionBankFiles"] });
     },
     onError: (err: any) => {
-      setDeleteConfirmFile(null); // Close confirmation on error
+      setDeleteConfirmFile(null);
       setError(`Failed to delete file: ${err.message}`);
     },
   });
 
-
-  // --- Mutation for Renaming a file in the bank ---
   const renameFileMutation = useMutation<BankOperationResponse, Error, { filename: string; newFilename: string }>({
     mutationFn: ({ filename, newFilename }) => {
       if (!adminPassword) {
@@ -212,8 +186,8 @@ function AdminBankManagerPage() {
       return renameQuizInBank(filename, newFilename, adminPassword);
     },
     onSuccess: (data, variables) => {
-      setRenameTargetFile(null); // Close rename UI
-      setNewFilename(""); // Reset input
+      setRenameTargetFile(null);
+      setNewFilename("");
       setMessage(data.message || `File '${variables.filename}' renamed successfully!`);
       queryClient.invalidateQueries({ queryKey: ["questionBankFiles"] });
     },
@@ -224,7 +198,7 @@ function AdminBankManagerPage() {
 
   const handleRenameClick = (filename: string) => {
     setRenameTargetFile(filename);
-    setNewFilename(filename); // Pre-fill with current filename
+    setNewFilename(filename);
   };
 
   const submitRename = () => {
@@ -236,78 +210,65 @@ function AdminBankManagerPage() {
     }
 
     if (finalName === renameTargetFile) {
-      setRenameTargetFile(null); // No change
+      setRenameTargetFile(null);
       return;
     }
 
     renameFileMutation.mutate({ filename: renameTargetFile, newFilename: finalName });
   };
 
-  // --- Query for Previewing a file from the bank (triggered on demand) ---
   const {
     data: previewData,
     isLoading: isLoadingPreview,
-    error: previewError, // Function to manually trigger the preview fetch
+    error: previewError,
   } = useQuery<Question[], Error>({
-    // Expecting an array of Question objects
-    queryKey: ["quizBankFilePreview", previewingFile, adminPassword], // Key includes filename and password
+    queryKey: ["quizBankFilePreview", previewingFile, adminPassword],
     queryFn: () => {
       if (!previewingFile || !adminPassword) {
-        // This query should only run when previewingFile and password exist
         throw new Error("Preview file or password not available.");
       }
-      // Don't clear messages here - preview is informational and shouldn't affect load/save messages
-      return fetchPreviewBankFile(previewingFile, adminPassword); // Call the new API function
+      return fetchPreviewBankFile(previewingFile, adminPassword);
     },
-    enabled: !!previewingFile && !!adminPassword, // Only enabled when a file is selected for preview AND password is available
-    staleTime: Infinity, // Preview data doesn't need to refetch automatically
+    enabled: !!previewingFile && !!adminPassword,
+    staleTime: Infinity,
   });
 
-  // --- Handlers for user interactions ---
   const handleLoadClick = (filename: string) => {
-    // Trigger the load mutation
     loadFileMutation.mutate(filename);
   };
 
   const handleSaveClick = () => {
-    // Validate filename
     if (!saveFilename.trim()) {
       setError("Please provide a filename.");
       return;
     }
 
-    // Ensure filename ends with .jsonc
     let finalFilename = saveFilename.trim();
     if (!finalFilename.endsWith('.jsonc')) {
       finalFilename += '.jsonc';
     }
 
-    // Trigger the save mutation with the full filename
     saveFileMutation.mutate(finalFilename);
   };
 
   const handlePreviewClick = (filename: string) => {
-    // Toggle previewing the selected file
     if (previewingFile === filename) {
-      setPreviewingFile(null); // Hide preview if already showing for this file
-      setError(null); // Clear any preview errors
-      setWarning(null); // Clear any warnings
-      setMessage(null); // Clear messages
+      setPreviewingFile(null);
+      setError(null);
+      setWarning(null);
+      setMessage(null);
     } else {
-      setPreviewingFile(filename); // Set the file to preview, which enables the preview query
-      setError(null); // Clear any errors
-      setWarning(null); // Clear any warnings
-      setMessage(null); // Clear messages
-      // The query will automatically run because `enabled` becomes true
+      setPreviewingFile(filename);
+      setError(null);
+      setWarning(null);
+      setMessage(null);
     }
   };
 
   const handleDeleteClick = (filename: string) => {
-    // Show confirmation UI instead of alert
     setDeleteConfirmFile(filename);
   };
 
-  // --- Determine loading/error states combined ---
   const isLoading =
     isLoadingFiles ||
     loadFileMutation.isPending ||
@@ -326,256 +287,223 @@ function AdminBankManagerPage() {
     previewError;
 
   return (
-    <div className="container mx-auto p-4">
-      <div className="flex justify-start items-center mb-2">
-        {/* Reduced bottom margin */}
-        <button
-          onClick={() => {
-            navigate("/admin/dashboard", {
-              state: { adminPassword: adminPassword },
-            });
-          }}
-          className="px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Go to admin dashboard
-        </button>
-      </div>
-
-      <h1 className="text-2xl font-bold mb-4">Question Bank File Management</h1>
-
-      {/* Message if password is not available */}
-      {!adminPassword && (
-        <div className="text-red-500 mb-4">
-          Admin password not provided via navigation state. Please log in via
-          the admin login page.
-        </div>
-      )}
-
-      {/* Display any errors */}
-      {currentError && (
-        <div className="text-red-500 mb-4">
-          Error:
-          {typeof currentError === "string"
-            ? currentError
-            : currentError.message || "An unknown error occurred."}
-        </div>
-      )}
-
-      {/* Display questions loading error */}
-      {questionsError && !currentError && !justLoadedFile && (
-        <div className="text-red-500 mb-4">
-          Error loading current quiz: {(questionsError as Error).message || 'Unknown error'}
-        </div>
-      )}
-
-      {/* Display any warnings */}
-      {warning && (
-        <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4">
-          <p className="font-bold">Warning</p>
-          <p>{warning}</p>
-        </div>
-      )}
-
-      {/* Display any success messages */}
-      {message && <div className="text-green-500 mb-4">{message}</div>}
-
-      <div className="mb-6">
-        <h2 className="text-xl font-semibold mb-2">
-          Save Current Quiz to Bank
-        </h2>
-        {currentQuizData?.title && (
-          <p className="text-sm text-gray-600 mb-2">
-            Quiz title: <span className="font-medium">"{currentQuizData.title}"</span>
-          </p>
-        )}
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="Enter filename (e.g., 20251025_123456_quiz-title.jsonc)"
-            className="border p-2 flex-grow font-mono text-sm"
-            value={saveFilename}
-            onChange={(e) => setSaveFilename(e.target.value)}
-            disabled={isLoading || !adminPassword}
-          />
-          <button
-            onClick={handleSaveClick}
-            className="bg-green-500 text-white p-2 px-4 rounded disabled:bg-gray-400 whitespace-nowrap"
-            disabled={isLoading || !adminPassword || !saveFilename.trim()}
-          >
-            {saveFileMutation.isPending ? "Saving..." : "Save"}
-          </button>
-        </div>
-        <p className="text-xs text-gray-500 mt-1">
-          You can edit the filename. The .jsonc extension will be added automatically if missing.
-        </p>
-      </div>
-
+    <AdminLayout
+      activePath="/admin/questions-bank"
+      adminPassword={adminPassword || ""}
+      pageTitle="Question Banks"
+      titleClassName="from-primary to-primary-dim"
+    >
       <div>
-        <h2 className="text-xl font-semibold mb-2">
-          Available Quiz Files in Bank
-        </h2>
-        {isLoadingFiles ? (
-          <p>Loading available files...</p>
-        ) : bankFilesData?.files && bankFilesData.files.length > 0 ? (
-          <ul>
-            {bankFilesData.files.map((filename) => (
-              <li key={filename} className="border-b mb-2 pb-2">
-                <div className="flex justify-between items-center mb-2">
-                  {renameTargetFile === filename ? (
-                    <div className="flex items-center gap-2 flex-grow mr-2">
-                      <input
-                        type="text"
-                        value={newFilename}
-                        onChange={(e) => setNewFilename(e.target.value)}
-                        className="border p-1 text-sm flex-grow rounded"
-                        autoFocus
-                      />
-                      <button
-                        onClick={submitRename}
-                        className="bg-green-500 text-white px-2 py-1 text-xs rounded"
-                        disabled={renameFileMutation.isPending}
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setRenameTargetFile(null)}
-                        className="bg-gray-500 text-white px-2 py-1 text-xs rounded"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <span>{filename}</span>
-                  )}
+        {!adminPassword && (
+          <div className="bg-error/10 border border-error/30 rounded-lg px-4 py-3 mb-6 text-sm text-error">
+            Admin password not provided via navigation state. Please log in via the admin login page.
+          </div>
+        )}
 
-                  <div>
-                    {renameTargetFile !== filename && (
-                      <>
+        {currentError && (
+          <div className="bg-error/10 border border-error/30 rounded-lg px-4 py-3 mb-6 text-sm text-error">
+            Error: {typeof currentError === "string" ? currentError : currentError.message || "An unknown error occurred."}
+          </div>
+        )}
+
+        {questionsError && !currentError && !justLoadedFile && (
+          <div className="bg-error/10 border border-error/30 rounded-lg px-4 py-3 mb-6 text-sm text-error">
+            Error loading current quiz: {(questionsError as Error).message || 'Unknown error'}
+          </div>
+        )}
+
+        {warning && (
+          <div className="bg-secondary/10 border border-secondary/20 rounded-lg px-4 py-3 mb-6">
+            <p className="font-bold text-secondary text-sm">Warning</p>
+            <p className="text-secondary/80 text-sm mt-1">{warning}</p>
+          </div>
+        )}
+
+        {message && (
+          <div className="bg-tertiary/10 border border-tertiary/30 rounded-lg px-4 py-3 mb-6 text-sm text-tertiary">
+            {message}
+          </div>
+        )}
+
+        <div className="mb-8 p-6 bg-surface-container border border-outline-variant/20 rounded-xl">
+          <h2 className="font-headline text-lg font-bold text-primary mb-4">
+            Save Current Quiz to Bank
+          </h2>
+          {currentQuizData?.title && (
+            <p className="text-sm text-on-surface-variant mb-3">
+              Quiz title: <span className="text-on-surface font-medium">"{currentQuizData.title}"</span>
+            </p>
+          )}
+          <div className="flex gap-3 items-start">
+            <div className="flex-grow">
+              <input
+                type="text"
+                placeholder="Enter filename (e.g., 20251025_123456_quiz-title.jsonc)"
+                className="w-full p-3 bg-surface-container-low border border-outline-variant/30 text-on-surface focus:border-primary/50 focus:outline-none rounded-lg placeholder:text-outline-variant/50 font-mono text-sm"
+                value={saveFilename}
+                onChange={(e) => setSaveFilename(e.target.value)}
+                disabled={isLoading || !adminPassword}
+              />
+              <p className="text-sm text-on-surface-variant mt-2">
+                You can edit the filename. The .jsonc extension will be added automatically if missing.
+              </p>
+            </div>
+            <button
+              onClick={handleSaveClick}
+              className="bg-tertiary text-on-tertiary font-bold px-6 py-3 rounded-lg hover:bg-tertiary/90 transition-all text-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isLoading || !adminPassword || !saveFilename.trim()}
+            >
+              {saveFileMutation.isPending ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <h2 className="font-headline text-lg font-bold text-primary mb-4">
+            Available Quiz Files in Bank
+          </h2>
+          {isLoadingFiles ? (
+            <p className="text-on-surface-variant text-sm">Loading available files...</p>
+          ) : bankFilesData?.files && bankFilesData.files.length > 0 ? (
+            <ul className="space-y-1">
+              {bankFilesData.files.map((filename) => (
+                <li key={filename} className="bg-surface-container hover:bg-surface-container-high border-b border-outline-variant/10 rounded-lg p-4 mb-2 last:mb-0">
+                  <div className="flex justify-between items-center mb-2">
+                    {renameTargetFile === filename ? (
+                      <div className="flex items-center gap-2 flex-grow mr-2">
+                        <input
+                          type="text"
+                          value={newFilename}
+                          onChange={(e) => setNewFilename(e.target.value)}
+                          className="bg-surface-container-low border border-outline-variant/30 text-on-surface focus:border-primary/50 focus:outline-none rounded px-2 py-1 text-sm flex-grow"
+                          autoFocus
+                        />
                         <button
-                          onClick={() => handlePreviewClick(filename)}
-                          className="bg-blue-500 text-white p-1 text-sm rounded mr-2 disabled:bg-gray-400"
-                          disabled={
-                            isLoadingFiles || isLoadingPreview || !adminPassword
-                          }
+                          onClick={submitRename}
+                          className="bg-tertiary text-on-tertiary font-bold py-1 px-3 rounded transition-all text-sm"
+                          disabled={renameFileMutation.isPending}
                         >
-                          {previewingFile === filename && isLoadingPreview
-                            ? "Loading Preview..."
-                            : previewingFile === filename
-                              ? "Hide Preview"
-                              : "Preview"}
+                          Save
                         </button>
                         <button
-                          onClick={() => navigate(`/admin/questions?bankFile=${encodeURIComponent(filename)}`, { state: { adminPassword } })}
-                          className="bg-teal-600 text-white p-1 text-sm rounded mr-2 disabled:bg-gray-400"
-                          disabled={!adminPassword}
+                          onClick={() => setRenameTargetFile(null)}
+                          className="bg-surface-container-high border border-outline-variant/30 text-on-surface-variant hover:text-on-surface py-1 px-3 rounded text-sm"
                         >
-                          Edit
+                          Cancel
                         </button>
-                        <button
-                          onClick={() => handleLoadClick(filename)}
-                          className="bg-yellow-500 text-white p-1 text-sm rounded mr-2 disabled:bg-gray-400"
-                          disabled={isLoading || !adminPassword}
-                        >
-                          {loadFileMutation.isPending &&
-                            loadFileMutation.variables === filename
-                            ? "Loading..."
-                            : "Load"}
-                        </button>
-                        <button
-                          onClick={() => handleRenameClick(filename)}
-                          className="bg-indigo-500 text-white p-1 text-sm rounded mr-2 disabled:bg-gray-400"
-                          disabled={isLoading || !adminPassword}
-                        >
-                          Rename
-                        </button>
-                        <a
-                          href={getQuizDownloadUrl(filename, adminPassword || "")}
-                          className="bg-green-600 text-white p-1 text-sm rounded mr-2 inline-block disabled:bg-gray-400 disabled:pointer-events-none"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          Download
-                        </a>
-                        {/* Delete Button with Inline Confirmation */}
-                        {deleteConfirmFile === filename ? (
-                          <span className="inline-flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded border border-yellow-300 ml-2">
-                            <span className="text-yellow-700 text-xs font-semibold">Delete?</span>
-                            <button
-                              onClick={() => deleteFileMutation.mutate(filename)}
-                              className="bg-red-600 text-white px-2 py-0.5 text-xs rounded hover:bg-red-700 disabled:opacity-50"
-                              disabled={deleteFileMutation.isPending}
-                            >
-                              {deleteFileMutation.isPending ? "Deleting..." : "Yes"}
-                            </button>
-                            <button
-                              onClick={() => setDeleteConfirmFile(null)}
-                              className="bg-gray-500 text-white px-2 py-0.5 text-xs rounded hover:bg-gray-600 disabled:opacity-50"
-                              disabled={deleteFileMutation.isPending}
-                            >
-                              No
-                            </button>
-                          </span>
-                        ) : (
+                      </div>
+                    ) : (
+                      <span className="font-mono text-sm text-on-surface-variant">{filename}</span>
+                    )}
+
+                    <div className="flex items-center gap-2">
+                      {renameTargetFile !== filename && (
+                        <>
                           <button
-                            onClick={() => handleDeleteClick(filename)}
-                            className="bg-red-500 text-white p-1 text-sm rounded disabled:bg-gray-400"
+                            onClick={() => handlePreviewClick(filename)}
+                            className="bg-surface-container-high border border-outline-variant/30 text-on-surface-variant hover:text-on-surface py-1 px-3 rounded text-sm transition-colors disabled:opacity-50"
+                            disabled={isLoadingFiles || isLoadingPreview || !adminPassword}
+                          >
+                            {previewingFile === filename && isLoadingPreview
+                              ? "Loading Preview..."
+                              : previewingFile === filename
+                                ? "Hide Preview"
+                                : "Preview"}
+                          </button>
+                          <button
+                            onClick={() => handleLoadClick(filename)}
+                            className="bg-primary text-on-primary font-bold py-1 px-3 rounded transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                             disabled={isLoading || !adminPassword}
                           >
-                            Delete
+                            {loadFileMutation.isPending && loadFileMutation.variables === filename
+                              ? "Loading..."
+                              : "Load"}
                           </button>
-                        )}
-                      </>
-                    )}
+                          <button
+                            onClick={() => navigate(`/admin/questions?bankFile=${encodeURIComponent(filename)}`, { state: { adminPassword } })}
+                            className="bg-secondary/10 border border-secondary/30 text-secondary hover:bg-secondary/20 font-bold py-1 px-3 rounded transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={!adminPassword}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleRenameClick(filename)}
+                            className="bg-surface-container-high border border-outline-variant/30 text-on-surface-variant hover:text-on-surface py-1 px-3 rounded transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={isLoading || !adminPassword}
+                          >
+                            Rename
+                          </button>
+                          <a
+                            href={getQuizDownloadUrl(filename, adminPassword || "")}
+                            className="bg-tertiary/10 border border-tertiary/30 text-tertiary hover:bg-tertiary/20 py-1 px-3 rounded text-sm transition-all inline-block"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Download
+                          </a>
+                          {deleteConfirmFile === filename ? (
+                            <div className="flex gap-2 items-center bg-error/10 px-2 py-1 rounded border border-error/30 text-sm">
+                              <span className="text-error font-semibold">Delete?</span>
+                              <button
+                                onClick={() => deleteFileMutation.mutate(filename)}
+                                className="bg-error/20 border border-error/50 text-error px-2 py-0.5 rounded text-xs hover:bg-error/30 transition-colors disabled:opacity-50"
+                                disabled={deleteFileMutation.isPending}
+                              >
+                                {deleteFileMutation.isPending ? "Deleting..." : "Yes"}
+                              </button>
+                              <button
+                                onClick={() => setDeleteConfirmFile(null)}
+                                className="bg-surface-container-high border border-outline-variant/30 text-on-surface-variant px-2 py-0.5 rounded text-xs hover:text-on-surface transition-colors disabled:opacity-50"
+                                disabled={deleteFileMutation.isPending}
+                              >
+                                No
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleDeleteClick(filename)}
+                              className="bg-error/10 border border-error/30 text-error hover:bg-error/20 py-1 px-3 rounded text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              disabled={isLoading || !adminPassword}
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-                {/* --- Preview Area --- */}
-                {previewingFile === filename &&
-                  !isLoadingPreview &&
-                  previewData && (
-                    <div className="bg-gray-100 p-3 rounded text-sm max-h-60 overflow-y-auto">
-                      <h3 className="font-semibold mb-2">Preview:</h3>
-                      {/* Basic rendering of questions for preview */}
+                  {previewingFile === filename && !isLoadingPreview && previewData && (
+                    <div className="bg-surface-container-low border border-outline-variant/20 rounded-lg p-4 mt-2">
+                      <h3 className="font-semibold text-on-surface mb-3 text-sm">Preview:</h3>
                       {previewData.length > 0 ? (
                         previewData.map((q, index) => (
-                          <div
-                            key={q.id || index}
-                            className="mb-2 pb-2 border-b border-gray-300 last:border-b-0"
-                          >
-                            <p>
-                              <strong>ID:</strong> {q.id}
+                          <div key={q.id || index} className="mb-3 pb-3 border-b border-outline-variant/10 last:border-b-0 last:mb-0 last:pb-0">
+                            <p className="text-on-surface-variant text-xs mb-1">
+                              <strong className="text-on-surface">ID:</strong> {q.id}
                             </p>
-                            <p>
-                              <strong>Type:</strong> {q.type}
+                            <p className="text-on-surface-variant text-xs mb-1">
+                              <strong className="text-on-surface">Type:</strong> {q.type}
                             </p>
-                            <p>
-                              <strong>Weight:</strong> {q.weight}
+                            <p className="text-on-surface-variant text-xs mb-1">
+                              <strong className="text-on-surface">Weight:</strong> {q.weight}
                             </p>
-                            <div>
-                              <strong>Text:</strong>
-                              <div className="mt-1 text-gray-900">
-                                <ReactMarkdown
-                                  remarkPlugins={[remarkGfm]}
-                                  rehypePlugins={[rehypeSanitize]}
-                                >
+                            <div className="mt-2">
+                              <strong className="text-on-surface text-xs">Text:</strong>
+                              <div className="mt-1 text-on-surface">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
                                   {q.text || ""}
                                 </ReactMarkdown>
                               </div>
                             </div>
-                            {/* Displaying options and correct answers for preview might require more detailed rendering logic based on your Question type */}
                             {q.options && q.options.length > 0 && (
-                              <div>
-                                <strong>Options:</strong>
-                                <ul>
+                              <div className="mt-2">
+                                <strong className="text-on-surface text-xs">Options:</strong>
+                                <ul className="mt-1 space-y-1">
                                   {q.options.map((opt, optIndex) => (
-                                    <li key={optIndex} className="ml-4">
-                                      {/* Handle options being string or OptionObject */}
-                                      <ReactMarkdown
-                                        remarkPlugins={[remarkGfm]}
-                                        rehypePlugins={[rehypeSanitize]}
-                                      >
+                                    <li key={optIndex} className="ml-4 text-on-surface-variant text-xs">
+                                      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
                                         {typeof opt === "string" ? opt : opt.text || ""}
                                       </ReactMarkdown>
-                                      {/* Add image preview if applicable, needs styling */}
                                       {typeof opt !== "string" && opt.image && (
                                         <img
                                           src={opt.image}
@@ -588,16 +516,14 @@ function AdminBankManagerPage() {
                                 </ul>
                               </div>
                             )}
-                            {/* Display correct answer (simplified for preview) */}
                             {"correct" in q && (
-                              <p>
-                                <strong>Correct:</strong>{" "}
-                                {JSON.stringify(q.correct)}
-                              </p> // Display raw correct data for admin preview
+                              <p className="text-on-surface-variant text-xs mt-1">
+                                <strong className="text-on-surface">Correct:</strong> {JSON.stringify(q.correct)}
+                              </p>
                             )}
                             {q.question_image && (
-                              <div>
-                                <strong>Question Image:</strong>
+                              <div className="mt-2">
+                                <strong className="text-on-surface text-xs">Question Image:</strong>
                                 <img
                                   src={q.question_image}
                                   alt="Question image preview"
@@ -608,32 +534,29 @@ function AdminBankManagerPage() {
                           </div>
                         ))
                       ) : (
-                        <p>No questions found in this file.</p>
+                        <p className="text-on-surface-variant text-sm">No questions found in this file.</p>
                       )}
                     </div>
                   )}
-                {/* Show preview loading/error states */}
-                {previewingFile === filename && isLoadingPreview && (
-                  <p>Loading preview...</p>
-                )}
-                {previewingFile === filename &&
-                  previewError &&
-                  !isLoadingPreview && (
-                    <div className="text-red-500 mt-2">
+                  {previewingFile === filename && isLoadingPreview && (
+                    <p className="text-on-surface-variant text-sm mt-2">Loading preview...</p>
+                  )}
+                  {previewingFile === filename && previewError && !isLoadingPreview && (
+                    <div className="bg-error/10 border border-error/30 rounded-lg px-3 py-2 mt-2 text-sm text-error">
                       Error loading preview: {previewError.message}
                     </div>
                   )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          !isLoadingFiles &&
-          !currentError && (
-            <p>No quiz files found in the questionbank_folder directory.</p>
-          ) // Use QUESTION_BANK_FOLDER constant
-        )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            !isLoadingFiles && !currentError && (
+              <p className="text-on-surface-variant text-sm">No quiz files found in the '{QUESTION_BANK_FOLDER}' directory.</p>
+            )
+          )}
+        </div>
       </div>
-    </div>
+    </AdminLayout>
   );
 }
 

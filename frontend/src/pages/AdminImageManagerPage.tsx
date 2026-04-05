@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchQuestionBankFiles } from '../api';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ImagePicker } from '../components/ImagePicker';
+import AdminLayout from '../layouts/AdminLayout';
 
 const AdminImageManagerPage: React.FC = () => {
   const location = useLocation();
@@ -57,20 +58,12 @@ const AdminImageManagerPage: React.FC = () => {
 
   if (!adminPassword) {
     return (
-      <div style={{ padding: '20px', textAlign: 'center' }}>
-        <h2>Authentication Required</h2>
-        <p>Please access this page through the admin interface</p>
+      <div className="p-5 text-center">
+        <h2 className="text-on-surface font-body text-lg mb-2">Authentication Required</h2>
+        <p className="text-on-surface-variant font-body mb-6">Please access this page through the admin interface</p>
         <button
           onClick={() => navigate('/admin')}
-          style={{
-            padding: '10px 20px',
-            fontSize: '16px',
-            cursor: 'pointer',
-            backgroundColor: '#007bff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-          }}
+          className="px-5 py-2.5 bg-primary text-on-primary font-body font-medium rounded-lg hover:bg-primary/90 transition-colors cursor-pointer"
         >
           Go to Admin
         </button>
@@ -84,72 +77,36 @@ const AdminImageManagerPage: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1>Image Manager</h1>
-        <button
-          onClick={() => navigate('/admin/dashboard', { state: { adminPassword } })}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: '#6c757d',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-          }}
-        >
-          Back to Admin
-        </button>
-      </div>
-
-      <div style={{ marginBottom: '20px', padding: '16px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
-        <p style={{ margin: 0, color: '#666' }}>
+    <AdminLayout activePath="/admin/questions" adminPassword={adminPassword} pageTitle="Image Manager">
+      <div className="mb-5 p-4 bg-surface-container border border-outline-variant/20 rounded-xl">
+        <p className="m-0 text-on-surface-variant font-body text-sm">
           Select a quiz to manage its images. Images are stored in{' '}
-          <code>/banks/question_bank/&#123;quiz_name&#125;_images/</code>
+          <code className="text-primary">/banks/question_bank/&#123;quiz_name&#125;_images/</code>
         </p>
       </div>
 
-      {isLoading && <div>Loading quiz files...</div>}
+      {isLoading && (
+        <div className="text-on-surface-variant font-body">Loading quiz files...</div>
+      )}
 
       {!isLoading && quizFiles.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+        <div className="text-on-surface-variant text-center py-12 font-body">
           No quiz files found in the question bank
         </div>
       )}
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-          gap: '16px',
-        }}
-      >
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {quizFiles.map((filename) => (
           <div
             key={filename}
-            style={{
-              border: '1px solid #ddd',
-              borderRadius: '8px',
-              padding: '16px',
-              backgroundColor: 'white',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-            }}
+            className="bg-surface-container border border-outline-variant/20 rounded-xl p-4 hover:bg-surface-container-high hover:border-primary/30 transition-all cursor-pointer"
           >
-            <h3 style={{ marginTop: 0, marginBottom: '8px', fontSize: '16px', wordBreak: 'break-word' }}>
+            <h3 className="mt-0 mb-2 text-on-surface font-body font-medium text-sm break-words">
               {filename}
             </h3>
             <button
               onClick={() => handleQuizSelect(filename)}
-              style={{
-                width: '100%',
-                padding: '8px',
-                backgroundColor: '#007bff',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '14px',
-              }}
+              className="w-full px-3 py-2 bg-primary text-on-primary font-body font-medium text-sm border-none rounded-lg cursor-pointer hover:bg-primary/90 transition-colors"
             >
               Manage Images
             </button>
@@ -176,30 +133,15 @@ const AdminImageManagerPage: React.FC = () => {
         />
       )}
 
-      {/* Notification Toast */}
       {notification && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: '20px',
-            right: '20px',
-            backgroundColor: '#28a745',
-            color: 'white',
-            padding: '16px 24px',
-            borderRadius: '8px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-            zIndex: 2000,
-            maxWidth: '400px',
-            animation: 'slideIn 0.3s ease-out',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '20px' }}>✓</span>
-            <span style={{ wordBreak: 'break-all' }}>{notification}</span>
+        <div className="fixed bottom-5 right-5 bg-tertiary/15 border border-tertiary/30 text-tertiary px-6 py-4 rounded-xl shadow-[0_0_20px_rgba(194,255,153,0.15)] z-[2000]">
+          <div className="flex items-center gap-3">
+            <span className="text-lg">✓</span>
+            <span className="break-all font-body">{notification}</span>
           </div>
         </div>
       )}
-    </div>
+    </AdminLayout>
   );
 };
 

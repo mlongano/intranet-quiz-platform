@@ -17,6 +17,7 @@ import {
   LlmInfoResponse,
 } from "../api";
 import SubmissionDetailView from "../components/SubmissionDetailView";
+import AdminLayout from "../layouts/AdminLayout";
 
 function AdminScoresBankReviewPage() {
   const location = useLocation();
@@ -24,7 +25,7 @@ function AdminScoresBankReviewPage() {
   const queryClient = useQueryClient();
   const adminPassword = location.state?.adminPassword;
 
-  const [selectedFilename, setSelectedFilename] = useState<string | null>(null);
+  const [selectedFilename, setSelectedFilename] = useState<string | null>(location.state?.filename ?? null);
   const [viewBy, setViewBy] = useState<"student" | "question">("student");
   const [selectedStudentSubmission, setSelectedStudentSubmission] = useState<ScoreEntry | null>(null);
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | number | null>(null);
@@ -225,11 +226,11 @@ function AdminScoresBankReviewPage() {
 
   if (!adminPassword) {
     return (
-      <div className="container mx-auto p-4">
-        <div className="text-red-500">Admin password not provided. Please log in again.</div>
+      <div className="flex min-h-screen bg-[#0a0e14] text-[#f1f3fc] items-center justify-center">
+        <div className="text-red-400 mb-4">Admin password not provided. Please log in again.</div>
         <button
           onClick={() => navigate("/admin")}
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md"
+          className="px-4 py-2 bg-[#81ecff] text-[#005762] font-bold rounded-md"
         >
           Go to Login
         </button>
@@ -238,298 +239,309 @@ function AdminScoresBankReviewPage() {
   }
 
   return (
-    <div className="container mx-auto p-4">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">Scores Bank Review</h1>
-        <div className="flex gap-2">
-          {selectedFilename && (
-            <button
-              onClick={handleBack}
-              className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
-            >
-              ← Back to Files
-            </button>
-          )}
-          <button
-            onClick={() => navigate("/admin/dashboard", { state: { adminPassword } })}
-            className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
-          >
-            Back to Dashboard
-          </button>
-        </div>
-      </div>
+    <AdminLayout
+      activePath="/admin/scores"
+      adminPassword={adminPassword}
+      pageTitle="Review Scores"
+    >
+      <div>
+        {error && <div className="text-red-400 mb-4">{error}</div>}
+        {message && <div className="text-[#c2ff99] mb-4">{message}</div>}
 
-      {error && <div className="text-red-500 mb-4">{error}</div>}
-      {message && <div className="text-green-500 mb-4">{message}</div>}
+        {!selectedFilename ? (
+          // File selection view
+          <div>
+            <p className="text-sm text-[#a8abb3] mb-4">
+              Select a scores file to review:
+            </p>
 
-      {!selectedFilename ? (
-        // File selection view
-        <div>
-          <p className="text-sm text-gray-600 mb-4">
-            Select a scores file to review:
-          </p>
+            {isLoadingFiles ? (
+              <div className="text-[#a8abb3]">Loading scores bank files...</div>
+            ) : filesError ? (
+              <div className="text-red-400">Error loading files: {filesError.message}</div>
+            ) : (
+              <div className="space-y-2">
+                {bankFilesData?.files?.length ? (
+                  bankFilesData.files.map((filename) => (
+                    <div
+                      key={filename}
+                      className="bg-[#151a21] border border-[#44484f]/20 rounded-lg p-4 hover:border-[#81ecff]/30 cursor-pointer transition-colors"
+                      onClick={() => handleSelectFile(filename)}
+                    >
+                      <div className="font-medium text-[#f1f3fc]">{filename}</div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-[#a8abb3]">No scores files found in the bank.</p>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          // Scores review view
+          <div>
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-[#f1f3fc]">
+                  Reviewing: {selectedFilename}
+                </h2>
+                <button
+                  onClick={handleBack}
+                  className="px-4 py-2 bg-[#1b2028] border border-[#44484f]/30 text-[#a8abb3] hover:text-[#f1f3fc] hover:border-[#81ecff]/30 rounded-md transition-colors text-sm"
+                >
+                  ← Back to Files
+                </button>
+              </div>
 
-          {isLoadingFiles ? (
-            <div>Loading scores bank files...</div>
-          ) : filesError ? (
-            <div className="text-red-500">Error loading files: {filesError.message}</div>
-          ) : (
-            <div className="space-y-2">
-              {bankFilesData?.files?.length ? (
-                bankFilesData.files.map((filename) => (
-                  <div
-                    key={filename}
-                    className="border p-3 rounded-md hover:bg-gray-50 cursor-pointer"
-                    onClick={() => handleSelectFile(filename)}
-                  >
-                    <div className="font-medium">{filename}</div>
+              {/* Statistics */}
+              {stats && (
+                <div className="grid grid-cols-3 gap-4 mb-4 p-4 bg-[#0f141a] border border-[#44484f]/20 rounded-xl">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-[#f1f3fc]">{stats.totalStudents}</div>
+                    <div className="text-sm text-[#a8abb3]">Total Students</div>
                   </div>
-                ))
-              ) : (
-                <p className="text-gray-500">No scores files found in the bank.</p>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-[#f1f3fc]">{stats.completedStudents}</div>
+                    <div className="text-sm text-[#a8abb3]">Completed</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-[#81ecff]">{stats.avgScore}%</div>
+                    <div className="text-sm text-[#a8abb3]">Avg Score</div>
+                  </div>
+                </div>
               )}
-            </div>
-          )}
-        </div>
-      ) : (
-        // Scores review view
-        <div>
-          <div className="mb-4">
-            <h2 className="text-xl font-semibold mb-2">
-              Reviewing: {selectedFilename}
-            </h2>
 
-            {/* Statistics */}
-            {stats && (
-              <div className="grid grid-cols-3 gap-4 mb-4 p-4 bg-gray-50 rounded-md">
-                <div className="text-center">
-                  <div className="text-2xl font-bold">{stats.totalStudents}</div>
-                  <div className="text-sm text-gray-600">Total Students</div>
+              {/* View toggle */}
+              <div className="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-[#a8abb3]">
+                    LLM regrade:
+                  </span>
+                  <span className="bg-[#e966ff]/10 border border-[#e966ff]/30 text-[#e966ff] text-xs px-2 py-0.5 rounded">
+                    {llmInfo ? llmInfo.model : "Unknown"}
+                  </span>
+                  {llmInfo && (
+                    <span className="text-xs text-[#a8abb3]">
+                      ({llmInfo.enabled ? "enabled" : "disabled"})
+                    </span>
+                  )}
                 </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold">{stats.completedStudents}</div>
-                  <div className="text-sm text-gray-600">Completed</div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => selectedFilename && regradeOpenMutation.mutate({ filename: selectedFilename })}
+                    disabled={regradeOpenMutation.isPending}
+                    className={`px-4 py-2 rounded-md text-sm font-bold transition-colors ${
+                      regradeOpenMutation.isPending
+                        ? "bg-[#1b2028] text-[#a8abb3] cursor-not-allowed"
+                        : "bg-[#1b2028] border border-[#e966ff]/30 text-[#e966ff] hover:bg-[#e966ff]/10"
+                    }`}
+                  >
+                    {regradeOpenMutation.isPending ? "Regrading..." : "Regrade Open Questions"}
+                  </button>
+                  <div className="flex gap-1 bg-[#0f141a] border border-[#44484f]/20 rounded-lg p-1">
+                    <button
+                      onClick={() => setViewBy("student")}
+                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                        viewBy === "student"
+                          ? "bg-[#262c36] text-[#81ecff]"
+                          : "text-[#a8abb3] hover:text-[#f1f3fc]"
+                      }`}
+                    >
+                      By Student
+                    </button>
+                    <button
+                      onClick={() => setViewBy("question")}
+                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                        viewBy === "question"
+                          ? "bg-[#262c36] text-[#81ecff]"
+                          : "text-[#a8abb3] hover:text-[#f1f3fc]"
+                      }`}
+                    >
+                      By Question
+                    </button>
+                  </div>
                 </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold">{stats.avgScore}%</div>
-                  <div className="text-sm text-gray-600">Avg Score</div>
-                </div>
+              </div>
+            </div>
+
+            {isLoadingScores ? (
+              <div className="text-[#a8abb3]">Loading scores...</div>
+            ) : viewBy === "student" ? (
+              // By Student View
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {scoresData?.map((submission) => (
+                  <div
+                    key={`${submission.student}-${submission.quiz_id}`}
+                    className="bg-[#151a21] border border-[#44484f]/20 rounded-xl p-4 hover:border-[#81ecff]/30 cursor-pointer transition-colors"
+                    onClick={() => setSelectedStudentSubmission(submission)}
+                  >
+                    <div className="font-medium mb-2 text-[#f1f3fc]">{submission.student}</div>
+                    <div className="text-sm text-[#a8abb3]">
+                      Score: {submission.raw_points}/{submission.max_points} ({submission.percent}%)
+                    </div>
+                    <div className="text-xs text-[#a8abb3]/70 mt-1">
+                      {new Date(submission.timestamp).toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              // By Question View - click question to expand and edit scores inline
+              <div className="space-y-4">
+                {questionSummary.map(({ question, answers, correctCount, avgPoints }) => {
+                  const isExpanded = expandedQuestionId === question.id;
+
+                  return (
+                    <div key={String(question.id)} className="bg-[#151a21] border border-[#44484f]/20 rounded-xl overflow-hidden">
+                      <div
+                        className="p-4 cursor-pointer hover:bg-[#1b2028] transition-colors"
+                        onClick={() => {
+                          setExpandedQuestionId(isExpanded ? null : question.id);
+                          setQuestionOverrides({});
+                        }}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="font-medium mb-1 text-[#f1f3fc]">
+                              Q{question.id}: {question.text}
+                            </div>
+                            <div className="text-sm text-[#a8abb3]">
+                              Avg: {avgPoints}/{question.weight} | Correct: {correctCount}/{answers.length} | Type: {question.type}
+                            </div>
+                          </div>
+                          <span className="text-[#a8abb3] text-xl ml-4">
+                            {isExpanded ? "▼" : "▶"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {isExpanded && (
+                        <div className="border-t border-[#44484f]/20 bg-[#0f141a] p-4">
+                          <div className="text-sm font-medium mb-3 text-[#f1f3fc]">
+                            Edit scores for this question ({answers.length} students):
+                          </div>
+                          <div className="space-y-3 max-h-96 overflow-y-auto">
+                            {answers.map(({ student, answer }) => {
+                              const submission = scoresData?.find(s => s.student === student);
+                              const quizId = submission?.quiz_id || "";
+                              const currentPoints = answer?.points_awarded || 0;
+                              const maxPoints = answer?.weight || question.weight;
+                              const hasOverride = questionOverrides[student] !== undefined;
+                              const displayPoints = hasOverride ? questionOverrides[student] : currentPoints;
+                              const isSaving = savingStudent === student;
+
+                              return (
+                                <div
+                                  key={student}
+                                  className="bg-[#151a21] border border-[#44484f]/20 rounded-lg p-3"
+                                >
+                                  <div className="flex flex-col md:flex-row md:items-center gap-3">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="font-medium text-sm text-[#f1f3fc] truncate">{student}</div>
+                                      <div className="text-xs text-[#a8abb3] mt-1">
+                                        <span className="font-medium">Answer: </span>
+                                        <span className="font-mono bg-[#0f141a] px-1 rounded">
+                                          {JSON.stringify(answer?.student_answer ?? "N/A")}
+                                        </span>
+                                      </div>
+                                      <div className={`text-xs mt-1 p-2 rounded border ${
+                                        answer?.points_awarded === answer?.weight
+                                          ? "bg-[#c2ff99]/10 border-[#c2ff99]/30 text-[#c2ff99]"
+                                          : "bg-red-500/10 border-red-500/30 text-red-400"
+                                      }`}>
+                                        <span className="font-medium">Correct: </span>
+                                        <span className="font-mono">
+                                          {JSON.stringify(answer?.correct_answer ?? "N/A")}
+                                        </span>
+                                      </div>
+                                      {question.type === 'open' && (answer?.llm_verdict || answer?.llm_feedback) && (
+                                        <div className="mt-2 p-2 bg-[#e966ff]/5 rounded border border-[#e966ff]/20 text-xs">
+                                          <div className="font-semibold text-[#e966ff] mb-1">
+                                            LLM Evaluation
+                                          </div>
+                                          {answer.llm_verdict && (
+                                            <div className="mb-1">
+                                              <span className="font-medium">Verdict:</span>{" "}
+                                              <span className="bg-[#e966ff]/10 border border-[#e966ff]/30 text-[#e966ff] text-xs px-2 py-0.5 rounded uppercase font-bold tracking-wider">
+                                                {answer.llm_verdict}
+                                              </span>
+                                            </div>
+                                          )}
+                                          {answer.llm_feedback && (
+                                            <div>
+                                              <span className="font-medium">Feedback:</span>{" "}
+                                              <span className="text-[#a8abb3] italic">{answer.llm_feedback}</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                      <div className="flex items-center gap-1">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max={maxPoints}
+                                          step="0.5"
+                                          value={displayPoints}
+                                          onChange={(e) => handleQuestionOverrideChange(student, e.target.value, maxPoints)}
+                                          className="bg-[#0f141a] border border-[#44484f]/30 text-[#f1f3fc] focus:border-[#81ecff]/50 focus:outline-none rounded w-16 text-center text-sm"
+                                        />
+                                        <span className="text-sm text-[#a8abb3]">/ {maxPoints}</span>
+                                      </div>
+
+                                      <button
+                                        onClick={() => handleSaveQuestionOverride(student, question.id, quizId)}
+                                        disabled={!hasOverride || isSaving}
+                                        className={`px-3 py-1 text-sm rounded transition-colors ${
+                                          hasOverride && !isSaving
+                                            ? "bg-[#81ecff] text-[#005762] font-bold"
+                                            : "bg-[#1b2028] text-[#a8abb3] cursor-not-allowed"
+                                        }`}
+                                      >
+                                        {isSaving ? "..." : "Save"}
+                                      </button>
+
+                                      <span className={`text-lg ${
+                                        currentPoints === maxPoints
+                                          ? "text-[#c2ff99]"
+                                          : currentPoints > 0
+                                            ? "text-yellow-400"
+                                            : "text-red-400"
+                                      }`}>
+                                        {currentPoints === maxPoints ? "✓" : currentPoints > 0 ? "⚠" : "✗"}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
-            {/* View toggle */}
-            <div className="flex flex-col gap-2 mb-4 md:flex-row md:items-center md:justify-between">
-              <div className="text-sm text-gray-600">
-                LLM regrade: {llmInfo ? `${llmInfo.provider}/${llmInfo.model}` : "Unknown"}
-                {llmInfo ? ` (${llmInfo.enabled ? "enabled" : "disabled"})` : ""}
+            {selectedStudentSubmission && selectedFilename && (
+              <div className="mt-6 border-t border-[#44484f]/20 pt-6">
+                <h3 className="text-lg font-semibold mb-4 text-[#f1f3fc]">Student Detail: {selectedStudentSubmission.student}</h3>
+                <SubmissionDetailView
+                  studentSubmission={selectedStudentSubmission}
+                  adminPassword={adminPassword}
+                  onClose={() => setSelectedStudentSubmission(null)}
+                  bankFilename={selectedFilename}
+                  onSubmissionUpdated={handleSubmissionUpdated}
+                />
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => selectedFilename && regradeOpenMutation.mutate({ filename: selectedFilename })}
-                  disabled={regradeOpenMutation.isPending}
-                  className={`px-4 py-2 rounded-md ${regradeOpenMutation.isPending
-                      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                      : "bg-purple-600 text-white hover:bg-purple-700"
-                    }`}
-                >
-                  {regradeOpenMutation.isPending ? "Regrading..." : "Regrade Open Questions"}
-                </button>
-                <button
-                  onClick={() => setViewBy("student")}
-                  className={`px-4 py-2 rounded-md ${viewBy === "student"
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-300 text-gray-700"
-                    }`}
-                >
-                  By Student
-                </button>
-                <button
-                  onClick={() => setViewBy("question")}
-                  className={`px-4 py-2 rounded-md ${viewBy === "question"
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-300 text-gray-700"
-                    }`}
-                >
-                  By Question
-                </button>
-              </div>
-            </div>
+            )}
           </div>
-
-          {isLoadingScores ? (
-            <div>Loading scores...</div>
-          ) : viewBy === "student" ? (
-            // By Student View
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {scoresData?.map((submission) => (
-                <div
-                  key={`${submission.student}-${submission.quiz_id}`}
-                  className="border p-4 rounded-md hover:shadow-lg cursor-pointer"
-                  onClick={() => setSelectedStudentSubmission(submission)}
-                >
-                  <div className="font-medium mb-2">{submission.student}</div>
-                  <div className="text-sm text-gray-600">
-                    Score: {submission.raw_points}/{submission.max_points} ({submission.percent}%)
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    {new Date(submission.timestamp).toLocaleString()}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            // By Question View - click question to expand and edit scores inline
-            <div className="space-y-4">
-              {questionSummary.map(({ question, answers, correctCount, avgPoints }) => {
-                const isExpanded = expandedQuestionId === question.id;
-
-                return (
-                  <div key={String(question.id)} className="border rounded-md overflow-hidden">
-                    <div
-                      className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
-                      onClick={() => {
-                        setExpandedQuestionId(isExpanded ? null : question.id);
-                        setQuestionOverrides({});
-                      }}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="font-medium mb-1">
-                            Q{question.id}: {question.text}
-                          </div>
-                          <div className="text-sm text-gray-600">
-                            Avg: {avgPoints}/{question.weight} | Correct: {correctCount}/{answers.length} | Type: {question.type}
-                          </div>
-                        </div>
-                        <span className="text-gray-400 text-xl ml-4">
-                          {isExpanded ? "▼" : "▶"}
-                        </span>
-                      </div>
-                    </div>
-
-                    {isExpanded && (
-                      <div className="border-t bg-gray-50 p-4">
-                        <div className="text-sm font-medium mb-3">
-                          Edit scores for this question ({answers.length} students):
-                        </div>
-                        <div className="space-y-3 max-h-96 overflow-y-auto">
-                          {answers.map(({ student, answer }) => {
-                            const submission = scoresData?.find(s => s.student === student);
-                            const quizId = submission?.quiz_id || "";
-                            const currentPoints = answer?.points_awarded || 0;
-                            const maxPoints = answer?.weight || question.weight;
-                            const hasOverride = questionOverrides[student] !== undefined;
-                            const displayPoints = hasOverride ? questionOverrides[student] : currentPoints;
-                            const isSaving = savingStudent === student;
-
-                            return (
-                              <div
-                                key={student}
-                                className="bg-white border rounded-md p-3 shadow-sm"
-                              >
-                                <div className="flex flex-col md:flex-row md:items-center gap-3">
-                                  <div className="flex-1 min-w-0">
-                                    <div className="font-medium text-sm truncate">{student}</div>
-                                    <div className="text-xs text-gray-500 mt-1">
-                                      <span className="font-medium">Answer: </span>
-                                      <span className="font-mono bg-gray-100 px-1 rounded">
-                                        {JSON.stringify(answer?.student_answer ?? "N/A")}
-                                      </span>
-                                    </div>
-                                    <div className="text-xs text-green-700 mt-1">
-                                      <span className="font-medium">Correct: </span>
-                                      <span className="font-mono bg-green-50 px-1 rounded">
-                                        {JSON.stringify(answer?.correct_answer ?? "N/A")}
-                                      </span>
-                                    </div>
-                                    {question.type === 'open' && (answer?.llm_verdict || answer?.llm_feedback) && (
-                                      <div className="mt-2 p-2 bg-purple-50 rounded border border-purple-100 text-xs">
-                                        <div className="font-semibold text-purple-800 mb-1">
-                                          🤖 LLM Evaluation
-                                        </div>
-                                        {answer.llm_verdict && (
-                                          <div className="mb-1">
-                                            <span className="font-medium">Verdict:</span>{" "}
-                                            <span className={`px-1.5 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${answer.llm_verdict.toLowerCase() === 'correct' ? 'bg-green-100 text-green-700' :
-                                                answer.llm_verdict.toLowerCase() === 'incorrect' ? 'bg-red-100 text-red-700' :
-                                                  'bg-yellow-100 text-yellow-700'
-                                              }`}>
-                                              {answer.llm_verdict}
-                                            </span>
-                                          </div>
-                                        )}
-                                        {answer.llm_feedback && (
-                                          <div>
-                                            <span className="font-medium">Feedback:</span>{" "}
-                                            <span className="text-gray-700 italic">{answer.llm_feedback}</span>
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  <div className="flex items-center gap-2">
-                                    <div className="flex items-center gap-1">
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        max={maxPoints}
-                                        step="0.5"
-                                        value={displayPoints}
-                                        onChange={(e) => handleQuestionOverrideChange(student, e.target.value, maxPoints)}
-                                        className="w-16 border rounded px-2 py-1 text-sm text-center"
-                                      />
-                                      <span className="text-sm text-gray-500">/ {maxPoints}</span>
-                                    </div>
-
-                                    <button
-                                      onClick={() => handleSaveQuestionOverride(student, question.id, quizId)}
-                                      disabled={!hasOverride || isSaving}
-                                      className={`px-3 py-1 text-sm rounded transition-colors ${hasOverride && !isSaving
-                                          ? "bg-blue-600 text-white hover:bg-blue-700"
-                                          : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                                        }`}
-                                    >
-                                      {isSaving ? "..." : "Save"}
-                                    </button>
-
-                                    <span className={`text-lg ${currentPoints === maxPoints
-                                        ? "text-green-600"
-                                        : currentPoints > 0
-                                          ? "text-yellow-500"
-                                          : "text-red-500"
-                                      }`}>
-                                      {currentPoints === maxPoints ? "✓" : currentPoints > 0 ? "⚠" : "✗"}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {selectedStudentSubmission && selectedFilename && (
-            <div className="mt-6 border-t pt-6">
-              <h3 className="text-lg font-semibold mb-4">Student Detail: {selectedStudentSubmission.student}</h3>
-              <SubmissionDetailView
-                studentSubmission={selectedStudentSubmission}
-                adminPassword={adminPassword}
-                onClose={() => setSelectedStudentSubmission(null)}
-                bankFilename={selectedFilename}
-                onSubmissionUpdated={handleSubmissionUpdated}
-              />
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </AdminLayout>
   );
 }
 

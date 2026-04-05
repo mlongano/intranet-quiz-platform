@@ -1,15 +1,92 @@
 import { useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { fetchScores, fetchStudents, fetchAdminQuestions, fetchQuestionBankFiles, fetchScoresBankFiles, listStudentsBankFiles, getGitSyncStatus, initGitSync, syncBanks, getQuizStatus, setQuizStatus } from "../api";
+import { motion } from "framer-motion";
+import {
+  Cloud,
+  ExternalLink,
+  Github,
+  Pencil,
+  RefreshCw,
+  FileText,
+  Trophy,
+  Archive,
+  BarChart3,
+  Users,
+} from "lucide-react";
+import {
+  fetchScores,
+  fetchStudents,
+  fetchAdminQuestions,
+  fetchQuestionBankFiles,
+  fetchScoresBankFiles,
+  listStudentsBankFiles,
+  getGitSyncStatus,
+  initGitSync,
+  syncBanks,
+  getQuizStatus,
+  setQuizStatus,
+} from "../api";
+import AdminLayout from "../layouts/AdminLayout";
 
+// ─── StatCard ─────────────────────────────────────────────────────────────────
+const StatCard = ({
+  title,
+  value,
+  middleContent,
+  subtext,
+  ghostIcon: GhostIcon,
+  accentClass,
+  onClick,
+  delay = 0,
+}: {
+  title: string;
+  value: string | number;
+  middleContent?: ReactNode;
+  subtext: ReactNode;
+  ghostIcon: any;
+  accentClass: string;
+  onClick?: () => void;
+  delay?: number;
+}) => (
+  <motion.button
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ delay }}
+    onClick={onClick}
+    className="relative overflow-hidden flex-1 p-6 rounded-2xl bg-surface-container hover:bg-surface-container-high transition-all hover:scale-[1.02] cursor-pointer text-left flex flex-col group"
+  >
+    {/* Top accent strip */}
+    <div className={`absolute top-0 left-0 w-full h-0.5 ${accentClass}`} />
+
+    {/* Ghost watermark icon */}
+    <div className="absolute -right-4 -bottom-4 opacity-5 group-hover:opacity-10 transition-opacity pointer-events-none">
+      <GhostIcon size={96} />
+    </div>
+
+    <p className="text-xs font-bold uppercase tracking-widest mb-4 font-body text-on-surface-variant">
+      {title}
+    </p>
+
+    <div className="text-4xl font-bold tracking-tight leading-tight text-on-surface font-headline mb-2">
+      {value}
+    </div>
+
+    {middleContent && (
+      <div className="flex-1 flex items-center">{middleContent}</div>
+    )}
+
+    <div className="text-on-surface-variant text-xs mt-auto">{subtext}</div>
+  </motion.button>
+);
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function AdminRootPage() {
   const location = useLocation();
   const adminPassword = location.state?.adminPassword;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [isValidating, setIsValidating] = useState(true);
-  const [validationError, setValidationError] = useState<string | null>(null);
+
   const [countdown, setCountdown] = useState(30);
   const [showPendingModal, setShowPendingModal] = useState(false);
   const [showSubmittedModal, setShowSubmittedModal] = useState(false);
@@ -17,114 +94,88 @@ export default function AdminRootPage() {
   const [syncMessage, setSyncMessage] = useState<string>("");
   const [syncError, setSyncError] = useState<string>("");
 
-  // Validate password on mount
-  useEffect(() => {
-    const validateAccess = async () => {
-      if (!adminPassword) {
-        navigate("/admin", { replace: true });
-        return;
-      }
+  // ── Guard: redirect if no password ──────────────────────────────────────
+  if (!adminPassword) {
+    navigate("/admin", { replace: true });
+    return null;
+  }
 
-      try {
-        await fetchScores(adminPassword);
-        setIsValidating(false);
-      } catch {
-        setValidationError("Invalid session. Redirecting to login...");
-        setTimeout(() => {
-          navigate("/admin", { replace: true });
-        }, 2000);
-      }
-    };
+  const navigateTo = (path: string) => {
+    navigate(path, { state: { adminPassword } });
+  };
 
-    validateAccess();
-  }, [adminPassword, navigate]);
-
-  // Fetch dashboard statistics
+  // ── Queries ──────────────────────────────────────────────────────────────
   const { data: scoresData, isFetching: isFetchingScores, dataUpdatedAt } = useQuery({
     queryKey: ["scores", adminPassword],
     queryFn: () => fetchScores(adminPassword),
-    enabled: !!adminPassword && !isValidating,
-    refetchInterval: 30000, // Refetch every 30 seconds
-    refetchIntervalInBackground: false, // Don't refetch when tab is not visible
+    enabled: !!adminPassword,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
   });
 
-  // Countdown timer for next auto-update
-  useEffect(() => {
-    setCountdown(30); // Reset countdown when data updates
-  }, [dataUpdatedAt]);
+  useEffect(() => { setCountdown(30); }, [dataUpdatedAt]);
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) return 30;
-        return prev - 1;
-      });
+      setCountdown((prev) => (prev <= 1 ? 30 : prev - 1));
     }, 1000);
-
     return () => clearInterval(timer);
   }, []);
 
   const { data: studentsData } = useQuery({
     queryKey: ["students", adminPassword],
     queryFn: () => fetchStudents(adminPassword),
-    enabled: !!adminPassword && !isValidating,
+    enabled: !!adminPassword,
   });
 
   const { data: questionsData } = useQuery({
     queryKey: ["questions", adminPassword],
     queryFn: () => fetchAdminQuestions(adminPassword),
-    enabled: !!adminPassword && !isValidating,
+    enabled: !!adminPassword,
   });
 
   const { data: questionBankFiles } = useQuery({
     queryKey: ["questionBankFiles", adminPassword],
     queryFn: () => fetchQuestionBankFiles(adminPassword),
-    enabled: !!adminPassword && !isValidating,
+    enabled: !!adminPassword,
   });
 
   const { data: scoresBankFiles } = useQuery({
     queryKey: ["scoresBankFiles", adminPassword],
     queryFn: () => fetchScoresBankFiles(adminPassword),
-    enabled: !!adminPassword && !isValidating,
+    enabled: !!adminPassword,
   });
 
   const { data: studentsBankFiles } = useQuery({
     queryKey: ["studentsBankFiles", adminPassword],
     queryFn: () => listStudentsBankFiles(adminPassword),
-    enabled: !!adminPassword && !isValidating,
+    enabled: !!adminPassword,
   });
 
-  // Quiz status query
   const { data: quizStatus, refetch: refetchQuizStatus } = useQuery({
     queryKey: ["quizStatus"],
     queryFn: () => getQuizStatus(),
-    enabled: !!adminPassword && !isValidating,
+    enabled: !!adminPassword,
   });
 
-  // Git sync status query
   const { data: syncStatus, refetch: refetchSyncStatus, error: syncStatusError, isLoading: syncStatusLoading } = useQuery({
     queryKey: ["gitSyncStatus", adminPassword],
     queryFn: () => getGitSyncStatus(adminPassword),
-    enabled: !!adminPassword && !isValidating,
+    enabled: !!adminPassword,
     retry: false,
   });
 
-  // Debug: Log sync status
   useEffect(() => {
-    console.log('[Git Sync] Query status:', {
+    console.log("[Git Sync] Query status:", {
       loading: syncStatusLoading,
       data: syncStatus,
-      error: syncStatusError
+      error: syncStatusError,
     });
-    if (syncStatus) {
-      console.log('[Git Sync] Status received:', syncStatus);
-    }
-    if (syncStatusError) {
-      console.error('[Git Sync] Status Error:', syncStatusError);
-    }
+    if (syncStatus) console.log("[Git Sync] Status received:", syncStatus);
+    if (syncStatusError) console.error("[Git Sync] Status Error:", syncStatusError);
   }, [syncStatus, syncStatusError, syncStatusLoading]);
 
-  // Git sync mutations
+  // ── Mutations ────────────────────────────────────────────────────────────
   const initMutation = useMutation({
     mutationFn: () => initGitSync(adminPassword),
     onSuccess: (data) => {
@@ -147,7 +198,6 @@ export default function AdminRootPage() {
       setSyncError("");
       setShowSyncModal(true);
       refetchSyncStatus();
-      // Refetch bank data after sync
       queryClient.invalidateQueries({ queryKey: ["questionBankFiles"] });
       queryClient.invalidateQueries({ queryKey: ["scoresBankFiles"] });
       queryClient.invalidateQueries({ queryKey: ["studentsBankFiles"] });
@@ -159,15 +209,10 @@ export default function AdminRootPage() {
     },
   });
 
-  // Quiz status mutation
   const toggleQuizStatusMutation = useMutation({
     mutationFn: (enabled: boolean) => setQuizStatus(enabled, adminPassword),
-    onSuccess: () => {
-      // Just refetch the status to update the UI
-      refetchQuizStatus();
-    },
+    onSuccess: () => { refetchQuizStatus(); },
     onError: (error: any) => {
-      // Only show error if toggle fails
       setSyncError(error.message || "Failed to update quiz status");
       setSyncMessage("");
       setShowSyncModal(true);
@@ -176,11 +221,12 @@ export default function AdminRootPage() {
 
   const handleGitSync = () => {
     if (!syncStatus?.configured) {
-      setSyncError("Cloud sync not configured. Please set BANKS_GIT_REMOTE, BANKS_GIT_USERNAME, and BANKS_GIT_TOKEN in your .env file.");
+      setSyncError(
+        "Cloud sync not configured. Please set BANKS_GIT_REMOTE, BANKS_GIT_USERNAME, and BANKS_GIT_TOKEN in your .env file.",
+      );
       setShowSyncModal(true);
       return;
     }
-
     if (!syncStatus?.initialized) {
       initMutation.mutate();
     } else {
@@ -188,410 +234,520 @@ export default function AdminRootPage() {
     }
   };
 
-  // Show loading while validating
-  if (isValidating) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <p className="text-lg">Validating access...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Show error message if validation failed
-  if (validationError) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <p className="text-lg text-red-600">{validationError}</p>
-        </div>
-      </div>
-    );
-  }
-
-  const navigateTo = (path: string) => {
-    navigate(path, { state: { adminPassword } });
-  };
-
+  // ── Helpers ──────────────────────────────────────────────────────────────
   const handleRefreshScores = () => {
     queryClient.invalidateQueries({ queryKey: ["scores", adminPassword] });
-    setCountdown(30); // Reset countdown on manual refresh
+    setCountdown(30);
   };
 
-  // Calculate statistics
-  const totalSubmissions = scoresData?.length || 0;
+  const EXCLUDED_GROUP = import.meta.env.VITE_EXCLUDED_GROUP ?? "Theacher";
 
-  // Get all student emails from the studentsData
-  const allStudentEmails = studentsData ?
-    studentsData.reduce<string[]>((emails, student) => {
-      if (typeof student === 'string') {
-        emails.push(student.toLowerCase());
-      } else if ('emails' in student) {
-        emails.push(...student.emails.map(e => e.toLowerCase()));
-      } else if ('email' in student) {
-        emails.push(student.email.toLowerCase());
-      }
-      return emails;
-    }, []) : [];
+  const allStudentEmails = studentsData
+    ? studentsData.reduce<string[]>((emails, student) => {
+        if (typeof student === "string") {
+          emails.push(student.toLowerCase());
+        } else if ("emails" in student) {
+          if (student.group === EXCLUDED_GROUP) return emails;
+          emails.push(...student.emails.map((e) => e.toLowerCase()));
+        } else if ("email" in student) {
+          if ((student as { email: string; group?: string }).group === EXCLUDED_GROUP) return emails;
+          emails.push(student.email.toLowerCase());
+        }
+        return emails;
+      }, [])
+    : [];
+
+  const groupNames = studentsData
+    ? [
+        ...new Set(
+          studentsData.flatMap((student) => {
+            if (typeof student === "string") return [];
+            if ("emails" in student) {
+              return student.group !== EXCLUDED_GROUP ? [student.group] : [];
+            }
+            const g = (student as { email: string; group?: string }).group;
+            return g && g !== EXCLUDED_GROUP ? [g] : [];
+          }),
+        ),
+      ]
+    : [];
+
+  const totalSubmissions = scoresData
+    ? scoresData.filter((s) => allStudentEmails.includes(s.student.toLowerCase())).length
+    : 0;
 
   const totalStudents = allStudentEmails.length;
 
-  // Get submitted student IDs
   const submittedStudentIds = new Set(
-    scoresData?.map(score => score.student.toLowerCase()) || []
+    scoresData?.map((score) => score.student.toLowerCase()) || [],
   );
 
-  // Calculate pending submissions
   const pendingSubmissions = allStudentEmails.filter(
-    email => !submittedStudentIds.has(email)
+    (email) => !submittedStudentIds.has(email),
   ).length;
 
-  // Get list of pending students
   const pendingStudentEmails = allStudentEmails.filter(
-    email => !submittedStudentIds.has(email)
+    (email) => !submittedStudentIds.has(email),
   );
 
-  // Get list of submitted students
   const submittedStudentEmails = allStudentEmails.filter(
-    email => submittedStudentIds.has(email)
+    (email) => submittedStudentIds.has(email),
   );
 
   const totalQuestions = questionsData?.questions?.length || 0;
   const quizTitle = questionsData?.title || "No quiz loaded";
 
+  const percentValues =
+    scoresData
+      ?.filter((s) => allStudentEmails.includes(s.student.toLowerCase()))
+      .map((s) => s.percent) ?? [];
+  const meanPercent =
+    percentValues.length > 0
+      ? Math.round(percentValues.reduce((a, b) => a + b, 0) / percentValues.length)
+      : null;
+  const medianPercent = (() => {
+    if (percentValues.length === 0) return null;
+    const sorted = [...percentValues].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0
+      ? Math.round((sorted[mid - 1] + sorted[mid]) / 2)
+      : sorted[mid];
+  })();
+  const skewnessPercent = (() => {
+    if (percentValues.length === 0 || meanPercent === null) return null;
+    const avg = percentValues.reduce((a, b) => a + b, 0) / percentValues.length;
+    const variance = percentValues.reduce((acc, x) => acc + Math.pow(x - avg, 2), 0) / percentValues.length;
+    const stdDev = Math.sqrt(variance);
+    if (stdDev === 0) return 0;
+    const thirdMoment = percentValues.reduce((acc, x) => acc + Math.pow(x - avg, 3), 0) / percentValues.length;
+    return Math.round((thirdMoment / Math.pow(stdDev, 3)) * 100) / 100;
+  })();
+
+  const totalArchives =
+    (questionBankFiles?.files?.length || 0) +
+    (scoresBankFiles?.files?.length || 0) +
+    (studentsBankFiles?.files?.length || 0);
+
+  // ── Header actions ───────────────────────────────────────────────────────
+  const headerActions = (
+    <>
+      {/* Quiz status toggle */}
+      <div className="flex items-center gap-3 px-4 py-2 rounded-full bg-surface-container-high border border-outline-variant/20">
+        <button
+          onClick={() => toggleQuizStatusMutation.mutate(!quizStatus?.enabled)}
+          disabled={toggleQuizStatusMutation.isPending}
+          className={`relative inline-flex h-5 w-11 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed ${
+            quizStatus?.enabled ? "bg-tertiary" : "bg-outline-variant"
+          }`}
+        >
+          <span
+            className={`inline-block h-4 w-4 transform rounded-full bg-surface transition-transform ${
+              quizStatus?.enabled ? "translate-x-6" : "translate-x-1"
+            }`}
+          />
+        </button>
+        <span className="text-sm font-medium font-body">
+          Quiz:{" "}
+          <span
+            className={
+              quizStatus?.enabled ? "text-tertiary" : "text-on-surface-variant"
+            }
+          >
+            {quizStatus?.enabled ? "Active" : "Inactive"}
+          </span>
+        </span>
+      </div>
+
+      {/* Sync to Cloud */}
+      {syncStatus?.configured && (
+        <button
+          onClick={handleGitSync}
+          disabled={initMutation.isPending || syncMutation.isPending}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container-high text-secondary border border-secondary/30 hover:bg-secondary/10 transition-all text-sm font-semibold font-body disabled:opacity-50"
+        >
+          <Cloud size={16} />
+          {initMutation.isPending || syncMutation.isPending
+            ? "Syncing..."
+            : "Sync to Cloud"}
+        </button>
+      )}
+
+      {/* GitHub link */}
+      {syncStatus?.remote_url && (
+        <a
+          href={
+            syncStatus.remote_url?.replace(/\.git$/, "") ||
+            "https://github.com/mlongano/intranet-quiz-manager"
+          }
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container-high text-on-surface text-sm font-semibold font-body hover:bg-surface-bright transition-all"
+        >
+          <Github size={16} />
+          GitHub
+        </a>
+      )}
+
+      {/* Open Quiz */}
+      <a
+        href="/"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container-high text-tertiary border border-tertiary/30 hover:bg-tertiary/10 transition-all text-sm font-semibold font-body"
+      >
+        <ExternalLink size={16} />
+        Open Quiz
+      </a>
+
+      {/* Create New Quiz */}
+      <button
+        onClick={() => navigateTo("/admin/questions")}
+        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-on-primary font-bold font-body shadow-[0_0_15px_rgba(129,236,255,0.3)] hover:scale-105 transition-all text-sm"
+      >
+        <Pencil size={16} />
+        Edit Questions
+      </button>
+    </>
+  );
+
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <header className="bg-gradient-to-r from-teal-600 to-teal-700 text-white shadow-lg">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-3xl font-bold">QuizParty Admin</h1>
-              <p className="text-teal-100 text-sm mt-1">Quiz Management Dashboard</p>
+    <AdminLayout
+      activePath="/admin/dashboard"
+      adminPassword={adminPassword}
+      pageTitle="Dashboard"
+      headerActions={headerActions}
+    >
+      <div className="space-y-8">
+        {/* Status Bar */}
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="flex items-center justify-between bg-surface-container-low p-4 rounded-xl border border-outline-variant/10 shadow-[0_0_20px_rgba(129,236,255,0.08)]"
+        >
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 px-3 py-1 bg-tertiary/10 rounded-full">
+              <span className="w-2 h-2 rounded-full bg-tertiary animate-pulse" />
+              <span className="text-tertiary text-sm font-bold font-body">
+                Pending Submissions: {pendingSubmissions}
+              </span>
             </div>
-            <div className="flex gap-3 items-center">
-              {/* Quiz Status Toggle */}
-              <div className="flex items-center gap-3 bg-white/10 backdrop-blur-sm rounded-lg px-4 py-2 border border-white/20">
-                <span className="text-sm font-medium">Quiz Status:</span>
-                <button
-                  onClick={() => toggleQuizStatusMutation.mutate(!quizStatus?.enabled)}
-                  disabled={toggleQuizStatusMutation.isPending}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-teal-700 disabled:opacity-50 disabled:cursor-not-allowed ${quizStatus?.enabled ? 'bg-green-500' : 'bg-red-500'
-                    }`}
-                  title={quizStatus?.enabled ? 'Quiz is enabled - Click to disable' : 'Quiz is disabled - Click to enable'}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${quizStatus?.enabled ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                  />
-                </button>
-                <span className={`text-sm font-semibold ${quizStatus?.enabled ? 'text-green-200' : 'text-red-200'}`}>
-                  {quizStatus?.enabled ? 'Enabled' : 'Disabled'}
-                </span>
-              </div>
-
-              <a
-                href="/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-4 py-2 bg-white text-teal-700 font-medium rounded-lg hover:bg-teal-50 transition-colors"
-              >
-                View Quiz
-              </a>
-            </div>
+            <button
+              onClick={handleRefreshScores}
+              disabled={isFetchingScores}
+              className="flex items-center gap-2 text-primary hover:text-on-surface text-sm font-semibold font-body transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={14} className={isFetchingScores ? "animate-spin" : ""} />
+              Refresh Now
+            </button>
           </div>
-        </div>
-      </header>
+          <span className="text-on-surface-variant text-sm font-body">
+            Auto-refresh in {countdown}s
+          </span>
+        </motion.div>
 
-      <main className="container mx-auto px-6 py-8">
-        {/* Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <button
+        {/* Metric Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
+          <StatCard
+            title="Current Quiz"
+            value={quizTitle}
+            subtext={`${totalQuestions} questions`}
+            ghostIcon={FileText}
+            accentClass="bg-primary"
             onClick={() => navigateTo("/admin/questions")}
-            className="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-500 hover:shadow-lg transition-shadow text-left flex items-start justify-between cursor-pointer"
-          >
-            <div>
-              <p className="text-blue-600 text-base font-bold">Current Quiz</p>
-              <p className="text-2xl font-bold text-gray-800 mt-1">{quizTitle}</p>
-              <p className="text-gray-600 text-sm mt-2">{totalQuestions} questions</p>
-            </div>
-            <div className="text-blue-500 text-4xl">📝</div>
-          </button>
-
-          <button
-            onClick={() => navigateTo("/admin/scores")}
-            className="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-500 hover:shadow-lg transition-shadow text-left flex items-start justify-between mb-2 cursor-pointer"
-          >
-            <div className="flex-1">
-              <p className="text-green-600 text-base font-bold">Submissions</p>
-              <p className="text-2xl font-bold text-gray-800 mt-1">{totalSubmissions}</p>
-              <p className="text-gray-400 text-sm animate-pulse">
-                {isFetchingScores && ("Updating...")} &nbsp;
-              </p>
-
-              <div className="flex items-center gap-2 mt-2">
+            delay={0.1}
+          />
+          <StatCard
+            title="Submissions"
+            value={totalSubmissions}
+            middleContent={
+              meanPercent !== null ? (
+                <div className="flex flex-col gap-1 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="text-on-surface-variant w-14">avg</span>
+                    <span className="text-secondary font-semibold font-headline">{meanPercent}%</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-on-surface-variant w-14">median</span>
+                    <span className="text-secondary font-semibold font-headline">{medianPercent}%</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-on-surface-variant w-14">skew</span>
+                    <span className="text-secondary font-semibold font-headline">{skewnessPercent}</span>
+                  </div>
+                </div>
+              ) : undefined
+            }
+            subtext={
+              <div className="flex items-center gap-2">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     setShowSubmittedModal(true);
                   }}
-                  className="text-gray-600 text-sm hover:text-gray-800 hover:underline cursor-pointer"
+                  className="hover:underline"
                 >
                   {totalSubmissions} submitted
                 </button>
                 {pendingSubmissions > 0 && (
                   <>
-                    <span className="text-gray-400">•</span>
+                    <span className="text-outline-variant">•</span>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         setShowPendingModal(true);
                       }}
-                      className="text-orange-600 text-sm font-medium hover:text-orange-700 hover:underline cursor-pointer"
+                      className="text-orange-400 hover:underline"
                     >
                       {pendingSubmissions} pending
                     </button>
                   </>
                 )}
               </div>
-              <div className="flex items-center gap-2 mt-2">
-                <p className="text-gray-400 text-xs">
-                  Auto-updates in {countdown}s
-                </p>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleRefreshScores();
-                  }}
-                  disabled={isFetchingScores}
-                  className="text-gray-400 hover:text-gray-600 text-xs hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Refresh now"
-                >
-                  🔄 Refresh now
-                </button>
-              </div>
-            </div>
-            <div className="text-green-500 text-4xl">✅</div>
-          </button>
-
-          <button
-            onClick={() => navigateTo("/admin/students")}
-            className="bg-white rounded-lg shadow-md p-6 border-l-4 border-purple-500 hover:shadow-lg transition-shadow text-left flex items-start justify-between cursor-pointer"
-          >
-            <div>
-              <p className="text-purple-600 text-base font-bold">Students</p>
-              <p className="text-2xl font-bold text-gray-800 mt-1">{totalStudents}</p>
-              <p className="text-gray-600 text-sm mt-2">Enrolled students</p>
-            </div>
-            <div className="text-purple-500 text-4xl">👥</div>
-          </button>
-
-          <button
-            onClick={() => navigateTo("/admin/questions-bank")}
-            className="bg-white rounded-lg shadow-md p-6 border-l-4 border-orange-500 hover:shadow-lg transition-shadow text-left flex flex-col cursor-pointer"
-          >
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <p className="text-orange-600 text-base font-bold">Archives</p>
-                <p className="text-2xl font-bold text-gray-800 mt-1">
-                  {(questionBankFiles?.files?.length || 0) + (scoresBankFiles?.files?.length || 0) + (studentsBankFiles?.files?.length || 0)}
-                </p>
-                <div className="text-gray-600 text-xs mt-2 space-y-1">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigateTo("/admin/questions-bank");
-                    }}
-                    className="block hover:text-blue-600 hover:underline cursor-pointer"
-                  >
-                    {questionBankFiles?.files?.length || 0} questions
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigateTo("/admin/scores-bank");
-                    }}
-                    className="block hover:text-green-600 hover:underline cursor-pointer"
-                  >
-                    {scoresBankFiles?.files?.length || 0} scores
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigateTo("/admin/students-bank");
-                    }}
-                    className="block hover:text-purple-600 hover:underline cursor-pointer"
-                  >
-                    {studentsBankFiles?.files?.length || 0} students
-                  </button>
+            }
+            ghostIcon={Trophy}
+            accentClass="bg-secondary"
+            onClick={() => navigateTo("/admin/scores")}
+            delay={0.2}
+          />
+          <StatCard
+            title="Students"
+            value={totalStudents}
+            middleContent={
+              groupNames.length > 0 ? (
+                <div className="space-y-0.5 py-1">
+                  {groupNames.map((g) => (
+                    <div key={g} className="text-xs text-tertiary/80 font-body">
+                      {g}
+                    </div>
+                  ))}
                 </div>
-              </div>
-              <div className="text-orange-500 text-4xl">🗄️</div>
+              ) : undefined
+            }
+            subtext="Enrolled students"
+            ghostIcon={Users}
+            accentClass="bg-tertiary"
+            onClick={() => navigateTo("/admin/students")}
+            delay={0.3}
+          />
+
+          {/* Archives card — custom layout to preserve bank links */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="relative overflow-hidden flex-1 p-6 rounded-2xl bg-surface-container hover:bg-surface-container-high transition-all hover:scale-[1.02] cursor-pointer text-left flex flex-col group"
+            onClick={() => navigateTo("/admin/questions-bank")}
+          >
+            {/* Top accent strip */}
+            <div className="absolute top-0 left-0 w-full h-0.5 bg-primary-dim/70" />
+
+            {/* Ghost watermark */}
+            <div className="absolute -right-4 -bottom-4 opacity-5 group-hover:opacity-10 transition-opacity pointer-events-none">
+              <Archive size={96} />
             </div>
 
-            {/* Sync Button */}
-            {syncStatus?.configured && (
-              <div className="border-t border-orange-200 pt-3 mt-2">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleGitSync();
-                  }}
-                  disabled={initMutation.isPending || syncMutation.isPending}
-                  className="w-full px-3 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 text-white text-sm font-medium rounded-lg hover:from-teal-700 hover:to-cyan-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  title={syncStatus.initialized ? 'Sync banks to cloud' : 'Initialize cloud sync'}
-                >
-                  {(initMutation.isPending || syncMutation.isPending) ? (
-                    <>
-                      <span className="inline-block animate-spin">⟳</span>
-                      Syncing...
-                    </>
-                  ) : (
-                    <>
-                      ☁️ {syncStatus.initialized ? 'Sync to Cloud' : 'Initialize Sync'}
-                    </>
-                  )}
-                </button>
-                {syncStatus.initialized && syncStatus.last_commit && (
-                  <p className="text-xs text-gray-500 mt-2 text-center">
-                    Last: {syncStatus.last_commit}
-                  </p>
-                )}
-                {syncStatus.remote_url && (
-                  <a 
-                    href={syncStatus.remote_url.replace(/\.git$/, '')}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full px-3 py-2 mt-2 bg-gray-800 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors flex items-center justify-center gap-2"
-                    onClick={(e) => e.stopPropagation()}
-                    title="Open repository on GitHub"
-                  >
-                    <svg fill="currentColor" viewBox="0 0 24 24" width="16" height="16" className="text-white">
-                      <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-                    </svg>
-                    View on GitHub
-                  </a>
-                )}
-              </div>
-            )}
-          </button>
+            <p className="text-xs font-bold uppercase tracking-widest mb-4 font-body text-on-surface-variant">
+              Archives
+            </p>
+            <div className="text-4xl font-bold tracking-tight leading-tight text-on-surface font-headline mb-2">
+              {totalArchives}
+            </div>
+
+            <div className="flex-1 flex items-center">
+            <div className="space-y-1">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigateTo("/admin/questions-bank");
+                }}
+                className="block text-xs text-primary hover:text-on-surface transition-colors hover:underline"
+              >
+                {questionBankFiles?.files?.length || 0} questions
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigateTo("/admin/scores-bank");
+                }}
+                className="block text-xs text-secondary hover:text-on-surface transition-colors hover:underline"
+              >
+                {scoresBankFiles?.files?.length || 0} scores
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigateTo("/admin/students-bank");
+                }}
+                className="block text-xs text-tertiary hover:text-on-surface transition-colors hover:underline"
+              >
+                {studentsBankFiles?.files?.length || 0} students
+              </button>
+            </div>
+            </div>
+          </motion.div>
         </div>
 
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Bottom Nav Sections */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+
           {/* Quiz Management */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <span className="text-2xl">📚</span>
-              Quiz Management
-            </h2>
-            <div className="space-y-3">
-              <button
-                onClick={() => navigateTo("/admin/questions")}
-                className="w-full text-left px-4 py-3 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
-              >
-                <div className="font-semibold text-blue-900">Edit Questions</div>
-                <div className="text-sm text-blue-700">Modify quiz content and answers</div>
-              </button>
-              <button
-                onClick={() => navigateTo("/admin/questions-bank")}
-                className="w-full text-left px-4 py-3 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
-              >
-                <div className="font-semibold text-blue-900">Question Bank</div>
-                <div className="text-sm text-blue-700">Save & load quiz templates</div>
-              </button>
-              <button
-                onClick={() => navigateTo("/admin/images")}
-                className="w-full text-left px-4 py-3 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
-              >
-                <div className="font-semibold text-blue-900">Image Manager</div>
-                <div className="text-sm text-blue-700">Upload & manage quiz images</div>
-              </button>
+          <section className="glass-panel rounded-2xl p-8 border border-white/5">
+            <div className="flex items-center gap-3 mb-8">
+              <FileText size={20} className="text-primary" />
+              <h3 className="text-xl font-headline font-bold tracking-tight">
+                Quiz Management
+              </h3>
             </div>
-          </div>
+            <ul className="space-y-4">
+              {[
+                { label: "Edit Questions",  path: "/admin/questions",      desc: "Modify quiz content and answers" },
+                { label: "Question Bank",   path: "/admin/questions-bank", desc: "Save & load quiz templates" },
+                { label: "Image Manager",   path: "/admin/images",         desc: "Upload & manage quiz images" },
+              ].map(({ label, path }) => (
+                <li
+                  key={path}
+                  onClick={() => navigateTo(path)}
+                  className="flex items-center justify-between group cursor-pointer hover:translate-x-2 transition-transform py-1"
+                >
+                  <span className="text-on-surface-variant group-hover:text-primary transition-colors text-sm font-body">
+                    {label}
+                  </span>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="opacity-0 group-hover:opacity-100 text-primary transition-opacity"
+                  >
+                    <path d="m9 18 6-6-6-6"/>
+                  </svg>
+                </li>
+              ))}
+            </ul>
+          </section>
 
           {/* Results & Scoring */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <span className="text-2xl">📊</span>
-              Results & Scoring
-            </h2>
-            <div className="space-y-3">
-              <button
-                onClick={() => navigateTo("/admin/scores")}
-                className="w-full text-left px-4 py-3 bg-green-50 hover:bg-green-100 rounded-lg transition-colors border border-green-200"
-              >
-                <div className="font-semibold text-green-900">View Scores</div>
-                <div className="text-sm text-green-700">Review submissions & send emails</div>
-              </button>
-              <button
-                onClick={() => navigateTo("/admin/scores-bank")}
-                className="w-full text-left px-4 py-3 bg-green-50 hover:bg-green-100 rounded-lg transition-colors border border-green-200"
-              >
-                <div className="font-semibold text-green-900">Scores Archive</div>
-                <div className="text-sm text-green-700">Save & restore score history</div>
-              </button>
-              <button
-                onClick={() => navigateTo("/admin/scores-bank-review")}
-                className="w-full text-left px-4 py-3 bg-green-50 hover:bg-green-100 rounded-lg transition-colors border border-green-200"
-              >
-                <div className="font-semibold text-green-900">Review Bank Scores</div>
-                <div className="text-sm text-green-700">Override scores from archived files</div>
-              </button>
+          <section className="glass-panel rounded-2xl p-8 border border-white/5">
+            <div className="flex items-center gap-3 mb-8">
+              <BarChart3 size={20} className="text-secondary" />
+              <h3 className="text-xl font-headline font-bold tracking-tight">
+                Results & Scoring
+              </h3>
             </div>
-          </div>
+            <ul className="space-y-4">
+              {[
+                { label: "View Scores",        path: "/admin/scores" },
+                { label: "Scores Archive",      path: "/admin/scores-bank" },
+                { label: "Review Bank Scores",  path: "/admin/scores-bank-review" },
+              ].map(({ label, path }) => (
+                <li
+                  key={path}
+                  onClick={() => navigateTo(path)}
+                  className="flex items-center justify-between group cursor-pointer hover:translate-x-2 transition-transform py-1"
+                >
+                  <span className="text-on-surface-variant group-hover:text-secondary transition-colors text-sm font-body">
+                    {label}
+                  </span>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="opacity-0 group-hover:opacity-100 text-secondary transition-opacity"
+                  >
+                    <path d="m9 18 6-6-6-6"/>
+                  </svg>
+                </li>
+              ))}
+            </ul>
+          </section>
 
           {/* Student Management */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <span className="text-2xl">👨‍🎓</span>
-              Student Management
-            </h2>
-            <div className="space-y-3">
-              <button
-                onClick={() => navigateTo("/admin/students")}
-                className="w-full text-left px-4 py-3 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors border border-purple-200"
-              >
-                <div className="font-semibold text-purple-900">Manage Students</div>
-                <div className="text-sm text-purple-700">Edit student list & groups</div>
-              </button>
-              <button
-                onClick={() => navigateTo("/admin/students-bank")}
-                className="w-full text-left px-4 py-3 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors border border-purple-200"
-              >
-                <div className="font-semibold text-purple-900">Students Archive</div>
-                <div className="text-sm text-purple-700">Save & load class lists</div>
-              </button>
+          <section className="glass-panel rounded-2xl p-8 border border-white/5">
+            <div className="flex items-center gap-3 mb-8">
+              <Users size={20} className="text-tertiary" />
+              <h3 className="text-xl font-headline font-bold tracking-tight">
+                Student Management
+              </h3>
             </div>
-          </div>
-        </div>
-      </main>
+            <ul className="space-y-4">
+              {[
+                { label: "Manage Students",  path: "/admin/students" },
+                { label: "Students Archive", path: "/admin/students-bank" },
+              ].map(({ label, path }) => (
+                <li
+                  key={path}
+                  onClick={() => navigateTo(path)}
+                  className="flex items-center justify-between group cursor-pointer hover:translate-x-2 transition-transform py-1"
+                >
+                  <span className="text-on-surface-variant group-hover:text-tertiary transition-colors text-sm font-body">
+                    {label}
+                  </span>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="opacity-0 group-hover:opacity-100 text-tertiary transition-opacity"
+                  >
+                    <path d="m9 18 6-6-6-6"/>
+                  </svg>
+                </li>
+              ))}
+            </ul>
+          </section>
 
-      {/* Pending Students Modal */}
+        </div>
+      </div>
+
+      {/* ── Modals ──────────────────────────────────────────────────────────── */}
+
+      {/* Pending Submissions Modal */}
       {showPendingModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
-            <div className="bg-orange-500 text-white px-6 py-4 flex justify-between items-center">
-              <h2 className="text-xl font-bold">Pending Submissions ({pendingSubmissions})</h2>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-surface-container rounded-xl border border-outline-variant/20 max-w-2xl w-full max-h-[80vh] overflow-hidden"
+          >
+            <div className="bg-orange-500/20 border-b border-orange-500/30 px-6 py-4 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-orange-400 font-headline">
+                Pending Submissions ({pendingSubmissions})
+              </h2>
               <button
                 onClick={() => setShowPendingModal(false)}
-                className="text-white hover:text-orange-100 text-2xl font-bold"
+                className="text-on-surface-variant hover:text-on-surface text-2xl font-bold"
               >
                 ×
               </button>
             </div>
-            <div className="p-6 overflow-y-auto flex-1">
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
               {pendingStudentEmails.length > 0 ? (
                 <div className="space-y-2">
-                  <p className="text-gray-600 text-sm mb-4">
+                  <p className="text-on-surface-variant text-sm mb-4 font-body">
                     The following students have not submitted their quiz yet:
                   </p>
                   <ul className="space-y-1">
                     {pendingStudentEmails.map((email, index) => (
                       <li
                         key={index}
-                        className="px-4 py-2 bg-orange-50 border border-orange-200 rounded text-gray-800 hover:bg-orange-100 transition-colors"
+                        className="px-4 py-2 bg-orange-500/10 border border-orange-500/20 rounded-lg text-on-surface hover:bg-orange-500/20 transition-colors font-body text-sm"
                       >
                         {email}
                       </li>
@@ -599,47 +755,53 @@ export default function AdminRootPage() {
                   </ul>
                 </div>
               ) : (
-                <p className="text-gray-600 text-center py-8">
+                <p className="text-on-surface-variant text-center py-8 font-body">
                   All students have submitted their quiz! 🎉
                 </p>
               )}
             </div>
-            <div className="bg-gray-50 px-6 py-4 flex justify-end border-t">
+            <div className="bg-surface-container-low px-6 py-4 flex justify-end border-t border-outline-variant/20">
               <button
                 onClick={() => setShowPendingModal(false)}
-                className="px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium"
+                className="px-6 py-2 bg-orange-500/20 border border-orange-500/30 text-orange-400 rounded-lg hover:bg-orange-500/30 transition-colors font-medium font-body"
               >
                 Close
               </button>
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
 
       {/* Submitted Students Modal */}
       {showSubmittedModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
-            <div className="bg-green-500 text-white px-6 py-4 flex justify-between items-center">
-              <h2 className="text-xl font-bold">Submitted Students ({totalSubmissions})</h2>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-surface-container rounded-xl border border-outline-variant/20 max-w-2xl w-full max-h-[80vh] overflow-hidden"
+          >
+            <div className="bg-tertiary/20 border-b border-tertiary/30 px-6 py-4 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-tertiary font-headline">
+                Submitted Students ({totalSubmissions})
+              </h2>
               <button
                 onClick={() => setShowSubmittedModal(false)}
-                className="text-white hover:text-green-100 text-2xl font-bold"
+                className="text-on-surface-variant hover:text-on-surface text-2xl font-bold"
               >
                 ×
               </button>
             </div>
-            <div className="p-6 overflow-y-auto flex-1">
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
               {submittedStudentEmails.length > 0 ? (
                 <div className="space-y-2">
-                  <p className="text-gray-600 text-sm mb-4">
+                  <p className="text-on-surface-variant text-sm mb-4 font-body">
                     The following students have successfully submitted their quiz:
                   </p>
                   <ul className="space-y-1">
                     {submittedStudentEmails.map((email, index) => (
                       <li
                         key={index}
-                        className="px-4 py-2 bg-green-50 border border-green-200 rounded text-gray-800 hover:bg-green-100 transition-colors"
+                        className="px-4 py-2 bg-tertiary/10 border border-tertiary/20 rounded-lg text-on-surface hover:bg-tertiary/20 transition-colors font-body text-sm"
                       >
                         {email}
                       </li>
@@ -647,85 +809,107 @@ export default function AdminRootPage() {
                   </ul>
                 </div>
               ) : (
-                <p className="text-gray-600 text-center py-8">
+                <p className="text-on-surface-variant text-center py-8 font-body">
                   No submissions yet.
                 </p>
               )}
             </div>
-            <div className="bg-gray-50 px-6 py-4 flex justify-end border-t">
+            <div className="bg-surface-container-low px-6 py-4 flex justify-end border-t border-outline-variant/20">
               <button
                 onClick={() => setShowSubmittedModal(false)}
-                className="px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-medium"
+                className="px-6 py-2 bg-tertiary/20 border border-tertiary/30 text-tertiary rounded-lg hover:bg-tertiary/30 transition-colors font-medium font-body"
               >
                 Close
               </button>
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
 
-      {/* Git Sync Modal */}
+      {/* Sync Modal */}
       {showSyncModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full overflow-hidden flex flex-col">
-            <div className={`${syncError ? 'bg-red-500' : 'bg-teal-500'} text-white px-6 py-4 flex justify-between items-center`}>
-              <h2 className="text-xl font-bold">
-                {syncError ? '❌ Sync Failed' : '✅ Sync Complete'}
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-surface-container rounded-xl border border-outline-variant/20 max-w-lg w-full overflow-hidden"
+          >
+            <div
+              className={`${
+                syncError
+                  ? "bg-error/20 border-b border-error/30"
+                  : "bg-primary/10 border-b border-primary/20"
+              } px-6 py-4 flex justify-between items-center`}
+            >
+              <h2
+                className={`text-xl font-bold font-headline ${
+                  syncError ? "text-error" : "text-primary"
+                }`}
+              >
+                {syncError ? "❌ Sync Failed" : "✅ Sync Complete"}
               </h2>
               <button
                 onClick={() => setShowSyncModal(false)}
-                className="text-white hover:text-gray-100 text-2xl font-bold"
+                className="text-on-surface-variant hover:text-on-surface text-2xl font-bold"
               >
                 ×
               </button>
             </div>
             <div className="p-6">
               {syncError ? (
-                <div className="text-red-700 bg-red-50 p-4 rounded-lg border border-red-200">
-                  <p className="font-semibold mb-2">Error:</p>
-                  <p className="whitespace-pre-wrap">{syncError}</p>
+                <div className="text-error bg-error/10 p-4 rounded-lg border border-error/20">
+                  <p className="font-semibold mb-2 font-body">Error:</p>
+                  <p className="whitespace-pre-wrap font-body text-sm">{syncError}</p>
                 </div>
               ) : (
-                <div className="text-teal-700 bg-teal-50 p-4 rounded-lg border border-teal-200">
-                  <p className="whitespace-pre-wrap">{syncMessage}</p>
+                <div className="text-primary bg-primary/10 p-4 rounded-lg border border-primary/20">
+                  <p className="whitespace-pre-wrap font-body text-sm">{syncMessage}</p>
                 </div>
               )}
               {syncStatus && (
-                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200 text-sm">
+                <div className="mt-4 p-4 bg-surface-container-low rounded-lg border border-outline-variant/20 text-sm">
                   <div className="space-y-2">
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Status:</span>
-                      <span className="font-medium">
-                        {syncStatus.initialized ? '✓ Initialized' : '○ Not initialized'}
+                      <span className="text-on-surface-variant font-body">Status:</span>
+                      <span className="font-medium font-body">
+                        {syncStatus.initialized ? "✓ Initialized" : "○ Not initialized"}
                       </span>
                     </div>
                     {syncStatus.last_commit && (
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Last commit:</span>
-                        <span className="font-medium text-xs">{syncStatus.last_commit}</span>
+                        <span className="text-on-surface-variant font-body">Last commit:</span>
+                        <span className="font-medium text-xs font-body">
+                          {syncStatus.last_commit}
+                        </span>
                       </div>
                     )}
                     {syncStatus.remote_url && (
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Remote:</span>
-                        <span className="font-medium text-xs">{syncStatus.remote_url}</span>
+                        <span className="text-on-surface-variant font-body">Remote:</span>
+                        <span className="font-medium text-xs font-body">
+                          {syncStatus.remote_url}
+                        </span>
                       </div>
                     )}
                   </div>
                 </div>
               )}
             </div>
-            <div className="bg-gray-50 px-6 py-4 flex justify-end border-t">
+            <div className="bg-surface-container-low px-6 py-4 flex justify-end border-t border-outline-variant/20">
               <button
                 onClick={() => setShowSyncModal(false)}
-                className={`px-6 py-2 ${syncError ? 'bg-red-500 hover:bg-red-600' : 'bg-teal-500 hover:bg-teal-600'} text-white rounded-lg transition-colors font-medium`}
+                className={`px-6 py-2 ${
+                  syncError
+                    ? "bg-error/20 border border-error/30 text-error hover:bg-error/30"
+                    : "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20"
+                } rounded-lg transition-colors font-medium font-body`}
               >
                 Close
               </button>
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
-    </div>
+    </AdminLayout>
   );
 }

@@ -146,9 +146,27 @@ def api_start():
             with student_plan_path.open(encoding="utf-8") as f:
                 meta = json.load(f)
             if meta.get("student") == student:
-                return jsonify(
-                    error="Quiz already started", quiz_id=meta.get("quiz_id")
-                ), 409
+                try:
+                    current_quiz_data = load_questions()
+                    current_qbank_ids = {q["id"] for q in current_quiz_data.get("questions", [])}
+                    plan_ids = {step.get("id") for step in meta.get("plan", [])}
+                    stale = plan_ids - current_qbank_ids
+                    if stale:
+                        print(
+                            f"[START] Discarding stale plan for {student}: "
+                            f"{len(stale)} question ID(s) no longer in bank "
+                            f"(e.g. {next(iter(stale))}). Creating a fresh plan."
+                        )
+                        student_plan_path.unlink(missing_ok=True)
+                    else:
+                        return jsonify(
+                            error="Quiz already started", quiz_id=meta.get("quiz_id")
+                        ), 409
+                except Exception as e:
+                    print(f"Error validating existing plan for {student}: {e}")
+                    return jsonify(
+                        error="Quiz already started", quiz_id=meta.get("quiz_id")
+                    ), 409
             else:
                 print(
                     f"Warning: Plan file {student_plan_path} exists but contains wrong student ID."
@@ -448,8 +466,20 @@ def api_resume(quiz_id):
     q_id = current_step.get("id")
 
     if not q_id or q_id not in qbank_map:
-        raise InternalServerError(
-            description=f"Question ID '{q_id}' not found in bank."
+        print(
+            f"[RESUME] Quiz plan references question ID '{q_id}' which no longer exists in the bank. "
+            f"quiz_id={quiz_id}, student={found_student_id}"
+        )
+        return (
+            jsonify(
+                error=(
+                    "Your quiz session references questions that are no longer available "
+                    "(the question bank may have changed). Please contact the administrator "
+                    "to reset your session."
+                ),
+                error_code="STALE_PLAN",
+            ),
+            409,
         )
 
     q = qbank_map[q_id]

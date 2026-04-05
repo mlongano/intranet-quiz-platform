@@ -4,6 +4,9 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { initTheme } from "./lib/theme";
+
+initTheme();
 // Optional DevTools:
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 
@@ -12,7 +15,6 @@ import StartPage from "./pages/StartPage";
 import QuizPage from "./pages/QuizPage";
 import FinishPage from "./pages/FinishPage";
 import ErrorPage from "./pages/ErrorPage"; // A general error boundary/page
-import AdminLayout from "./layouts/AdminLayout";
 import AdminLoginPage from "./pages/AdminLoginPage";
 import AdminScoresPage from "./pages/AdminScoresPage";
 import AdminQuestionEditorPage from "./pages/AdminQuestionEditorPage";
@@ -49,9 +51,6 @@ const router = createBrowserRouter([
   // --- Admin Routes ---
   {
     path: "/admin",
-    // Use a layout component if you want shared elements (like sidebar, header)
-    // Or just render the login page directly if no layout needed yet
-    element: <AdminLayout />, // Or <AdminLoginPage /> directly if no layout
     errorElement: <ErrorPage />,
     children: [
       { index: true, element: <AdminLoginPage /> }, // Login page at /admin

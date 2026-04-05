@@ -287,7 +287,6 @@ export interface BankOverrideResponse {
 }
 
 export interface LlmInfoResponse {
-  provider: string;
   model: string;
   enabled: boolean;
 }

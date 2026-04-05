@@ -4,8 +4,7 @@ import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
 import Prism from "prismjs";
-// Prism theme (choose one available in prismjs/themes)
-import "prismjs/themes/prism-coy.css";
+import "../prism-themes.css";
 // Prism line numbers plugin CSS
 import "prismjs/plugins/line-numbers/prism-line-numbers.css";
 // Prism line numbers plugin JavaScript
@@ -170,9 +169,9 @@ export default function JsonSafeField() {
   };
 
   return (
-    <div className="p-4 bg-white rounded shadow">
-      <h3 className="font-semibold mb-2">JSON-safe text generator (bidirectional)</h3>
-      <p className="text-sm text-gray-600 mb-3">
+    <div className="p-4 bg-surface-container border border-outline-variant/20 rounded-xl">
+      <h3 className="font-semibold mb-2 text-on-surface">JSON-safe text generator (bidirectional)</h3>
+      <p className="text-sm text-on-surface-variant mb-3">
         Edit either side: paste raw text to get JSON, or paste JSON to get raw text.
         Changes sync automatically.
       </p>
@@ -180,8 +179,8 @@ export default function JsonSafeField() {
       {/* Copy Status Message */}
       {copyStatus && (
         <div className={`mb-3 p-2 rounded text-sm ${copyStatus.type === 'success'
-          ? 'bg-green-100 text-green-800 border border-green-300'
-          : 'bg-red-100 text-red-800 border border-red-300'
+          ? 'bg-tertiary/10 text-tertiary border border-tertiary/20'
+          : 'bg-error/10 text-error border border-error/20'
           }`}>
           {copyStatus.message}
         </div>
@@ -189,26 +188,26 @@ export default function JsonSafeField() {
 
       {/* Parse Error Message */}
       {parseError && (
-        <div className="mb-3 p-2 rounded text-sm bg-yellow-100 text-yellow-800 border border-yellow-300">
+        <div className="mb-3 p-2 rounded text-sm bg-secondary/10 text-secondary border border-secondary/20">
           ⚠️ {parseError}
         </div>
       )}
 
       <div className="flex items-start gap-3">
-        <div style={{ flex: 1 }}>
-          <label className="block text-xs font-medium text-gray-700">Input (raw Markdown/text)</label>
+        <div className="flex-1">
+          <label className="block text-xs font-medium text-on-surface-variant">Input (raw Markdown/text)</label>
           <textarea
-            className="w-full border rounded p-2 mt-1 mb-3 font-mono text-sm"
+            className="w-full border border-outline-variant/20 rounded-lg bg-surface-container-low text-on-surface p-2 mt-1 mb-3 font-mono text-sm focus:outline-none focus:border-primary/50 placeholder-outline-variant"
             rows={8}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder={`Scrivi o incolla la domanda con blocchi di codice qui...`}
           />
           <div className="mt-2">
-            <label className="block text-xs font-medium text-gray-700">Preview (Markdown)</label>
+            <label className="block text-xs font-medium text-on-surface-variant">Preview (Markdown)</label>
             <div
               ref={previewRef}
-              className="mt-1 p-3 border rounded bg-white max-h-48 overflow-auto prose prose-sm max-w-none"
+              className="mt-1 p-3 border border-outline-variant/20 rounded-lg bg-surface-container-low max-h-48 overflow-auto prose prose-sm dark:prose-invert max-w-none"
             >
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
@@ -223,7 +222,7 @@ export default function JsonSafeField() {
 
         <div className="flex flex-col gap-2 pt-6">
           <button
-            className="px-3 py-1 bg-gray-400 text-white rounded text-2xl font-bold"
+            className="px-3 py-1 bg-surface-container-high border border-outline-variant/30 text-on-surface-variant hover:text-on-surface rounded text-2xl font-bold transition-colors"
             onClick={() => {
               // Swap direction hint - just visual feedback
               setCopyStatus({ message: 'Edit either side to convert!', type: 'success' });
@@ -234,10 +233,10 @@ export default function JsonSafeField() {
           </button>
         </div>
 
-        <div style={{ flex: 1 }}>
-          <label className="block text-xs font-medium text-gray-700">Output (JSON-safe string)</label>
+        <div className="flex-1">
+          <label className="block text-xs font-medium text-on-surface-variant">Output (JSON-safe string)</label>
           <textarea
-            className="w-full border rounded p-2 mt-1 mb-3 font-mono text-sm bg-white"
+            className="w-full border border-outline-variant/20 rounded-lg bg-surface-container-low text-on-surface p-2 mt-1 mb-3 font-mono text-sm focus:outline-none focus:border-primary/50 placeholder-outline-variant"
             rows={8}
             value={jsonInput}
             onChange={handleJsonChange}
@@ -249,14 +248,14 @@ export default function JsonSafeField() {
       <div className="flex justify-between items-center mt-4 gap-2">
         <div className="flex gap-2">
           <button
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+            className="px-4 py-2 bg-primary text-on-primary font-semibold rounded-lg hover:bg-primary/80 transition-colors text-sm"
             onClick={() => copy(jsonInput, "JSON")}
             title="Copy JSON value"
           >
             📋 Copy JSON
           </button>
           <button
-            className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
+            className="px-4 py-2 bg-surface-container-high border border-outline-variant/30 text-on-surface-variant hover:text-on-surface hover:border-outline-variant/60 rounded-lg transition-colors text-sm"
             onClick={() => copy(input, "Raw text")}
             title="Copy raw"
           >
@@ -264,7 +263,7 @@ export default function JsonSafeField() {
           </button>
         </div>
         <button
-          className="px-4 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+          className="px-4 py-2 bg-error/10 text-error border border-error/20 rounded-lg hover:bg-error/20 transition-colors text-sm"
           onClick={() => {
             setInput("");
             setJsonInput("");

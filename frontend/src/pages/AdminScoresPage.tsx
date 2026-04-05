@@ -1,18 +1,16 @@
 // frontend/src/pages/AdminDashboardPage.tsx
 import { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom"; // Import useNavigate
+import { useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchScores, ScoreEntry, recalculateAllScores, sendResultEmail, sendAllResultEmails, clearScores, restoreScores } from "../api"; // Import API and type
+import { fetchScores, ScoreEntry, recalculateAllScores, sendResultEmail, sendAllResultEmails, clearScores, restoreScores } from "../api";
 import { slugify } from "../lib/utils";
-// Assume helper components exist
 import LoadingSpinner from "../components/LoadingSpinner";
 import ErrorDisplay from "../components/ErrorDisplay";
-// Conceptual: Component to show details when a row is clicked
 import SubmissionDetailView from "../components/SubmissionDetailView";
+import AdminLayout from "../layouts/AdminLayout";
 
 function AdminDashboardPage() {
   const location = useLocation();
-  const navigate = useNavigate(); // Initialize useNavigate
   const queryClient = useQueryClient();
   // Attempt to get password from navigation state (insecure, lost on refresh)
   const adminPassword = location.state?.adminPassword;
@@ -182,9 +180,10 @@ function AdminDashboardPage() {
   };
 
   const handleSendAllEmails = () => {
-    // Open modal to ask for subject
     setBulkEmailModal(true);
-    setEmailSubject("Quiz Results");
+    // Use the first available quiz title as default subject (user can always edit it)
+    const title = scores?.find(s => s.quiz_title)?.quiz_title ?? null;
+    setEmailSubject(title ? `Risultati - ${title}` : "Quiz Results");
     setIncludeDetails(true);
   };
 
@@ -333,384 +332,372 @@ function AdminDashboardPage() {
     : null;
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-end items-center mb-2">
-        {/* Reduced bottom margin */}
-        <button
-          onClick={() => {
-            navigate("/admin/dashboard", {
-              state: { adminPassword: adminPassword },
-            });
-          }}
-          className="px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Go to admin dashboard
-        </button>
-      </div>
-
-      <div className="flex justify-between items-center mb-2">
-        {/* Reduced bottom margin */}
-        <h2 className="text-2xl font-semibold">
-          Submitted Scores
-          {quizTitle && <span className="text-gray-600 font-normal"> - {quizTitle}</span>}
-        </h2>
-        <div className="flex gap-2">
-          <button
-            onClick={handleSendAllEmails}
-            disabled={!scores || scores.length === 0 || sendAllEmailsMutation.isPending}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {sendAllEmailsMutation.isPending ? "Sending..." : "📧 Email All Results"}
-          </button>
-          {/* Recalculate Button with Inline Confirmation */}
-          {showRecalculateConfirm ? (
-            <span className="inline-flex items-center gap-2 bg-yellow-50 px-3 py-2 rounded-md border border-yellow-300">
-              <span className="text-sm text-gray-700">Re-grade all submissions?</span>
-              <button
-                onClick={handleConfirmRecalculate}
-                className="bg-purple-600 text-white px-3 py-1 text-sm rounded hover:bg-purple-700"
-                disabled={recalculateMutation.isPending}
-              >
-                {recalculateMutation.isPending ? "Recalculating..." : "Yes"}
-              </button>
-              <button
-                onClick={handleCancelRecalculate}
-                className="bg-gray-500 text-white px-3 py-1 text-sm rounded hover:bg-gray-600"
-                disabled={recalculateMutation.isPending}
-              >
-                No
-              </button>
-            </span>
-          ) : (
+    <AdminLayout activePath="/admin/scores" adminPassword={adminPassword} pageTitle="Scores" titleClassName="from-secondary to-secondary/60">
+      <div className="space-y-6">
+        <div className="flex justify-between items-center mb-2">
+          {/* Reduced bottom margin */}
+          <h2 className="text-2xl font-semibold text-on-surface">
+            Submitted Scores
+            {quizTitle && <span className="text-on-surface-variant font-normal"> - {quizTitle}</span>}
+          </h2>
+          <div className="flex gap-2">
             <button
-              onClick={handleRecalculateScores}
-              disabled={!scores || scores.length === 0 || recalculateMutation.isPending}
-              className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={handleSendAllEmails}
+              disabled={!scores || scores.length === 0 || sendAllEmailsMutation.isPending}
+              className="px-4 py-2 bg-primary text-on-primary text-sm font-bold rounded-lg shadow-[0_0_15px_rgba(129,236,255,0.3)] hover:shadow-[0_0_20px_rgba(129,236,255,0.5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Recalculate All Scores
+              {sendAllEmailsMutation.isPending ? "Sending..." : "📧 Email All Results"}
             </button>
-          )}
-          <button
-            onClick={handleExportCSV}
-            disabled={!scores || scores.length === 0}
-            className="px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Export to CSV
-          </button>
-          {/* Clear Scores Button with Inline Confirmation */}
-          {showClearConfirm ? (
-            <span className="inline-flex items-center gap-2 bg-yellow-50 px-3 py-2 rounded-md border border-yellow-300">
-              <span className="text-sm text-gray-700">Clear all scores?</span>
+            {/* Recalculate Button with Inline Confirmation */}
+            {showRecalculateConfirm ? (
+              <span className="flex gap-2 items-center bg-surface-container-high border border-outline-variant/30 rounded-lg px-3 py-2">
+                <span className="text-sm text-on-surface">Re-grade all submissions?</span>
+                <button
+                  onClick={handleConfirmRecalculate}
+                  className="bg-primary text-on-primary px-3 py-1 text-sm font-bold rounded-lg hover:bg-primary/80 transition-colors"
+                  disabled={recalculateMutation.isPending}
+                >
+                  {recalculateMutation.isPending ? "Recalculating..." : "Yes"}
+                </button>
+                <button
+                  onClick={handleCancelRecalculate}
+                  className="bg-surface-container-high border border-outline-variant/30 text-on-surface-variant px-3 py-1 text-sm font-bold rounded-lg hover:bg-surface-bright transition-colors"
+                  disabled={recalculateMutation.isPending}
+                >
+                  No
+                </button>
+              </span>
+            ) : (
               <button
-                onClick={handleConfirmClear}
-                className="bg-red-600 text-white px-3 py-1 text-sm rounded hover:bg-red-700"
-                disabled={clearScoresMutation.isPending}
+                onClick={handleRecalculateScores}
+                disabled={!scores || scores.length === 0 || recalculateMutation.isPending}
+                className="px-4 py-2 bg-surface-container-high border border-primary/30 text-primary text-sm font-bold rounded-lg hover:bg-primary/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {clearScoresMutation.isPending ? "Clearing..." : "Yes"}
+                Recalculate All Scores
               </button>
-              <button
-                onClick={handleCancelClear}
-                className="bg-gray-500 text-white px-3 py-1 text-sm rounded hover:bg-gray-600"
-                disabled={clearScoresMutation.isPending}
-              >
-                No
-              </button>
-            </span>
-          ) : (
-            <button
-              onClick={handleClearScores}
-              disabled={!scores || scores.length === 0 || clearScoresMutation.isPending}
-              className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              🗑️ Clear All Scores
-            </button>
-          )}
-          {/* Restore Scores Button with Inline Confirmation */}
-          {showRestoreConfirm ? (
-            <span className="inline-flex items-center gap-2 bg-yellow-50 px-3 py-2 rounded-md border border-yellow-300">
-              <span className="text-sm text-gray-700">Restore from backup?</span>
-              <button
-                onClick={handleConfirmRestore}
-                className="bg-orange-600 text-white px-3 py-1 text-sm rounded hover:bg-orange-700"
-                disabled={restoreScoresMutation.isPending}
-              >
-                {restoreScoresMutation.isPending ? "Restoring..." : "Yes"}
-              </button>
-              <button
-                onClick={handleCancelRestore}
-                className="bg-gray-500 text-white px-3 py-1 text-sm rounded hover:bg-gray-600"
-                disabled={restoreScoresMutation.isPending}
-              >
-                No
-              </button>
-            </span>
-          ) : (
-            <button
-              onClick={handleRestoreScores}
-              disabled={restoreScoresMutation.isPending}
-              className="px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              ↩️ Restore Scores
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* *** ADDED: Display CSV Export Errors *** */}
-      <ErrorDisplay message={csvError} />
-
-      {/* Display Recalculate Message */}
-      {recalculateMessage && (
-        <div className={`p-3 rounded-md mb-4 ${recalculateMessage.startsWith('✓') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-          {recalculateMessage}
-        </div>
-      )}
-
-      {scores && scores.length > 0 ? (
-        <div className="overflow-x-auto shadow rounded-lg border">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Student
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Quiz
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Score
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Percent
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Timestamp
-                </th>
-                <th scope="col" className="relative px-6 py-3">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {scores.map((entry) => (
-                <tr key={entry.quiz_id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {entry.student}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {entry.quiz_title ? (
-                      <div>
-                        <div className="font-medium text-gray-900">{entry.quiz_title}</div>
-                        <div className="text-xs text-gray-400">{entry.quiz_id}</div>
-                      </div>
-                    ) : (
-                      entry.quiz_id
-                    )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {entry.raw_points} / {entry.max_points}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {entry.percent}%
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(entry.timestamp + 'Z').toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                    <button
-                      onClick={() => handleSendSingleEmail(entry.student, entry.quiz_id, entry.quiz_title)}
-                      disabled={sendSingleEmailMutation.isPending}
-                      className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Send email to this student"
-                    >
-                      📧 Email
-                    </button>
-                    <button
-                      onClick={() => setSelectedStudent(entry)}
-                      className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                    >
-                      View Details
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p>No scores submitted yet.</p>
-      )}
-
-      {/* Conditionally render detail view */}
-      {selectedStudent && (
-        <SubmissionDetailView
-          studentSubmission={selectedStudent}
-          adminPassword={adminPassword} // Pass password for detail fetch/override save
-          onClose={() => setSelectedStudent(null)} // Allow closing the detail view
-        />
-      )}
-
-      {/* Email Subject Modal */}
-      {emailModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-4">Send Quiz Results</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Sending to: <span className="font-medium">{emailModal.studentEmail}</span>
-            </p>
-            {emailSubjectError && (
-              <div className="mb-4 p-3 bg-red-100 text-red-800 rounded-md text-sm">
-                {emailSubjectError}
-              </div>
             )}
-            <div className="mb-4">
-              <label htmlFor="email-subject" className="block text-sm font-medium text-gray-700 mb-2">
-                Email Subject:
-              </label>
-              <input
-                id="email-subject"
-                type="text"
-                value={emailSubject}
-                onChange={(e) => {
-                  setEmailSubject(e.target.value);
-                  setEmailSubjectError(null);
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Enter email subject"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    handleConfirmSendEmail();
-                  } else if (e.key === 'Escape') {
+            <button
+              onClick={handleExportCSV}
+              disabled={!scores || scores.length === 0}
+                className="px-4 py-2 bg-surface-container-high border border-secondary/30 text-secondary text-sm font-bold rounded-lg hover:bg-secondary/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Export to CSV
+            </button>
+            {/* Clear Scores Button with Inline Confirmation */}
+            {showClearConfirm ? (
+              <span className="flex gap-2 items-center bg-surface-container-high border border-outline-variant/30 rounded-lg px-3 py-2">
+                <span className="text-sm text-on-surface">Clear all scores?</span>
+                <button
+                  onClick={handleConfirmClear}
+                  className="bg-error/20 border border-error/30 text-error px-3 py-1 text-sm font-bold rounded-lg hover:bg-error/30 transition-colors"
+                  disabled={clearScoresMutation.isPending}
+                >
+                  {clearScoresMutation.isPending ? "Clearing..." : "Yes"}
+                </button>
+                <button
+                  onClick={handleCancelClear}
+                  className="bg-surface-container-high border border-outline-variant/30 text-on-surface-variant px-3 py-1 text-sm font-bold rounded-lg hover:bg-surface-bright transition-colors"
+                  disabled={clearScoresMutation.isPending}
+                >
+                  No
+                </button>
+              </span>
+            ) : (
+              <button
+                onClick={handleClearScores}
+                disabled={!scores || scores.length === 0 || clearScoresMutation.isPending}
+                className="px-4 py-2 bg-error/20 border border-error/30 text-error text-sm font-bold rounded-lg hover:bg-error/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                🗑️ Clear All Scores
+              </button>
+            )}
+            {/* Restore Scores Button with Inline Confirmation */}
+            {showRestoreConfirm ? (
+              <span className="flex gap-2 items-center bg-surface-container-high border border-outline-variant/30 rounded-lg px-3 py-2">
+                <span className="text-sm text-on-surface">Restore from backup?</span>
+                <button
+                  onClick={handleConfirmRestore}
+                  className="bg-orange-500/20 border border-orange-500/30 text-orange-400 px-3 py-1 text-sm font-bold rounded-lg hover:bg-orange-500/30 transition-colors"
+                  disabled={restoreScoresMutation.isPending}
+                >
+                  {restoreScoresMutation.isPending ? "Restoring..." : "Yes"}
+                </button>
+                <button
+                  onClick={handleCancelRestore}
+                  className="bg-surface-container-high border border-outline-variant/30 text-on-surface-variant px-3 py-1 text-sm font-bold rounded-lg hover:bg-surface-bright transition-colors"
+                  disabled={restoreScoresMutation.isPending}
+                >
+                  No
+                </button>
+              </span>
+            ) : (
+              <button
+                onClick={handleRestoreScores}
+                disabled={restoreScoresMutation.isPending}
+                className="px-4 py-2 bg-orange-500/20 border border-orange-500/30 text-orange-400 text-sm font-bold rounded-lg hover:bg-orange-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                ↩️ Restore Scores
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* *** ADDED: Display CSV Export Errors *** */}
+        <ErrorDisplay message={csvError} />
+
+        {/* Display Recalculate Message */}
+        {recalculateMessage && (
+          <div className={`px-4 py-3 rounded-lg ${recalculateMessage.startsWith('✓') ? 'bg-tertiary/10 border border-tertiary/20 text-tertiary' : 'bg-error/10 border border-error/20 text-error'}`}>
+            {recalculateMessage}
+          </div>
+        )}
+
+        {scores && scores.length > 0 ? (
+          <div className="overflow-x-auto rounded-xl border border-outline-variant/20">
+            <table className="min-w-full">
+              <thead className="bg-surface-container-low">
+                <tr>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider"
+                  >
+                    Student
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider"
+                  >
+                    Quiz
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider"
+                  >
+                    Score
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider"
+                  >
+                    Percent
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider"
+                  >
+                    Timestamp
+                  </th>
+                  <th scope="col" className="relative px-6 py-3">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant/10">
+                {scores.map((entry) => (
+                  <tr key={entry.quiz_id} className="hover:bg-surface-container-high border-b border-outline-variant/10">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-on-surface">
+                      {entry.student}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
+                      {entry.quiz_title ? (
+                        <div>
+                          <div className="font-medium text-on-surface">{entry.quiz_title}</div>
+                          <div className="text-xs text-on-surface-variant/60">{entry.quiz_id}</div>
+                        </div>
+                      ) : (
+                        entry.quiz_id
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
+                      {entry.raw_points} / {entry.max_points}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
+                      {entry.percent}%
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
+                      {new Date(entry.timestamp).toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                      <button
+                        onClick={() => handleSendSingleEmail(entry.student, entry.quiz_id, entry.quiz_title)}
+                        disabled={sendSingleEmailMutation.isPending}
+                        className="px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary text-xs font-bold rounded-lg hover:bg-primary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Send email to this student"
+                      >
+                        📧 Email
+                      </button>
+                      <button
+                        onClick={() => setSelectedStudent(entry)}
+                        className="px-3 py-1.5 bg-secondary/10 border border-secondary/30 text-secondary text-xs font-bold rounded-lg hover:bg-secondary/20 transition-colors"
+                      >
+                        View Details
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-on-surface-variant">No scores submitted yet.</p>
+        )}
+
+        {/* Conditionally render detail view */}
+        {selectedStudent && (
+          <SubmissionDetailView
+            studentSubmission={selectedStudent}
+            adminPassword={adminPassword} // Pass password for detail fetch/override save
+            onClose={() => setSelectedStudent(null)} // Allow closing the detail view
+          />
+        )}
+
+        {/* Email Subject Modal */}
+        {emailModal && (
+          <div className="fixed inset-0 backdrop-blur-sm bg-black/60 flex items-center justify-center z-50">
+            <div className="bg-surface-container border border-outline-variant/20 rounded-xl shadow-2xl p-6 max-w-md w-full mx-4">
+              <h3 className="text-lg font-semibold text-on-surface mb-4">Send Quiz Results</h3>
+              <p className="text-sm text-on-surface-variant mb-4">
+                Sending to: <span className="font-medium text-on-surface">{emailModal.studentEmail}</span>
+              </p>
+              {emailSubjectError && (
+                <div className="mb-4 p-3 bg-error/10 border border-error/20 text-error rounded-lg text-sm">
+                  {emailSubjectError}
+                </div>
+              )}
+              <div className="mb-4">
+                <label htmlFor="email-subject" className="block text-sm font-medium text-on-surface mb-2">
+                  Email Subject:
+                </label>
+                <input
+                  id="email-subject"
+                  type="text"
+                  value={emailSubject}
+                  onChange={(e) => {
+                    setEmailSubject(e.target.value);
+                    setEmailSubjectError(null);
+                  }}
+                  className="w-full px-3 py-2 bg-surface-container-low border border-outline-variant/30 text-on-surface rounded-lg focus:border-primary/50 focus:outline-none"
+                  placeholder="Enter email subject"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleConfirmSendEmail();
+                    } else if (e.key === 'Escape') {
+                      setEmailModal(null);
+                      setEmailSubject("");
+                      setEmailSubjectError(null);
+                    }
+                  }}
+                />
+              </div>
+              <div className="mb-4">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeDetails}
+                    onChange={(e) => setIncludeDetails(e.target.checked)}
+                    className="w-4 h-4 bg-surface-container-low border border-outline-variant/30 rounded text-primary focus:ring-2 focus:ring-primary/50"
+                  />
+                  <span className="text-sm text-on-surface-variant">Include detailed question-by-question results</span>
+                </label>
+              </div>
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => {
                     setEmailModal(null);
                     setEmailSubject("");
                     setEmailSubjectError(null);
-                  }
-                }}
-              />
-            </div>
-            <div className="mb-4">
-              <label className="flex items-center space-x-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={includeDetails}
-                  onChange={(e) => setIncludeDetails(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                />
-                <span className="text-sm text-gray-700">Include detailed question-by-question results</span>
-              </label>
-            </div>
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => {
-                  setEmailModal(null);
-                  setEmailSubject("");
-                  setEmailSubjectError(null);
-                }}
-                className="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmSendEmail}
-                disabled={sendSingleEmailMutation.isPending || !emailSubject.trim()}
-                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {sendSingleEmailMutation.isPending ? "Sending..." : "Send Email"}
-              </button>
+                  }}
+                  className="px-4 py-2 bg-surface-container-high border border-outline-variant/30 text-on-surface-variant text-sm font-bold rounded-lg hover:bg-surface-bright transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmSendEmail}
+                  disabled={sendSingleEmailMutation.isPending || !emailSubject.trim()}
+                  className="px-4 py-2 bg-primary text-on-primary text-sm font-bold rounded-lg shadow-[0_0_15px_rgba(129,236,255,0.3)] hover:shadow-[0_0_20px_rgba(129,236,255,0.5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {sendSingleEmailMutation.isPending ? "Sending..." : "Send Email"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Bulk Email Subject Modal */}
-      {bulkEmailModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-4">Send Quiz Results to All Students</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              This will send emails to <span className="font-medium">{scores?.length || 0} students</span>
-            </p>
-            {emailSubjectError && (
-              <div className="mb-4 p-3 bg-red-100 text-red-800 rounded-md text-sm">
-                {emailSubjectError}
+        {/* Bulk Email Subject Modal */}
+        {bulkEmailModal && (
+          <div className="fixed inset-0 backdrop-blur-sm bg-black/60 flex items-center justify-center z-50">
+            <div className="bg-surface-container border border-outline-variant/20 rounded-xl shadow-2xl p-6 max-w-md w-full mx-4">
+              <h3 className="text-lg font-semibold text-on-surface mb-4">Send Quiz Results to All Students</h3>
+              <p className="text-sm text-on-surface-variant mb-4">
+                This will send emails to <span className="font-medium text-on-surface">{scores?.length || 0} students</span>
+              </p>
+              {emailSubjectError && (
+                <div className="mb-4 p-3 bg-error/10 border border-error/20 text-error rounded-lg text-sm">
+                  {emailSubjectError}
+                </div>
+              )}
+              <div className="mb-4">
+                <label htmlFor="bulk-email-subject" className="block text-sm font-medium text-on-surface mb-2">
+                  Email Subject:
+                </label>
+                <input
+                  id="bulk-email-subject"
+                  type="text"
+                  value={emailSubject}
+                  onChange={(e) => {
+                    setEmailSubject(e.target.value);
+                    setEmailSubjectError(null);
+                  }}
+                  className="w-full px-3 py-2 bg-surface-container-low border border-outline-variant/30 text-on-surface rounded-lg focus:border-primary/50 focus:outline-none"
+                  placeholder="Enter email subject"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleConfirmSendAllEmails();
+                    } else if (e.key === 'Escape') {
+                      setBulkEmailModal(false);
+                      setEmailSubject("");
+                      setEmailSubjectError(null);
+                    }
+                  }}
+                />
               </div>
-            )}
-            <div className="mb-4">
-              <label htmlFor="bulk-email-subject" className="block text-sm font-medium text-gray-700 mb-2">
-                Email Subject:
-              </label>
-              <input
-                id="bulk-email-subject"
-                type="text"
-                value={emailSubject}
-                onChange={(e) => {
-                  setEmailSubject(e.target.value);
-                  setEmailSubjectError(null);
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Enter email subject"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    handleConfirmSendAllEmails();
-                  } else if (e.key === 'Escape') {
+              <div className="mb-4">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeDetails}
+                    onChange={(e) => setIncludeDetails(e.target.checked)}
+                    className="w-4 h-4 bg-surface-container-low border border-outline-variant/30 rounded text-primary focus:ring-2 focus:ring-primary/50"
+                  />
+                  <span className="text-sm text-on-surface-variant">Include detailed question-by-question results</span>
+                </label>
+              </div>
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => {
                     setBulkEmailModal(false);
                     setEmailSubject("");
                     setEmailSubjectError(null);
-                  }
-                }}
-              />
-            </div>
-            <div className="mb-4">
-              <label className="flex items-center space-x-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={includeDetails}
-                  onChange={(e) => setIncludeDetails(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                />
-                <span className="text-sm text-gray-700">Include detailed question-by-question results</span>
-              </label>
-            </div>
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => {
-                  setBulkEmailModal(false);
-                  setEmailSubject("");
-                  setEmailSubjectError(null);
-                }}
-                className="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmSendAllEmails}
-                disabled={sendAllEmailsMutation.isPending || !emailSubject.trim()}
-                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {sendAllEmailsMutation.isPending ? "Sending..." : `Send to ${scores?.length || 0} Students`}
-              </button>
+                  }}
+                  className="px-4 py-2 bg-surface-container-high border border-outline-variant/30 text-on-surface-variant text-sm font-bold rounded-lg hover:bg-surface-bright transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmSendAllEmails}
+                  disabled={sendAllEmailsMutation.isPending || !emailSubject.trim()}
+                  className="px-4 py-2 bg-primary text-on-primary text-sm font-bold rounded-lg shadow-[0_0_15px_rgba(129,236,255,0.3)] hover:shadow-[0_0_20px_rgba(129,236,255,0.5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {sendAllEmailsMutation.isPending ? "Sending..." : `Send to ${scores?.length || 0} Students`}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </AdminLayout>
   );
 }
 export default AdminDashboardPage;

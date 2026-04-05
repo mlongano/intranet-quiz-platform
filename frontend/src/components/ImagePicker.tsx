@@ -22,16 +22,15 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
   const [selectedImagePath, setSelectedImagePath] = useState<string | null>(currentImage || null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [copyFormat, setCopyFormat] = useState<'path' | 'question_image' | 'option_image'>('path');
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  // Fetch images for this quiz
   const { data: images = [], isLoading, error } = useQuery({
     queryKey: ['quizImages', quizFilename],
     queryFn: () => listQuizImages(quizFilename, password),
     staleTime: 0,
   });
 
-  // Upload mutation
   const uploadMutation = useMutation({
     mutationFn: (file: File) => uploadImage(quizFilename, file, password),
     onSuccess: () => {
@@ -44,10 +43,10 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
     },
   });
 
-  // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: (imageFilename: string) => deleteImage(quizFilename, imageFilename, password),
     onSuccess: () => {
+      setConfirmDelete(null);
       queryClient.invalidateQueries({ queryKey: ['quizImages', quizFilename] });
     },
   });
@@ -55,12 +54,10 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Validate file type
       if (!file.type.startsWith('image/')) {
         setUploadError('Please select an image file');
         return;
       }
-      // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
         setUploadError('Image size must be less than 5MB');
         return;
@@ -76,15 +73,9 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
     }
   };
 
-  const handleDelete = (imageFilename: string) => {
-    if (window.confirm(`Delete ${imageFilename}?`)) {
-      deleteMutation.mutate(imageFilename);
-    }
-  };
-
   const handleSelectImage = (imagePath: string) => {
     setSelectedImagePath(imagePath);
-    setActionFeedback('Image selected - click "Use This Image" to confirm');
+    setActionFeedback('Image selected — click "Use This Image" to confirm');
     setTimeout(() => setActionFeedback(null), 2000);
   };
 
@@ -92,25 +83,16 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
     e?.stopPropagation();
     e?.preventDefault();
 
-    console.log('Confirm clicked, selectedImagePath:', selectedImagePath);
-
     if (selectedImagePath) {
-      // Format the output based on selected format
       let outputText = selectedImagePath;
-
       if (copyFormat === 'question_image') {
         outputText = `      "question_image": "${selectedImagePath}",`;
       } else if (copyFormat === 'option_image') {
         outputText = `      "image": "${selectedImagePath}",`;
       }
-
       setActionFeedback('✓ Image path copied!');
       onSelect(outputText);
-
-      // Close after a short delay to show feedback
-      setTimeout(() => {
-        onClose();
-      }, 500);
+      setTimeout(() => { onClose(); }, 500);
     } else {
       setActionFeedback('⚠ Please select an image first');
       setTimeout(() => setActionFeedback(null), 2000);
@@ -120,293 +102,181 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
   const handleClear = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     e?.preventDefault();
-
-    console.log('Clear clicked');
     setActionFeedback('✓ Image cleared');
     onSelect('');
-
-    setTimeout(() => {
-      onClose();
-    }, 500);
+    setTimeout(() => { onClose(); }, 500);
   };
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000]"
       onClick={onClose}
     >
       <div
-        style={{
-          backgroundColor: 'white',
-          borderRadius: '8px',
-          padding: '24px',
-          maxWidth: '800px',
-          maxHeight: '80vh',
-          overflow: 'auto',
-          width: '90%',
-        }}
+        className="bg-surface-container rounded-xl p-6 max-w-3xl w-[90%] max-h-[80vh] overflow-auto border border-outline-variant/20"
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h2 style={{ margin: 0 }}>Select Image for Quiz</h2>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-headline font-semibold text-on-surface">Select Image for Quiz</h2>
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onClose();
-            }}
-            style={{
-              background: 'none',
-              border: 'none',
-              fontSize: '24px',
-              cursor: 'pointer',
-              padding: '0 8px',
-            }}
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            className="text-on-surface-variant hover:text-on-surface text-2xl leading-none px-2"
           >
             ×
           </button>
         </div>
 
-        {/* Action Feedback */}
         {actionFeedback && (
-          <div
-            style={{
-              marginBottom: '16px',
-              padding: '12px',
-              backgroundColor: actionFeedback.includes('⚠') ? '#fff3cd' : '#d4edda',
-              color: actionFeedback.includes('⚠') ? '#856404' : '#155724',
-              border: `1px solid ${actionFeedback.includes('⚠') ? '#ffeeba' : '#c3e6cb'}`,
-              borderRadius: '4px',
-              fontSize: '14px',
-              fontWeight: '500',
-            }}
-          >
+          <div className={`mb-4 px-4 py-3 rounded-lg text-sm font-medium border ${
+            actionFeedback.includes('⚠')
+              ? 'bg-secondary/10 border-secondary/20 text-secondary'
+              : 'bg-tertiary/10 border-tertiary/20 text-tertiary'
+          }`}>
             {actionFeedback}
           </div>
         )}
 
-        {/* Copy Format Selection */}
-        <div style={{ marginBottom: '20px', padding: '16px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
-          <h3 style={{ marginTop: 0, marginBottom: '12px', fontSize: '16px' }}>Copy Format</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-              <input
-                type="radio"
-                name="copyFormat"
-                value="path"
-                checked={copyFormat === 'path'}
-                onChange={(e) => setCopyFormat(e.target.value as any)}
-                style={{ marginRight: '8px' }}
-              />
-              <span>
-                <strong>Just path:</strong> <code style={{ fontSize: '12px', backgroundColor: '#fff', padding: '2px 4px', borderRadius: '2px' }}>/banks/question_bank/...</code>
-              </span>
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-              <input
-                type="radio"
-                name="copyFormat"
-                value="question_image"
-                checked={copyFormat === 'question_image'}
-                onChange={(e) => setCopyFormat(e.target.value as any)}
-                style={{ marginRight: '8px' }}
-              />
-              <span>
-                <strong>Question image:</strong> <code style={{ fontSize: '12px', backgroundColor: '#fff', padding: '2px 4px', borderRadius: '2px' }}>"question_image": "/banks/...",</code>
-              </span>
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-              <input
-                type="radio"
-                name="copyFormat"
-                value="option_image"
-                checked={copyFormat === 'option_image'}
-                onChange={(e) => setCopyFormat(e.target.value as any)}
-                style={{ marginRight: '8px' }}
-              />
-              <span>
-                <strong>Option image:</strong> <code style={{ fontSize: '12px', backgroundColor: '#fff', padding: '2px 4px', borderRadius: '2px' }}>"image": "/banks/...",</code>
-              </span>
-            </label>
+        <div className="mb-5 p-4 bg-surface-container-high rounded-lg border border-outline-variant/20">
+          <h3 className="text-sm font-semibold text-on-surface mb-3">Copy Format</h3>
+          <div className="flex flex-col gap-2">
+            {(['path', 'question_image', 'option_image'] as const).map((fmt) => (
+              <label key={fmt} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="copyFormat"
+                  value={fmt}
+                  checked={copyFormat === fmt}
+                  onChange={(e) => setCopyFormat(e.target.value as any)}
+                  className="accent-primary"
+                />
+                <span className="text-sm text-on-surface-variant">
+                  {fmt === 'path' && <><strong className="text-on-surface">Just path:</strong> <code className="text-xs bg-surface-container-low px-1 py-0.5 rounded text-primary">/banks/question_bank/…</code></>}
+                  {fmt === 'question_image' && <><strong className="text-on-surface">Question image:</strong> <code className="text-xs bg-surface-container-low px-1 py-0.5 rounded text-primary">"question_image": "/banks/…",</code></>}
+                  {fmt === 'option_image' && <><strong className="text-on-surface">Option image:</strong> <code className="text-xs bg-surface-container-low px-1 py-0.5 rounded text-primary">"image": "/banks/…",</code></>}
+                </span>
+              </label>
+            ))}
           </div>
         </div>
 
-        {/* Upload Section */}
-        <div style={{ marginBottom: '24px', padding: '16px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
-          <h3 style={{ marginTop: 0 }}>Upload New Image</h3>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <input type="file" accept="image/*" onChange={handleFileSelect} />
+        <div className="mb-6 p-4 bg-surface-container-high rounded-lg border border-outline-variant/20">
+          <h3 className="text-sm font-semibold text-on-surface mb-3">Upload New Image</h3>
+          <div className="flex gap-2 items-center flex-wrap">
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleFileSelect}
+              className="text-sm text-on-surface-variant file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:bg-surface-container file:text-on-surface-variant hover:file:bg-surface-bright cursor-pointer"
+            />
             <button
               onClick={handleUpload}
               disabled={!selectedFile || uploadMutation.isPending}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: selectedFile ? '#007bff' : '#ccc',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: selectedFile ? 'pointer' : 'not-allowed',
-              }}
+              className="px-4 py-1.5 bg-primary text-on-primary text-sm font-medium rounded hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {uploadMutation.isPending ? 'Uploading...' : 'Upload'}
+              {uploadMutation.isPending ? 'Uploading…' : 'Upload'}
             </button>
           </div>
           {selectedFile && (
-            <div style={{ marginTop: '8px', fontSize: '14px', color: '#666' }}>
+            <div className="mt-2 text-xs text-on-surface-variant">
               Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
             </div>
           )}
           {uploadError && (
-            <div style={{ marginTop: '8px', color: '#dc3545', fontSize: '14px' }}>{uploadError}</div>
+            <div className="mt-2 text-xs text-error">{uploadError}</div>
           )}
           {uploadMutation.isError && (
-            <div style={{ marginTop: '8px', color: '#dc3545', fontSize: '14px' }}>
+            <div className="mt-2 text-xs text-error">
               {(uploadMutation.error as any)?.message || 'Upload failed'}
             </div>
           )}
         </div>
 
-        {/* Image Gallery */}
         <div>
-          <h3>Available Images</h3>
-          {isLoading && <div>Loading images...</div>}
-          {error && <div style={{ color: '#dc3545' }}>Error loading images: {(error as any).message}</div>}
-          {!isLoading && images.length === 0 && <div style={{ color: '#666' }}>No images uploaded yet</div>}
+          <h3 className="text-sm font-semibold text-on-surface mb-3">Available Images</h3>
+          {isLoading && <div className="text-sm text-on-surface-variant">Loading images…</div>}
+          {error && <div className="text-sm text-error">Error loading images: {(error as any).message}</div>}
+          {!isLoading && images.length === 0 && (
+            <div className="text-sm text-on-surface-variant">No images uploaded yet</div>
+          )}
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-              gap: '16px',
-              marginTop: '16px',
-            }}
-          >
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4 mt-2">
             {images.map((image) => (
               <div
                 key={image.filename}
-                style={{
-                  border: selectedImagePath === image.path ? '3px solid #007bff' : '1px solid #ddd',
-                  borderRadius: '4px',
-                  padding: '8px',
-                  cursor: 'pointer',
-                  position: 'relative',
-                }}
+                className={`rounded-lg p-2 cursor-pointer relative border-2 transition-colors ${
+                  selectedImagePath === image.path
+                    ? 'border-primary bg-primary/5'
+                    : 'border-outline-variant/30 hover:border-outline-variant/60'
+                }`}
                 onClick={() => handleSelectImage(image.path)}
               >
                 <img
                   src={image.path}
                   alt={image.filename}
-                  style={{
-                    width: '100%',
-                    height: '120px',
-                    objectFit: 'cover',
-                    borderRadius: '4px',
-                  }}
+                  className="w-full h-28 object-cover rounded"
                 />
-                <div
-                  style={{
-                    marginTop: '8px',
-                    fontSize: '12px',
-                    wordBreak: 'break-word',
-                    color: '#666',
-                  }}
-                >
+                <div className="mt-2 text-xs text-on-surface-variant break-words">
                   {image.filename}
                 </div>
-                <div style={{ fontSize: '11px', color: '#999' }}>
+                <div className="text-xs text-on-surface-variant/60">
                   {(image.size / 1024).toFixed(1)} KB
                 </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(image.filename);
-                  }}
-                  disabled={deleteMutation.isPending}
-                  style={{
-                    position: 'absolute',
-                    top: '12px',
-                    right: '12px',
-                    backgroundColor: '#dc3545',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '50%',
-                    width: '24px',
-                    height: '24px',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  ×
-                </button>
+
+                {confirmDelete === image.filename ? (
+                  <div
+                    className="absolute inset-0 bg-surface-container-high/95 rounded-lg flex flex-col items-center justify-center gap-2 p-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <span className="text-xs text-on-surface font-medium text-center">Delete?</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(image.filename); }}
+                        disabled={deleteMutation.isPending}
+                        className="px-2 py-1 text-xs bg-error/20 border border-error/30 text-error rounded hover:bg-error/30 disabled:opacity-50"
+                      >
+                        Yes
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setConfirmDelete(null); }}
+                        className="px-2 py-1 text-xs bg-surface-container border border-outline-variant/30 text-on-surface-variant rounded hover:bg-surface-bright"
+                      >
+                        No
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setConfirmDelete(image.filename); }}
+                    disabled={deleteMutation.isPending}
+                    className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded-full bg-error/20 border border-error/30 text-error hover:bg-error/30 text-sm leading-none disabled:opacity-50"
+                  >
+                    ×
+                  </button>
+                )}
               </div>
             ))}
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div style={{ marginTop: '24px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+        <div className="mt-6 flex gap-2 justify-end flex-wrap">
           {currentImage && (
             <button
               onClick={handleClear}
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#dc3545',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '500',
-              }}
+              className="px-5 py-2 text-sm font-medium bg-error/20 border border-error/30 text-error rounded-lg hover:bg-error/30"
             >
               Remove Image
             </button>
           )}
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onClose();
-            }}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#6c757d',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '500',
-            }}
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            className="px-5 py-2 text-sm font-medium bg-surface-container-high border border-outline-variant/30 text-on-surface-variant rounded-lg hover:bg-surface-bright"
           >
             Cancel
           </button>
           <button
             onClick={handleConfirm}
             disabled={!selectedImagePath}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: selectedImagePath ? '#28a745' : '#ccc',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: selectedImagePath ? 'pointer' : 'not-allowed',
-              fontSize: '14px',
-              fontWeight: '500',
-              opacity: selectedImagePath ? 1 : 0.6,
-            }}
+            className="px-5 py-2 text-sm font-medium bg-tertiary text-on-tertiary rounded-lg hover:bg-tertiary/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {selectedImagePath ? '✓ Use This Image' : 'Select an Image First'}
           </button>

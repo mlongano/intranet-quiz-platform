@@ -753,17 +753,10 @@ def api_llm_info():
     if not auth_pw or auth_pw != ADMIN_PW:
         abort(403, description="Admin authentication failed.")
 
-    provider = os.getenv("LLM_PROVIDER", "openai").lower()
-    if provider == "openai":
-        model = os.getenv("LLM_MODEL", "gpt-3.5-turbo")
-    elif provider == "google":
-        model = "gemini-pro"
-    else:
-        model = "unknown"
+    model = os.getenv("LLM_MODEL", "gpt-4o-mini")
 
     return jsonify(
         {
-            "provider": provider,
             "model": model,
             "enabled": os.getenv("USE_LLM_EVAL", "0") == "1",
         }

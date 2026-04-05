@@ -1,34 +1,244 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-headline: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Manrope', system-ui, sans-serif;
+
+  --shadow-neon-cyan: 0 0 20px rgba(129, 236, 255, 0.1);
+  --shadow-neon-magenta: 0 0 20px rgba(233, 102, 255, 0.1);
+  --shadow-neon-green: 0 0 20px rgba(194, 255, 153, 0.1);
+  --shadow-neon-yellow: 0 0 15px rgba(250, 204, 21, 0.4);
+  --shadow-neon-blue: 0 0 15px rgba(59, 130, 246, 0.4);
+}
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-container-low: var(--surface-container-low);
+  --color-surface-container: var(--surface-container);
+  --color-surface-container-high: var(--surface-container-high);
+  --color-surface-bright: var(--surface-bright);
+  --color-surface-container-highest: var(--surface-container-highest);
+  --color-outline-variant: var(--outline-variant);
+
+  --color-primary: var(--primary);
+  --color-primary-dim: var(--primary-dim);
+  --color-secondary: var(--secondary);
+  --color-tertiary: var(--tertiary);
+  --color-error: var(--error);
+
+  --color-on-surface: var(--on-surface);
+  --color-on-surface-variant: var(--on-surface-variant);
+  --color-on-primary: var(--on-primary);
+  --color-on-secondary: var(--on-secondary);
+  --color-on-tertiary: var(--on-tertiary);
+
+  --color-neon-cyan: var(--neon-cyan);
+  --color-neon-magenta: var(--neon-magenta);
+  --color-neon-green: var(--neon-green);
+  --color-neon-yellow: var(--neon-yellow);
+  --color-neon-blue: var(--neon-blue);
+}
+
+:root {
+  --surface: #0a0e14;
+  --surface-container-low: #0f141a;
+  --surface-container: #151a21;
+  --surface-container-high: #1b2028;
+  --surface-bright: #262c36;
+  --surface-container-highest: #20262f;
+  --outline-variant: #44484f;
+  --surface-container-rgb: 21, 26, 33;
+
+  --primary: #81ecff;
+  --primary-dim: #00d4ec;
+  --secondary: #e966ff;
+  --tertiary: #c2ff99;
+  --error: #ff716c;
+
+  --on-surface: #f1f3fc;
+  --on-surface-variant: #a8abb3;
+  --on-primary: #005762;
+  --on-secondary: #0a0e14;
+  --on-tertiary: #0a0e14;
+
+  --neon-cyan: #81ecff;
+  --neon-magenta: #e966ff;
+  --neon-green: #c2ff99;
+  --neon-yellow: #facc15;
+  --neon-blue: #3b82f6;
+}
+
+.light {
+  --surface: #e8eaf2;
+  --surface-container-low: #eef0f7;
+  --surface-container: #f2f4fb;
+  --surface-container-high: #f8f9fd;
+  --surface-bright: #ffffff;
+  --surface-container-highest: #f5f6fc;
+  --outline-variant: #c2c5ce;
+  --surface-container-rgb: 242, 244, 251;
+
+  --primary: #007b8a;
+  --primary-dim: #005f6e;
+  --secondary: #9900cc;
+  --tertiary: #3a8a00;
+  --error: #c0392b;
+
+  --on-surface: #0d1117;
+  --on-surface-variant: #44474f;
+  --on-primary: #e8feff;
+  --on-secondary: #fff0ff;
+  --on-tertiary: #f0fff4;
+
+  --neon-cyan: #007b8a;
+  --neon-magenta: #9900cc;
+  --neon-green: #3a8a00;
+}
+
+@layer base {
+  body {
+    @apply antialiased;
+    background-color: var(--surface);
+    color: var(--on-surface);
+    font-family: 'Manrope', system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .glow-cyan    { box-shadow: var(--shadow-neon-cyan);    border-color: var(--neon-cyan); }
+  .glow-magenta { box-shadow: var(--shadow-neon-magenta); border-color: var(--neon-magenta); }
+  .glow-green   { box-shadow: var(--shadow-neon-green);   border-color: var(--neon-green); }
+  .glow-yellow  { box-shadow: var(--shadow-neon-yellow);  border-color: var(--neon-yellow); }
+  .glow-blue    { box-shadow: var(--shadow-neon-blue);    border-color: var(--neon-blue); }
+  .glass-panel  {
+    background: rgba(var(--surface-container-rgb), 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+}
+
 .quiz-no-select {
-    -webkit-user-select: none; /* Safari */
-    -moz-user-select: none; /* Firefox */
-    -ms-user-select: none; /* IE/Edge */
-    user-select: none; /* Standard */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
 }
 
 .question-image {
-    max-width: 100%; /* Ensure image doesn't overflow container */
-    max-height: 250px; /* Limit vertical space */
-    height: auto; /* Maintain aspect ratio */
-    margin-bottom: 1rem; /* Space below image */
-    border-radius: 0.375rem; /* Match Tailwind's rounded-md */
+    max-width: 100%;
+    max-height: 250px;
+    height: auto;
+    margin-bottom: 1rem;
+    border-radius: 0.375rem;
     box-shadow:
         0 1px 3px 0 rgb(0 0 0 / 0.1),
-        0 1px 2px -1px rgb(0 0 0 / 0.1); /* Subtle shadow */
+        0 1px 2px -1px rgb(0 0 0 / 0.1);
 }
 
 .option-image {
-    max-width: 60px; /* Smaller size for options */
+    max-width: 60px;
     max-height: 60px;
     height: auto;
-    margin-left: 0.75rem; /* Space between text and image */
-    vertical-align: middle; /* Align nicely with text */
-    border-radius: 0.25rem; /* Slightly smaller radius */
+    margin-left: 0.75rem;
+    vertical-align: middle;
+    border-radius: 0.25rem;
 }
 
-/* Optional: Style for the label containing an image */
 label:has(.option-image) {
-    align-items: center; /* Vertically center checkbox, text, and image */
+    align-items: center;
+}
+
+/* ============================================================
+   Accessibility overrides (applied via HTML classes by useAccessibility hook)
+   ============================================================ */
+
+/* --- Font sizes --- */
+html.a11y-font-lg  { font-size: 18px; }
+html.a11y-font-xl  { font-size: 20px; }
+html.a11y-font-xxl { font-size: 22px; }
+
+/* --- Text spacing --- */
+html.a11y-spacing-relaxed body {
+  line-height: 1.9 !important;
+  letter-spacing: 0.05em;
+  word-spacing: 0.12em;
+}
+html.a11y-spacing-loose body {
+  line-height: 2.2 !important;
+  letter-spacing: 0.12em;
+  word-spacing: 0.25em;
+}
+
+/* --- Dyslexia-friendly font (OpenDyslexic via cdnfonts CDN) --- */
+html.a11y-font-dyslexic,
+html.a11y-font-dyslexic * {
+  font-family: 'OpenDyslexic', 'Comic Sans MS', sans-serif !important;
+}
+
+/* --- High contrast (specificity 0,1,1 beats :root 0,1,0 and .light 0,1,0) --- */
+html.a11y-contrast-high {
+  --surface: #ffffff;
+  --surface-container-low: #f5f5f5;
+  --surface-container: #ebebeb;
+  --surface-container-high: #e0e0e0;
+  --surface-bright: #ffffff;
+  --surface-container-highest: #d8d8d8;
+  --surface-container-rgb: 235, 235, 235;
+  --outline-variant: #333333;
+  --on-surface: #000000;
+  --on-surface-variant: #111111;
+  --primary: #0055bb;
+  --primary-dim: #003d88;
+  --secondary: #990000;
+  --tertiary: #006600;
+  --error: #cc0000;
+  --on-primary: #ffffff;
+  --on-secondary: #ffffff;
+  --on-tertiary: #ffffff;
+}
+
+/* --- Isolation shield: keeps the AccessibilityPanel dropdown immune to its own overrides ---
+   zoom counteracts the rem-scale shift caused by changing html font-size;
+   !important overrides undo spacing and dyslexic-font cascade into the panel. */
+html.a11y-font-lg   .a11y-isolated { zoom: calc(16 / 18); }
+html.a11y-font-xl   .a11y-isolated { zoom: calc(16 / 20); }
+html.a11y-font-xxl  .a11y-isolated { zoom: calc(16 / 22); }
+
+html.a11y-spacing-relaxed .a11y-isolated,
+html.a11y-spacing-relaxed .a11y-isolated *,
+html.a11y-spacing-loose   .a11y-isolated,
+html.a11y-spacing-loose   .a11y-isolated * {
+  line-height: 1.5 !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+}
+
+html.a11y-font-dyslexic .a11y-isolated,
+html.a11y-font-dyslexic .a11y-isolated * {
+  font-family: 'Manrope', system-ui, sans-serif !important;
+}
+
+/* --- Yellow-on-black contrast --- */
+html.a11y-contrast-yellow {
+  --surface: #000000;
+  --surface-container-low: #0a0a00;
+  --surface-container: #111100;
+  --surface-container-high: #1a1a00;
+  --surface-bright: #222200;
+  --surface-container-highest: #1f1f00;
+  --surface-container-rgb: 17, 17, 0;
+  --outline-variant: #555500;
+  --on-surface: #ffff00;
+  --on-surface-variant: #cccc00;
+  --primary: #ffff00;
+  --primary-dim: #dddd00;
+  --secondary: #ffaa00;
+  --tertiary: #00ff88;
+  --error: #ff4444;
+  --on-primary: #000000;
+  --on-secondary: #000000;
+  --on-tertiary: #000000;
 }

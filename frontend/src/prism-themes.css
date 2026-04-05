@@ -1,0 +1,281 @@
+/**
+ * Prism.js syntax highlighting — theme-aware
+ *
+ * Dark  (Neon Noir)     → scoped under .dark
+ * Light (Neon Nocturne) → scoped under .light
+ *
+ * Token colors are intentionally kept as literal values because Prism tokens
+ * don't map 1-to-1 to the design-system semantic palette.  Background and
+ * foreground text colours DO use CSS variables so they follow the surface
+ * system automatically.
+ */
+
+/* ─── Shared structure (layout, not colour) ──────────────────────────────── */
+
+code[class*="language-"],
+pre[class*="language-"] {
+  font-family: Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace;
+  font-size: 0.9em;
+  text-align: left;
+  white-space: pre;
+  word-spacing: normal;
+  word-break: normal;
+  word-wrap: normal;
+  line-height: 1.5;
+  tab-size: 4;
+  hyphens: none;
+}
+
+pre[class*="language-"] {
+  padding: 1em;
+  margin: 0.5em 0;
+  overflow: auto;
+  border-radius: 0.4em;
+}
+
+:not(pre) > code[class*="language-"] {
+  padding: 0.1em 0.3em;
+  border-radius: 0.3em;
+  white-space: normal;
+}
+
+/* ─── Line-numbers plugin ────────────────────────────────────────────────── */
+
+pre[class*="language-"].line-numbers {
+  position: relative;
+  padding-left: 3.8em;
+  counter-reset: linenumber;
+}
+
+pre[class*="language-"].line-numbers > code {
+  position: relative;
+  white-space: inherit;
+}
+
+.line-numbers .line-numbers-rows {
+  position: absolute;
+  pointer-events: none;
+  top: 0;
+  font-size: 100%;
+  left: -3.8em;
+  width: 3em;
+  letter-spacing: -1px;
+  border-right: 1px solid;
+  user-select: none;
+}
+
+.line-numbers-rows > span {
+  display: block;
+  counter-increment: linenumber;
+}
+
+.line-numbers-rows > span::before {
+  content: counter(linenumber);
+  display: block;
+  padding-right: 0.8em;
+  text-align: right;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DARK THEME  (Neon Noir — prism-tomorrow palette)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.dark code[class*="language-"],
+.dark pre[class*="language-"] {
+  color: #cdd3de;
+  background: var(--surface-container-high);
+}
+
+.dark pre[class*="language-"] {
+  background: var(--surface-container-high);
+}
+
+.dark :not(pre) > code[class*="language-"] {
+  background: var(--surface-container-high);
+}
+
+.dark .line-numbers .line-numbers-rows {
+  border-right-color: #404754;
+}
+
+.dark .line-numbers-rows > span::before {
+  color: #606570;
+}
+
+.dark .token.comment,
+.dark .token.block-comment,
+.dark .token.prolog,
+.dark .token.doctype,
+.dark .token.cdata {
+  color: #8a9199;
+}
+
+.dark .token.punctuation {
+  color: #9ba3af;
+}
+
+.dark .token.tag,
+.dark .token.attr-name,
+.dark .token.namespace,
+.dark .token.deleted {
+  color: #e2777a;
+}
+
+.dark .token.function-name {
+  color: #6196cc;
+}
+
+.dark .token.boolean,
+.dark .token.number,
+.dark .token.function {
+  color: #f08d49;
+}
+
+.dark .token.property,
+.dark .token.class-name,
+.dark .token.constant,
+.dark .token.symbol {
+  color: #f8c555;
+}
+
+.dark .token.selector,
+.dark .token.important,
+.dark .token.atrule,
+.dark .token.keyword,
+.dark .token.builtin {
+  color: #cc99cd;
+}
+
+.dark .token.string,
+.dark .token.char,
+.dark .token.attr-value,
+.dark .token.regex,
+.dark .token.variable {
+  color: #7ec699;
+}
+
+.dark .token.operator,
+.dark .token.entity,
+.dark .token.url {
+  color: #67cdcc;
+}
+
+.dark .token.important,
+.dark .token.bold {
+  font-weight: bold;
+}
+
+.dark .token.italic {
+  font-style: italic;
+}
+
+.dark .token.entity {
+  cursor: help;
+}
+
+.dark .token.inserted {
+  color: #7ec699;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIGHT THEME  (Neon Nocturne — readable, design-system aware)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.light code[class*="language-"],
+.light pre[class*="language-"] {
+  color: var(--on-surface);
+  background: var(--surface-container-low);
+}
+
+.light pre[class*="language-"] {
+  background: var(--surface-container-low);
+  border: 1px solid var(--surface-container-high);
+}
+
+.light :not(pre) > code[class*="language-"] {
+  background: var(--surface-container-low);
+}
+
+.light .line-numbers .line-numbers-rows {
+  border-right-color: #c8cad2;
+}
+
+.light .line-numbers-rows > span::before {
+  color: #9095a0;
+}
+
+.light .token.comment,
+.light .token.block-comment,
+.light .token.prolog,
+.light .token.doctype,
+.light .token.cdata {
+  color: var(--on-surface-variant);
+  font-style: italic;
+}
+
+.light .token.punctuation {
+  color: #44474f;
+}
+
+.light .token.tag,
+.light .token.attr-name,
+.light .token.namespace,
+.light .token.deleted {
+  color: #b91c1c;
+}
+
+.light .token.function-name {
+  color: #1d4ed8;
+}
+
+.light .token.boolean,
+.light .token.number,
+.light .token.function {
+  color: var(--error);
+}
+
+.light .token.property,
+.light .token.class-name,
+.light .token.constant,
+.light .token.symbol {
+  color: #b45309;
+}
+
+.light .token.selector,
+.light .token.important,
+.light .token.atrule,
+.light .token.keyword,
+.light .token.builtin {
+  color: var(--secondary);
+}
+
+.light .token.string,
+.light .token.char,
+.light .token.attr-value,
+.light .token.regex,
+.light .token.variable {
+  color: var(--tertiary);
+}
+
+.light .token.operator,
+.light .token.entity,
+.light .token.url {
+  color: var(--primary);
+}
+
+.light .token.important,
+.light .token.bold {
+  font-weight: bold;
+}
+
+.light .token.italic {
+  font-style: italic;
+}
+
+.light .token.entity {
+  cursor: help;
+}
+
+.light .token.inserted {
+  color: var(--tertiary);
+}

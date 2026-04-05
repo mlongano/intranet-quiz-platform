@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>QuizParty Admin Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Manrope:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary-fixed-variant": "#8b00a3",
+                        "primary": "#81ecff",
+                        "on-surface-variant": "#a8abb3",
+                        "on-background": "#f1f3fc",
+                        "error-container": "#9f0519",
+                        "on-tertiary-fixed-variant": "#2b6600",
+                        "primary-container": "#00e3fd",
+                        "secondary-container": "#a100bd",
+                        "primary-dim": "#00d4ec",
+                        "surface-variant": "#20262f",
+                        "secondary-fixed": "#fbbdff",
+                        "surface-container": "#151a21",
+                        "surface-container-low": "#0f141a",
+                        "background": "#0a0e14",
+                        "outline-variant": "#44484f",
+                        "primary-fixed-dim": "#00d4ec",
+                        "surface-container-high": "#1b2028",
+                        "secondary": "#e966ff",
+                        "on-tertiary-fixed": "#1c4700",
+                        "on-error-container": "#ffa8a3",
+                        "on-primary-fixed": "#003840",
+                        "on-secondary-fixed": "#5d006e",
+                        "on-primary-container": "#004d57",
+                        "secondary-fixed-dim": "#f7a8ff",
+                        "on-tertiary": "#2b6500",
+                        "inverse-surface": "#f8f9ff",
+                        "surface-container-lowest": "#000000",
+                        "surface-tint": "#81ecff",
+                        "error": "#ff716c",
+                        "secondary-dim": "#c500e6",
+                        "on-secondary-container": "#fff5fa",
+                        "error-dim": "#d7383b",
+                        "surface": "#0a0e14",
+                        "on-secondary": "#3c0048",
+                        "on-primary": "#005762",
+                        "on-primary-fixed-variant": "#005762",
+                        "tertiary-dim": "#6ded00",
+                        "on-surface": "#f1f3fc",
+                        "tertiary-container": "#75fd00",
+                        "tertiary-fixed-dim": "#6ded00",
+                        "surface-bright": "#262c36",
+                        "on-error": "#490006",
+                        "outline": "#72757d",
+                        "surface-dim": "#0a0e14",
+                        "tertiary": "#c2ff99",
+                        "inverse-primary": "#006976",
+                        "tertiary-fixed": "#75fd00",
+                        "on-tertiary-container": "#265c00",
+                        "primary-fixed": "#00e3fd",
+                        "inverse-on-surface": "#51555d",
+                        "surface-container-highest": "#20262f"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "fontFamily": {
+                        "headline": ["Space Grotesk"],
+                        "body": ["Manrope"],
+                        "label": ["Manrope"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            background-color: #0a0e14;
+            color: #f1f3fc;
+            font-family: 'Manrope', sans-serif;
+        }
+        .glass-panel {
+            background: rgba(21, 26, 33, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        .neon-glow-cyan { box-shadow: 0 0 20px rgba(129, 236, 255, 0.1); }
+        .neon-glow-magenta { box-shadow: 0 0 20px rgba(233, 102, 255, 0.1); }
+        .neon-glow-lime { box-shadow: 0 0 20px rgba(194, 255, 153, 0.1); }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body">
+<!-- TopNavBar -->
+<header class="bg-[#0a0e14]/80 backdrop-blur-xl docked full-width top-0 sticky z-50 no-border tonal-layering shadow-[0_8px_32px_rgba(0,229,255,0.08)] flex justify-between items-center w-full px-6 py-3">
+<div class="flex items-center gap-8">
+<span class="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-cyan-600 bg-clip-text text-transparent font-['Space_Grotesk'] tracking-tight">QuizParty Admin</span>
+<nav class="hidden md:flex gap-6">
+<a class="text-cyan-400 border-b-2 border-cyan-400 pb-1 font-['Space_Grotesk'] tracking-tight" href="#">Dashboard</a>
+<a class="text-slate-400 hover:text-cyan-200 transition-colors font-['Space_Grotesk'] tracking-tight" href="#">Analytics</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="bg-[#1b2028] text-secondary border border-secondary/30 px-4 py-2 rounded-xl text-sm font-medium hover:bg-secondary/10 transition-all duration-300 flex items-center gap-2 scale-95 active:opacity-80">
+<span class="material-symbols-outlined text-sm" data-icon="sync">sync</span>
+                Sync to Cloud
+            </button>
+<button class="bg-[#1b2028] text-on-surface px-4 py-2 rounded-xl text-sm font-medium hover:bg-slate-800/50 transition-all duration-300 flex items-center gap-2">
+<span class="material-symbols-outlined text-sm" data-icon="terminal">terminal</span>
+                View on GitHub
+            </button>
+<button class="bg-primary text-on-primary-fixed px-5 py-2 rounded-xl text-sm font-bold shadow-[0_0_15px_rgba(129,236,255,0.3)] hover:scale-105 transition-all active:opacity-80">
+                + Create New Quiz
+            </button>
+<div class="w-10 h-10 rounded-full overflow-hidden border border-primary/20">
+<img alt="Admin profile" class="w-full h-full object-cover" data-alt="professional portrait of a tech administrator avatar with clean digital aesthetic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAEcNzOCIp3wZ4sw7sPZKGzebKUGgyt7NmhApUCFSbOYSr05bkGDwoIn2EGoQuG3GENh3KPZdqghT9gCVPLmKQUpzvcZWNb4nX1kLuA-WSo61QtjGLkVz5mCz8Y6aPUI2FSLOKxonq4Wb_SPA_ske_RyrB4iqvzsxgv5PH_qja49hXWs56vCbq72qt45R0FhunBDZz5uPSzcuSy6XkC0NPW1ZPHn7ksdftMlgktTbE4itSPom449bPHyRp4-ypNuxzImcWQvYDdI2BZ"/>
+</div>
+</div>
+</header>
+<div class="flex min-h-screen">
+<!-- SideNavBar -->
+<aside class="bg-[#0f141a]/90 backdrop-blur-2xl h-screen w-64 fixed left-0 top-0 z-40 tonal-shift-only no-lines shadow-2xl shadow-cyan-950/20 flex flex-col h-full py-8 pt-20">
+<div class="px-6 mb-8">
+<div class="flex items-center gap-3 mb-2">
+<div class="w-8 h-8 rounded bg-primary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary-container" data-icon="bolt">bolt</span>
+</div>
+<div>
+<h2 class="text-xl font-black text-cyan-400 font-['Manrope']">Admin Ops</h2>
+<p class="text-[10px] text-slate-500 uppercase tracking-widest">The Digital Luminary</p>
+</div>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<div class="bg-[#262c36] text-cyan-400 border-l-4 border-cyan-400 px-4 py-3 flex items-center gap-3 font-['Manrope'] font-medium translate-x-1 transition-transform">
+<span class="material-symbols-outlined" data-icon="quiz">quiz</span>
+<span>Quiz Management</span>
+</div>
+<div class="text-slate-500 px-4 py-3 flex items-center gap-3 hover:text-cyan-300 hover:bg-[#1b2028] transition-all duration-200 cursor-pointer font-['Manrope'] font-medium">
+<span class="material-symbols-outlined" data-icon="leaderboard">leaderboard</span>
+<span>Results &amp; Scoring</span>
+</div>
+<div class="text-slate-500 px-4 py-3 flex items-center gap-3 hover:text-cyan-300 hover:bg-[#1b2028] transition-all duration-200 cursor-pointer font-['Manrope'] font-medium">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span>Student Management</span>
+</div>
+<div class="text-slate-500 px-4 py-3 flex items-center gap-3 hover:text-cyan-300 hover:bg-[#1b2028] transition-all duration-200 cursor-pointer font-['Manrope'] font-medium">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+<span>Archives</span>
+</div>
+</nav>
+<div class="px-4 mt-auto space-y-1">
+<div class="text-slate-500 px-4 py-3 flex items-center gap-3 hover:text-cyan-300 hover:bg-[#1b2028] transition-all duration-200 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="text-sm">Settings</span>
+</div>
+<div class="text-slate-500 px-4 py-3 flex items-center gap-3 hover:text-cyan-300 hover:bg-[#1b2028] transition-all duration-200 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+<span class="text-sm">Support</span>
+</div>
+</div>
+</aside>
+<!-- Main Canvas -->
+<main class="flex-1 ml-64 p-8">
+<!-- Status Bar -->
+<div class="mb-8 flex items-center justify-between bg-surface-container-low p-4 rounded-xl border border-outline-variant/10 neon-glow-cyan">
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2 px-3 py-1 bg-tertiary-container/10 rounded-full">
+<span class="w-2 h-2 rounded-full bg-tertiary animate-pulse"></span>
+<span class="text-tertiary text-sm font-bold">Pending Submissions: 12</span>
+</div>
+<span class="text-on-surface-variant text-sm">Auto-refresh in 45s</span>
+</div>
+<button class="flex items-center gap-2 text-primary hover:text-white transition-colors text-sm font-semibold">
+<span class="material-symbols-outlined text-sm" data-icon="refresh">refresh</span>
+                    Refresh Now
+                </button>
+</div>
+<!-- Bento Grid Metrics -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+<!-- Card 1: Current Quiz -->
+<div class="surface-container rounded-xl p-6 relative overflow-hidden group hover:bg-surface-container-high transition-all duration-300">
+<div class="absolute top-0 left-0 w-full h-1 bg-primary neon-glow-cyan"></div>
+<p class="text-on-surface-variant text-xs font-bold uppercase tracking-widest mb-4">Current Quiz</p>
+<h3 class="text-4xl font-headline font-bold text-on-surface mb-1">124</h3>
+<p class="text-primary text-sm font-medium">Participants: 89/100</p>
+<div class="absolute -right-4 -bottom-4 opacity-5 group-hover:opacity-10 transition-opacity">
+<span class="material-symbols-outlined text-8xl" data-icon="timer">timer</span>
+</div>
+</div>
+<!-- Card 2: Submissions -->
+<div class="surface-container rounded-xl p-6 relative overflow-hidden group hover:bg-surface-container-high transition-all duration-300">
+<div class="absolute top-0 left-0 w-full h-1 bg-secondary neon-glow-magenta"></div>
+<p class="text-on-surface-variant text-xs font-bold uppercase tracking-widest mb-4">Submissions</p>
+<h3 class="text-4xl font-headline font-bold text-on-surface mb-1">1,024</h3>
+<p class="text-secondary text-sm font-medium">Avg. Score: 85%</p>
+<div class="absolute -right-4 -bottom-4 opacity-5 group-hover:opacity-10 transition-opacity">
+<span class="material-symbols-outlined text-8xl" data-icon="assignment_turned_in">assignment_turned_in</span>
+</div>
+</div>
+<!-- Card 3: Students -->
+<div class="surface-container rounded-xl p-6 relative overflow-hidden group hover:bg-surface-container-high transition-all duration-300">
+<div class="absolute top-0 left-0 w-full h-1 bg-tertiary neon-glow-lime"></div>
+<p class="text-on-surface-variant text-xs font-bold uppercase tracking-widest mb-4">Students</p>
+<h3 class="text-4xl font-headline font-bold text-on-surface mb-1">2,567</h3>
+<p class="text-tertiary text-sm font-medium">Active Today: 450</p>
+<div class="absolute -right-4 -bottom-4 opacity-5 group-hover:opacity-10 transition-opacity">
+<span class="material-symbols-outlined text-8xl" data-icon="school">school</span>
+</div>
+</div>
+<!-- Card 4: Archives -->
+<div class="surface-container rounded-xl p-6 relative overflow-hidden group hover:bg-surface-container-high transition-all duration-300">
+<div class="absolute top-0 left-0 w-full h-1 bg-primary-dim opacity-70"></div>
+<p class="text-on-surface-variant text-xs font-bold uppercase tracking-widest mb-4">Archives</p>
+<h3 class="text-4xl font-headline font-bold text-on-surface mb-1">58</h3>
+<p class="text-on-surface-variant text-sm font-medium">Total Quizzes</p>
+<div class="absolute -right-4 -bottom-4 opacity-5 group-hover:opacity-10 transition-opacity">
+<span class="material-symbols-outlined text-8xl" data-icon="archive">archive</span>
+</div>
+</div>
+</div>
+<!-- Bottom Detailed Navigation Sections -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+<!-- Section 1: Quiz Management -->
+<section class="glass-panel rounded-2xl p-8 border border-white/5">
+<div class="flex items-center gap-3 mb-8">
+<span class="material-symbols-outlined text-primary" data-icon="edit_note">edit_note</span>
+<h3 class="text-xl font-headline font-bold tracking-tight">Quiz Management</h3>
+</div>
+<ul class="space-y-4">
+<li class="flex items-center justify-between group cursor-pointer hover:translate-x-2 transition-transform">
+<span class="text-on-surface-variant group-hover:text-primary transition-colors">All Quizzes</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 text-primary" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</li>
+<li class="flex items-center justify-between group cursor-pointer hover:translate-x-2 transition-transform">
+<span class="text-on-surface-variant group-hover:text-primary transition-colors">Drafts</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 text-primary" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</li>
+<li class="flex items-center justify-between group cursor-pointer hover:translate-x-2 transition-transform">
+<span class="text-on-surface-variant group-hover:text-primary transition-colors">Categories</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 text-primary" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</li>
+<li class="flex items-center justify-between group cursor-pointer hover:translate-x-2 transition-transform">
+<span class="text-on-surface-variant group-hover:text-primary transition-colors">Question Bank</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 text-primary" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</li>
+<li class="flex items-center justify-between group cursor-pointer hover:translate-x-2 transition-transform">
+<span class="text-on-surface-variant group-hover:text-primary transition-colors">Settings</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 text-primary" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</li>
+</ul>
+</section>
+<!-- Section 2: Results & Scoring -->
+<section class="glass-panel rounded-2xl p-8 border border-white/5">
+<div class="flex items-center gap-3 mb-8">
+<span class="material-symbols-outlined text-secondary" data-icon="insights">insights</span>
+<h3 class="text-xl font-headline font-bold tracking-tight">Results &amp; Scoring</h3>
+</div>
+<ul class="space-y-4">
+<li class="flex items-center justify-between group cursor-pointer hover:translate-x-2 transition-transform">
+<div class="flex items-center gap-2">
+<span class="text-on-surface-variant group-hover:text-secondary transition-colors">Live Results</span>
+<span class="w-1.5 h-1.5 rounded-full bg-secondary shadow-[0_0_8px_#e966ff]"></span>
+</div>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 text-secondary" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</li>
+<li class="flex items-center justify-between group cursor-pointer hover:translate-x-2 transition-transform">
+<span class="text-on-surface-variant group-hover:text-secondary transition-colors">Reports</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 text-secondary" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</li>
+<li class="flex items-center justify-between group cursor-pointer hover:translate-x-2 transition-transform">
+<span class="text-on-surface-variant group-hover:text-secondary transition-colors">Leaderboard</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 text-secondary" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</li>
+<li class="flex items-center justify-between group cursor-pointer hover:translate-x-2 transition-transform">
+<span class="text-on-surface-variant group-hover:text-secondary transition-colors">Manual Grading</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 text-secondary" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</li>
+<li class="flex items-center justify-between group cursor-pointer hover:translate-x-2 transition-transform">
+<span class="text-on-surface-variant group-hover:text-secondary transition-colors">Export Data</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 text-secondary" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</li>
+</ul>
+</section>
+<!-- Section 3: Student Management -->
+<section class="glass-panel rounded-2xl p-8 border border-white/5">
+<div class="flex items-center gap-3 mb-8">
+<span class="material-symbols-outlined text-tertiary" data-icon="person_search">person_search</span>
+<h3 class="text-xl font-headline font-bold tracking-tight">Student Management</h3>
+</div>
+<ul class="space-y-4">
+<li class="flex items-center justify-between group cursor-pointer hover:translate-x-2 transition-transform">
+<span class="text-on-surface-variant group-hover:text-tertiary transition-colors">All Students</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 text-tertiary" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</li>
+<li class="flex items-center justify-between group cursor-pointer hover:translate-x-2 transition-transform">
+<span class="text-on-surface-variant group-hover:text-tertiary transition-colors">Groups</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 text-tertiary" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</li>
+<li class="flex items-center justify-between group cursor-pointer hover:translate-x-2 transition-transform">
+<div class="flex items-center gap-2">
+<span class="text-on-surface-variant group-hover:text-tertiary transition-colors">Enrollment Requests</span>
+<span class="px-1.5 py-0.5 rounded bg-tertiary text-on-tertiary text-[10px] font-black">3 NEW</span>
+</div>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 text-tertiary" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</li>
+<li class="flex items-center justify-between group cursor-pointer hover:translate-x-2 transition-transform">
+<span class="text-on-surface-variant group-hover:text-tertiary transition-colors">Import Students</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 text-tertiary" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</li>
+<li class="flex items-center justify-between group cursor-pointer hover:translate-x-2 transition-transform">
+<span class="text-on-surface-variant group-hover:text-tertiary transition-colors">User Roles</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 text-tertiary" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</li>
+</ul>
+</section>
+</div>
+<!-- Visual Texture/Atmosphere -->
+<div class="fixed bottom-0 right-0 w-[500px] h-[500px] bg-primary/5 blur-[150px] -z-10 rounded-full"></div>
+<div class="fixed top-20 left-64 w-[300px] h-[300px] bg-secondary/5 blur-[120px] -z-10 rounded-full"></div>
+</main>
+</div>
+</body></html>
