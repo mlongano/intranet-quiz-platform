@@ -11,6 +11,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.5.0] - 2026-04-05
+
+### Added
+
+#### Design System & Theming
+
+- **Dark-first CSS design token system** — comprehensive custom-property palette in `main.css` covering surface colours, neon-blue/purple accent palette, typography scale, border-radius steps, and shadow levels; consumed by Tailwind's `@theme` block so every utility class is automatically available
+- **Google Fonts** — Space Grotesk (headings) and Manrope (body) loaded via preconnect hints
+- **ThemeToggle component** — Sun/Moon button that persists the user's light/dark preference to `localStorage` and updates the `data-theme` attribute on `<html>`; available in both admin and student UIs
+- **Prism syntax themes** (`prism-themes.css`) — dark and light code-block highlight overrides integrated with the design token palette
+- **`lib/theme.ts`** — `initTheme()` / `toggleTheme()` helpers called on app boot
+
+#### Accessibility
+
+- **Floating AccessibilityPanel** — persistent panel for students with live controls:
+  - Font size adjustment (four steps)
+  - Line-spacing adjustment
+  - Dyslexia-friendly font toggle (OpenDyslexic)
+  - High-contrast mode toggle
+- **`useAccessibility` hook** — manages and persists all accessibility preferences to `localStorage`
+
+#### Admin Layout & Navigation
+
+- **Collapsible sidebar** with sticky top header — replaces the previous full-page outlet shell
+- **Expandable navigation sections** for the Archives group (questions bank, scores bank, students bank)
+- **Animated StatCards** on the dashboard — live counts for quiz status, students, and submissions, with entry animations via Framer Motion
+- **Sticky question-editor toolbar** — stays visible when scrolling through long question lists
+- **Title colour customisation** — admins can set a custom accent colour for the quiz title in the editor
+- **Edit shortcut from Scores Bank Review** — navigate directly into the question editor from a review card
+
+#### Dependencies
+
+- `framer-motion` — UI animations (StatCard entries, sidebar transitions)
+- `lucide-react` — icon set replacing ad-hoc emoji/SVG usage throughout the app
+
+#### Documentation
+
+- `docs/DESIGN.md` — design-system reference and token catalogue
+- `docs/PROJECT.md` — full project overview and architecture guide
+- `docs/AdminDashboard.png` / `docs/AdminDashboard.html` — visual reference for the admin dashboard
+
+### Changed
+
+- **Complete UI migration** — all admin pages (Dashboard, Scores, ScoresBank, ScoresBankReview, QuestionEditor, BankManager, ImageManager, Students, StudentBank, LoginPage) and all student pages (Start, Quiz, Finish, Error) migrated to the new `AdminLayout` shell and CSS design tokens
+- **Shared components** (`ImagePicker`, `JsonSafeField`, `LoadingSpinner`, `QuestionDisplay`, `SubmissionDetailView`) updated to design tokens
+- **LLM evaluator** — migrated from custom HTTP calls to OpenAI/Anthropic APIs to the unified `llm` Python library; provider is now configured entirely through `llm`'s plugin system; `LLM_PROVIDER` env var removed; `/api/llm-info` endpoint simplified
+- **`.env.example`** — updated to reflect new `llm`-library configuration (removed `LLM_PROVIDER`, added `llm keys set` instructions)
+- **Email subject default** — improved pre-filled subject line for bulk score notifications
+
+### Fixed
+
+- **Stale quiz plan detection** — on start/resume, the server now validates that the stored plan's question IDs still exist in the active question bank; stale plans are automatically discarded, preventing `KeyError` crashes and silent progress corruption after bank edits
+
+---
+
 ## [2.4.0] - 2026-04-05
 
 ### Added
