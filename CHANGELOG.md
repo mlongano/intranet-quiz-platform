@@ -11,6 +11,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.4.0] - 2026-04-05
+
+### Added
+
+#### Scores Bank Review
+
+- **Admin Scores Bank Review page** (`/admin/scores-bank-review`) — new page to deep-dive into archived score files
+  - Summary statistics: total students, completed count, average score
+  - **Student view**: grid of cards; click any card to see full question-by-question breakdown
+  - **Question view**: per-question performance with correctness statistics across all submissions
+  - Navigation shortcut from the Archives card on the admin dashboard
+  - Inline editing of individual score entries directly on the review page
+  - GitHub source-link integration for quick cross-reference
+
+- **Scores bank override endpoint** (`POST /api/admin/scores-bank/update`) — update an archived score file in place
+
+#### LLM Re-grading from Scores Bank
+
+- **LLM info endpoint** (`GET /api/admin/llm-info`) — returns the active model name and availability
+- **LLM re-grade endpoint** (`POST /api/admin/scores-bank/regrade`) — re-score open-ended questions in any archived scores file using the configured LLM, without touching the active quiz
+
+#### Bank File Editing
+
+- **Direct bank file editing** — edit question bank files in-place from the bank manager without loading them as the active quiz
+  - New `save_questions_to_bank()` utility with atomic write, backup creation, and file locking
+  - Bank file update endpoint (`POST /api/admin/questions-bank/update`) with lenient-preview option
+  - Frontend bank quiz editing API functions (`loadBankQuiz`, `saveBankQuiz`)
+
+#### Tests
+
+- **pytest configuration** (`pyproject.toml`) and initial API test suite (`tests/`)
+- **Load tests** for concurrent API requests to validate atomic file operations under stress
+
+### Changed
+
+- **Dynamic student loading** — replaced the static `VALID_STUDENTS` module-level cache with `load_valid_students()`, which re-reads `students.jsonc` on every request; no server restart required after editing the student list
+- **Admin route rename** — `/api/admin/bank` changed to `/api/admin/questions-bank` for clarity; frontend updated accordingly
+
+### Fixed
+
+- **Timezone-aware datetime** — replaced deprecated `datetime.utcnow()` with `datetime.now(timezone.utc)` throughout the backend
+
+### Code Quality
+
+- Standardized string quote style across `email_service.py`, `routes/admin.py`, and quiz-related modules
+- Added `AGENTS.md` coding guidelines for AI agents working on this codebase
+
+---
+
 ## [2.3.0] - 2025-12-13
 
 ### Fixed

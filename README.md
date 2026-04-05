@@ -1191,7 +1191,7 @@ Access the admin panel at `/admin` with the password set in `.env`:
 
 ### Accessing Admin Panel
 
-1. Navigate to `http://localhost:5000/admin` (or your server address)
+1. Navigate to `http://localhost:5001/admin` (or your server address)
 2. Enter the admin password (set in `.env` as `ADMIN_PW`)
 3. You'll be redirected to the admin dashboard
 
@@ -1441,7 +1441,7 @@ After migration, restart the server. Your banks will now be in the correct locat
 ### Student Login Issues
 
 - **"Unknown student"**: The student email must be listed in `students.jsonc` exactly as typed
-- **Server restart required**: After editing `students.jsonc`, restart the server for changes to take effect
+- **Students file changes auto-reload**: The server detects changes to `students.jsonc` automatically — no restart required after editing the student list
 - **Students file format error**: Make sure your `students.jsonc` uses one of the supported formats:
   - Simple strings: `["email@example.com", ...]`
   - Objects with email: `[{"email": "...", "group": "..."}, ...]`
