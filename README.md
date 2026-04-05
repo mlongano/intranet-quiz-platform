@@ -11,11 +11,14 @@ schools and educational institutions.
 - **Offline Operation**: Fully functional without internet connectivity - perfect for exam scenarios
 - **No External Dependencies**: All data stored locally; no cloud services or external APIs required
 - **Multiple Question Types**: Supports single choice, multiple choice, and open-ended questions with optional images
-- **Automatic Grading**: Instant scoring for closed questions; keyword-based scoring for open responses
+- **Automatic Grading**: Instant scoring for closed questions; keyword-based or LLM-powered scoring for open responses
 - **Admin Dashboard**: Real-time monitoring, score management, and result distribution via email
 - **Fair Randomization**: Questions and answer options are shuffled once per student to prevent cheating while
   maintaining consistency
-- **Data Integrity**: Automatic backups, file locking, and score recalculation capabilities
+- **Data Integrity**: Automatic backups, atomic file locking, and score recalculation capabilities
+- **Modern UI**: Dark-first design system with light/dark/system theme toggle, responsive layout, and smooth animations
+- **Accessibility**: Floating accessibility panel for font size, text spacing, dyslexia font, and contrast adjustments
+- **LLM Evaluation**: Optional AI-powered grading of open-ended answers using any supported LLM provider
 
 **Typical Use Case:** A teacher sets up the server on a local machine, students connect via LAN (e.g., classroom WiFi
 or wired network), take their quizzes on their own devices, and results are instantly available to the instructor.
@@ -24,31 +27,44 @@ Optional email functionality can be configured if internet access is available a
 ## Directory layout
 
 ```sh
-lan_quiz/     # project root directory
+local-quizzies/        # project root directory
 │
-├─ frontend/  # React frontend
-├─ server.py  # main server
-├─ utils.py   # utils library
-├─ routes/    # api routes
-├─ questions.jsonc # master bank (with answers & weights)
-├─ quizzes/   # auto‑generated one file per live quiz instance
+├─ server.py           # Flask server (Waitress WSGI, port 5001)
+├─ utils.py            # Utility library (file ops, atomic writes, slugify, caching)
+├─ llm_evaluator.py    # LLM-based open question evaluator
+├─ email_service.py    # Email sending logic
+├─ git_sync.py         # Git-based cloud sync for banks
+├─ pyproject.toml      # Python dependencies (uv)
 │
-├─ scores.jsonc  # submissions
+├─ routes/
+│  ├─ quiz.py          # /api/start, /api/submit, /api/question, /api/resume
+│  └─ admin.py         # All /api/admin/* endpoints
 │
-├─ banks/          # New: All banks in one directory for cloud sync
-│  ├─ question_bank/  # Saved question sets
-│  ├─ scores_bank/    # Score archives
-│  └─ students_bank/  # Student lists
+├─ frontend/           # React + TypeScript frontend (Vite)
+│  └─ src/
+│     ├─ pages/        # 14 page components (admin + student)
+│     ├─ components/   # Shared components (AccessibilityPanel, ThemeToggle, …)
+│     ├─ layouts/      # AdminLayout (collapsible sidebar + sticky header)
+│     ├─ hooks/        # Custom hooks (useAccessibility, …)
+│     └─ lib/          # Utilities (theme.ts, utils.ts)
 │
-├─ static/      # legacy frontend
-├── index.html  # student UI
-├── admin.html  # admin dashboard
-├── main.js
-└── style.css   # (optional) simple styling
+├─ questions.jsonc     # Active quiz (with answers & weights)
+├─ scores.jsonc        # Active submissions
+├─ students.jsonc      # Enrolled student list
+├─ quiz_status.jsonc   # Quiz enable/disable state
+│
+├─ quizzes/            # Auto-generated; one file per live quiz session
+│
+├─ banks/              # All banks in one directory for cloud sync
+│  ├─ question_bank/   # Saved question sets (.jsonc)
+│  ├─ scores_bank/     # Score archives (.jsonc)
+│  └─ students_bank/   # Student list archives (.jsonc)
+│
+└─ images/             # Uploaded images for questions and answers
 ```
 
-quizzes/ is created automatically; each student that starts a quiz gets a file like student_id.json
-describing only the randomized order of that quiz.
+`quizzes/` is created automatically; each student that starts a quiz gets a file like `student@email.com.json`
+describing only the randomised order of that quiz for that student.
 
 ## Install instructions
 
@@ -177,6 +193,12 @@ SMTP_PORT=587
 # Optional: Cloud sync configuration (Git-based backup)
 # BANKS_GIT_REMOTE=https://github.com/yourusername/quiz-banks.git
 # BANKS_GIT_TOKEN=your_github_personal_access_token
+
+# Optional: LLM-based evaluation of open questions
+# USE_LLM_EVAL=1
+# LLM_MODEL=gpt-4o-mini          # default; any model supported by installed llm plugin
+# LLM_RETRIES=2
+# LLM_BACKOFF_FACTOR=0.5
 ```
 
 #### Email Configuration (Optional)
@@ -1123,8 +1145,10 @@ curl -k https://192.168.1.100  # -k to skip certificate verification
 - **Quiz Taking**: Students log in with their email (must be in `students.jsonc`) and take randomized quizzes
 - **Question Types**: Supports single choice, multiple choice, and open-ended questions
 - **Images**: Questions and answer options can include images
-- **Auto-save**: Quiz progress is automatically saved
-- **Resume**: Students can resume incomplete quizzes from where they left off
+- **Auto-save**: Quiz progress is automatically saved server-side
+- **Resume**: Students can resume incomplete quizzes from where they left off (stale plans are auto-detected and discarded)
+- **Accessibility Panel**: Floating toolbar (on quiz pages) with controls for font size, text spacing, dyslexia-friendly font, and high-contrast modes. Settings persist in `localStorage`.
+- **Theme Support**: Students can switch between light, dark, and system theme via the top-bar toggle
 
 ### Admin Features
 
@@ -1135,13 +1159,21 @@ Access the admin panel at `/admin` with the password set in `.env`:
   - Visual green (enabled) / red (disabled) indicator
   - Prevents students from starting or accessing quizzes when disabled
   - Friendly message shown to students when quiz is disabled
-- **Dashboard**: Modern overview with real-time statistics
+- **Dashboard**: Animated overview with real-time statistics
+  - Animated StatCards (framer-motion) showing live quiz, student, and score counts
   - Clickable statistics cards for quick navigation
   - Current quiz info with question count
   - Auto-refreshing submissions tracker (30-second countdown)
   - Click submission counts to view submitted/pending students
   - Students count with quick access to management
   - Archive overview with split counts (questions/scores/students)
+  - Cloud Sync button integrated in Archives card
+- **Admin Layout**: Collapsible sidebar with sticky header
+  - Collapsible sidebar (expand/collapse with toggle)
+  - Sticky frosted-glass header with page title and theme toggle
+  - Expandable "Archives" navigation section for bank pages
+  - ThemeToggle in header (light / dark / system)
+  - Customisable page title gradient colour per page
 - **Image Management**: Dedicated image management system
   - Upload images via drag-and-drop interface
   - Support for PNG, JPG, JPEG, GIF, WEBP (max 5MB per file)
@@ -1151,21 +1183,25 @@ Access the admin panel at `/admin` with the password set in `.env`:
   - Clear all images with inline confirmation
   - Integrated image picker in question editor
 - **View Scores**: See all submitted quiz results with timestamps and percentages
+- **Scores Bank Review**: Review archived score files with inline editing
 - **Export CSV**: Export all scores to CSV format with smart filenames (date + quiz title)
 - **View Details**: Click any submission to see detailed question-by-question results
 - **Recalculate Scores**: Re-grade all submissions against updated question bank (with inline confirmation)
+- **LLM Re-grade**: Re-evaluate open questions in the scores bank using a configured LLM model
 - **Clear/Restore Scores**: Clear all scores with backup, restore from backup (with inline confirmation)
 - **Send Emails**:
   - Send individual quiz results to specific students
   - Bulk send results to all students
-  - Customize email subject with inline validation
+  - Customize email subject with inline validation and improved defaults
   - Choose to include or exclude detailed question-by-question breakdown
   - No browser alerts - all errors shown inline
 - **Question Management**: Edit questions, answers, and weights via JSONC editor
+  - Sticky question editor toolbar for easy access while scrolling
   - Integrated image picker for adding images to questions/answers
   - Image count display in editor header
   - Toast notifications for all operations
   - Bank edit mode: edit bank files in-place without loading them into the active quiz
+  - Title colour customisation per page
 - **Students Management**:
   - Edit student list via JSONC editor with live preview
   - Email validation with visual indicators
@@ -1174,10 +1210,10 @@ Access the admin panel at `/admin` with the password set in `.env`:
   - Save/load student lists from students bank for different classes
   - Delete student files from bank with inline confirmation
 - **Bank Management**:
-  - **Question Bank**: Save/load/edit question sets for different quizzes with delete functionality
+  - **Question Bank**: Save/load/edit question sets for different quizzes with delete and rename functionality
     - Edit bank files directly using the full question editor without affecting the active quiz
-  - **Scores Bank**: Archive and restore quiz results with delete functionality
-  - **Students Bank**: Save/load student lists with delete and load confirmations
+  - **Scores Bank**: Archive and restore quiz results with delete and rename functionality
+  - **Students Bank**: Save/load student lists with delete, rename, and load confirmations
   - All bank operations use inline confirmations (no browser alerts)
   - Smart filenames with date prefix and slugified quiz titles
 
@@ -1185,13 +1221,120 @@ Access the admin panel at `/admin` with the password set in `.env`:
 
 - **Shuffle Prevention**: Each student's answer options are shuffled once and saved to prevent re-randomization
 - **Score Backup**: Automatic timestamped backups before recalculation
-- **File Locking**: Thread-safe file operations prevent data corruption
+- **Atomic File Locking**: Thread-safe file operations with `filelock` and temp-file-then-rename pattern — prevents data corruption under concurrent load (up to 6 threads, exponential-backoff retry)
+- **Question Caching**: In-memory question cache with mtime invalidation to reduce disk I/O
+- **Dynamic Student Loading**: Student list auto-reloads when the file changes on disk (no server restart needed)
+
+## Design System & Theming
+
+QuizParty uses a **dark-first CSS design token system** introduced in v2.3.0.
+
+### Design Tokens
+
+All colours, typography, and spacing are defined as CSS custom properties (variables) and are consumed through Tailwind CSS utility classes. The token system supports three modes:
+
+- **Dark** — default, low-contrast backgrounds with saturated accents
+- **Light** — clean white surfaces with muted palette
+- **System** — follows the OS `prefers-color-scheme` media query (auto-switches)
+
+Theme mode is stored in `localStorage` under the key `qp-theme` and applied immediately on page load via `initTheme()` (called in `main.tsx` before the React tree mounts, preventing FOUC).
+
+### ThemeToggle
+
+The `ThemeToggle` component is embedded in:
+- The sticky admin header (all admin pages via `AdminLayout`)
+- Student-facing pages (StartPage, QuizPage, FinishPage)
+
+It presents three icon buttons (Monitor / Sun / Moon) for system / light / dark.
+
+### Accessibility Panel
+
+The `AccessibilityPanel` component is a floating toolbar available on **student-facing pages only** (StartPage and QuizPage). It provides:
+
+| Setting | Options |
+|---------|---------|
+| Font Size | A- (default) · A · A+ · A++ |
+| Spacing | Normal · Wide · Loose |
+| Font Family | Normal · Dyslexia (OpenDyslexic) |
+| Contrast | Normal · High · Yellow-on-black |
+
+Settings persist in `localStorage`. A dot indicator on the panel button shows when any non-default setting is active. A "Reset all" button restores defaults.
+
+### Typography & Fonts
+
+Google Fonts are loaded at build time:
+- **Display / Headline**: used for page titles and card headings
+- **Body**: used for navigation labels and UI text
+- **Monospace**: used in the JSONC editor
+
+---
+
+## LLM Evaluation
+
+QuizParty supports optional **AI-powered grading** of open-ended questions via the [`llm`](https://llm.datasette.io/) Python library.
+
+### How It Works
+
+When `USE_LLM_EVAL=1` is set in `.env`, open questions are evaluated by an LLM instead of (or in addition to) simple keyword matching. The evaluator:
+
+1. Sends the question text, student answer, and correct answers to the configured model
+2. Receives a structured JSON response: `{ "score": float, "verdict": string, "llm_feedback": string }`
+3. Assigns partial credit proportionally (0.0 – 1.0)
+4. Stores the `llm_feedback` field alongside the score for display in the admin panel
+
+The system prompt enforces **semantic equivalence** grading — not superficial keyword matching.
+
+### Configuration
+
+Add to `.env`:
+
+```bash
+# Enable LLM evaluation
+USE_LLM_EVAL=1
+
+# Model to use (default: gpt-4o-mini)
+# Must be supported by an installed llm plugin
+LLM_MODEL=gpt-4o-mini
+
+# Optional: retry settings
+LLM_RETRIES=2
+LLM_BACKOFF_FACTOR=0.5
+```
+
+### Supported Providers
+
+The `llm` library supports many providers via plugins. The following are pre-installed:
+
+| Provider | Plugin | Example model |
+|----------|--------|---------------|
+| Anthropic | `llm-anthropic` | `claude-3-5-haiku-20241022` |
+| DeepSeek | `llm-deepseek` | `deepseek-chat` |
+| Ollama (local) | `llm-ollama` | `llama3.2`, `mistral` |
+
+Configure API keys via the `llm` CLI:
+
+```bash
+# OpenAI (built-in)
+uv run llm keys set openai
+
+# Anthropic
+uv run llm keys set anthropic
+
+# Ollama (no key needed — runs locally)
+# Just ensure Ollama is running: ollama serve
+```
+
+### LLM Re-grade from Admin
+
+The Scores Bank Review page exposes an **LLM Re-grade** button that re-evaluates all open questions in a saved scores file against the current LLM model, without touching active scores.
+
+---
 
 ## Admin Panel Usage
 
 ### Accessing Admin Panel
 
-1. Navigate to `http://localhost:5000/admin` (or your server address)
+1. Navigate to `http://localhost:5001/admin` (or your server address)
 2. Enter the admin password (set in `.env` as `ADMIN_PW`)
 3. You'll be redirected to the admin dashboard
 
@@ -1441,7 +1584,7 @@ After migration, restart the server. Your banks will now be in the correct locat
 ### Student Login Issues
 
 - **"Unknown student"**: The student email must be listed in `students.jsonc` exactly as typed
-- **Server restart required**: After editing `students.jsonc`, restart the server for changes to take effect
+- **Changes not taking effect**: The server auto-detects file changes via mtime caching — no restart needed after editing `students.jsonc` through the admin UI. If editing the file manually, changes should be picked up on the next quiz start.
 - **Students file format error**: Make sure your `students.jsonc` uses one of the supported formats:
   - Simple strings: `["email@example.com", ...]`
   - Objects with email: `[{"email": "...", "group": "..."}, ...]`
@@ -1458,7 +1601,7 @@ After migration, restart the server. Your banks will now be in the correct locat
 - [ ] check if the resume is from the same pc
 - [x] handle the comments in the jsonc files
 - [x] Markdown support (implemented with react-markdown)
-- [ ] personalize the quiz for some student that has special needs
+- [x] personalize the quiz for some student that has special needs (accessibility panel: font size, spacing, dyslexia font, contrast)
 - [x] Email quiz results to students
 - [x] Score recalculation against updated question bank
 - [x] CSV export functionality
@@ -1471,11 +1614,20 @@ After migration, restart the server. Your banks will now be in the correct locat
 - [x] Image management system for questions and answers (upload, delete, integrated picker)
 - [x] Replace all browser alerts with inline confirmation UI and toast notifications
 - [x] Delete functionality for all bank types (questions, scores, students)
+- [x] Rename functionality for all bank types (questions, scores, students)
 - [x] Edit bank quiz files in-place without affecting the active quiz
 - [x] Smart CSV export filenames with date and quiz title
 - [x] Centralized utility functions (slugify) for code reusability
+- [x] Add cloud backup support for scores, questions and students banks (Git-based sync implemented)
+- [x] Design system overhaul: dark-first CSS tokens, Google Fonts, ThemeToggle (light/dark/system)
+- [x] Admin UI redesign: collapsible sidebar, sticky header, animated StatCards (framer-motion)
+- [x] Accessibility panel for student-facing pages (font size, spacing, dyslexia font, contrast)
+- [x] LLM-based evaluation of open questions (`llm` library, pluggable providers)
+- [x] Atomic file operations with retry and exponential backoff (prevent race conditions)
+- [x] Dynamic student loading with mtime caching (no restart needed after edits)
+- [x] Stale quiz plan detection and auto-discard on resume
+- [x] Scores Bank Review page with inline editing and LLM re-grade
 - [ ] Implement a timer for quizzes
-- [ ] Improve UI/UX design of the frontend
 - [ ] Improve error handling and user feedback throughout the app
 - [ ] Internationalization (i18n) support
 - [ ] Integration tests for backend and frontend components
@@ -1484,7 +1636,6 @@ After migration, restart the server. Your banks will now be in the correct locat
 - [ ] Implement a feedback system for students
 - [ ] Add support for more question types (e.g., matching, fill-in-the-blank)
 - [ ] Use a database instead of JSONC files for better scalability
-- [x] Add cloud backup support for scores, questions and students banks (Git-based sync implemented)
 
 ## License
 

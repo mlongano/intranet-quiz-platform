@@ -1,92 +1,63 @@
 # QuizParty Frontend
 
-Modern React + TypeScript admin interface for the QuizParty quiz management system.
+Modern React + TypeScript interface for the QuizParty quiz management system — covering both the student-facing quiz experience and the full admin panel.
 
 > 📖 **For full project documentation, installation instructions, and features, see the [main README](../README.md)**
 
 ## Overview
 
-This is the admin frontend built with:
+This is the frontend built with:
 
-- **React 18** - Modern React with hooks
-- **TypeScript** - Type-safe development
-- **Vite** - Fast build tool and dev server
-- **TanStack Query (React Query)** - Server state management and caching
-- **React Router** - Client-side routing
-- **Tailwind CSS** - Utility-first styling
-- **React Markdown** - Markdown rendering with syntax support
+- **React 19** - Modern React with hooks
+- **TypeScript** - Type-safe development (strict mode)
+- **Vite 6** - Fast build tool and dev server
+- **TanStack Query v5** - Server state management and caching
+- **React Router v7** - Client-side routing
+- **Tailwind CSS v4** - Utility-first styling with CSS design tokens
+- **Framer Motion** - Smooth animations (StatCards, transitions)
+- **Lucide React** - Icon set
+- **React Markdown** - Markdown rendering with syntax support (PrismJS)
 
 ## Architecture
 
+### Layouts
+
+- **`AdminLayout`** — Shared admin shell with collapsible sidebar and sticky frosted-glass header. Renders a `ThemeToggle`, optional `headerActions`, and navigates while preserving the admin password via `location.state`. The Archives nav item is expandable to show Question / Scores / Students bank sub-pages.
+
 ### Pages
 
-The frontend provides a comprehensive admin interface:
+**Admin pages:**
 
-- **`AdminLoginPage`** - Password-protected admin access
-- **`AdminDashboardPage`** - Modern dashboard with real-time statistics:
-  - **Quiz enable/disable toggle** in header for instant control
-  - Interactive statistics cards (clickable for navigation)
-  - Current quiz overview
-  - Auto-refreshing submissions tracker (30-second interval)
-  - Pending/submitted students modals
-  - Archive breakdown by type
-  - Organized feature categories (Quiz/Results/Students Management)
-- **`AdminImagesPage`** - Image management interface:
-  - Drag-and-drop file upload
-  - Image gallery with grid layout
-  - Preview and delete functionality
-  - Quiz-specific image organization
-  - Support for PNG, JPG, JPEG, GIF, WEBP (max 5MB)
-- **`AdminScoresPage`** - View all submissions with:
-  - Score table with quiz titles
-  - CSV export with smart filenames (date + quiz title)
-  - Recalculate all scores (with inline confirmation)
-  - Clear/restore scores (with inline confirmation)
-  - Email individual or bulk results (with inline validation)
-  - Detailed submission view with score overrides
-  - No browser alerts - all confirmations inline
-- **`AdminQuestionEditorPage`** - JSONC editor with:
-  - Live preview with answer highlighting
-  - Batch weight operations
-  - Format validation
-  - Quiz title display
-  - **Integrated image picker** for questions and answers
-  - **Image count display** in header
-  - **Toast notifications** for all operations
-  - Clear all images with inline confirmation
-- **`AdminStudentsPage`** - Student list management:
-  - JSONC editor with syntax highlighting
-  - Live preview grouped by class/section
-  - Email validation with visual indicators
-  - Support for three student formats (simple, individual, group)
-  - Keyboard shortcuts (Ctrl/Cmd+S to save)
-- **`AdminBankManagerPage`** - Question bank management:
-  - Save/load quiz files (with images)
-  - Preview question banks
-  - Delete quizzes with inline confirmation
-  - Custom filename control with slugified titles
-- **`AdminScoresBankPage`** - Score archive management:
-  - Save/load score files
-  - Delete scores with inline confirmation
-  - Formatted preview of archived scores
-  - Custom filename control with slugified titles
-- **`AdminStudentsBankPage`** - Student list archive management:
-  - Save/load student lists for different classes
-  - Delete student files with inline confirmation
-  - Load confirmation to prevent accidental overwrites
-  - Preview students grouped by class
-  - Email validation in preview
-  - Quick switching between different student lists
+- **`AdminLoginPage`** — Password-protected admin access
+- **`AdminDashboardPage`** — Animated dashboard with real-time statistics (framer-motion StatCards), quiz enable/disable toggle, submissions tracker (30s auto-refresh), pending/submitted modals, cloud sync button
+- **`AdminImageManagerPage`** — Drag-and-drop image upload, gallery with preview and delete, quiz-specific organisation
+- **`AdminScoresPage`** — Score table with CSV export, recalculate, clear/restore, email individual/bulk, detailed submission view
+- **`AdminScoresBankPage`** — Score archive management (save, load, rename, delete, preview)
+- **`AdminScoresBankReviewPage`** — Inline review of archived scores with LLM re-grade capability
+- **`AdminQuestionEditorPage`** — JSONC editor with sticky toolbar, live preview, image picker, toast notifications, bank-edit mode
+- **`AdminBankManagerPage`** — Question bank management (save, load, rename, delete, preview, in-place edit)
+- **`AdminStudentsPage`** — Student list JSONC editor with live preview, email validation, keyboard shortcuts
+- **`AdminStudentsBankPage`** — Student list archive (save, load, rename, delete, preview)
+
+**Student-facing pages:**
+
+- **`StartPage`** — Email login with quiz-disabled guard; includes `AccessibilityPanel` and `ThemeToggle`
+- **`QuizPage`** — Quiz taking UI with progress indicator; includes `AccessibilityPanel` and `ThemeToggle`
+- **`FinishPage`** — Score display after submission
+- **`ErrorPage`** — Generic error boundary page
 
 ### Components
 
-Reusable components for the interface:
+Reusable components:
 
-- **`QuestionDisplay`** - Renders questions with markdown support and images
-- **`SubmissionDetailView`** - Detailed score view with override capability
-- **`ImagePicker`** - Reusable image selection component with thumbnails
-- **`LoadingSpinner`** - Loading state indicator
-- **`ErrorDisplay`** - Error message display
+- **`ThemeToggle`** — Three-button toggle (System / Light / Dark); writes to `localStorage` and applies CSS class to `<html>`
+- **`AccessibilityPanel`** — Floating a11y toolbar (font size, spacing, font family, contrast); dot indicator when non-default; close-on-outside-click
+- **`QuestionDisplay`** — Renders questions with Markdown support and images
+- **`SubmissionDetailView`** — Detailed score view with manual override capability
+- **`ImagePicker`** — Reusable image selection component with thumbnails
+- **`JsonSafeField`** — Controlled input that guards against accidental JSON corruption
+- **`LoadingSpinner`** — Loading state indicator
+- **`ErrorDisplay`** — Error message display
 
 ### API Layer (`api.ts`)
 
@@ -330,14 +301,19 @@ The app uses TanStack Query v5 with:
 ### Routing Structure
 
 ```txt
-/admin              → AdminLoginPage
-/admin/dashboard    → AdminDashboardPage
-/admin/scores       → AdminScoresPage
-/admin/questions    → AdminQuestionEditorPage
-/admin/students     → AdminStudentsPage
-/admin/bank         → AdminBankManagerPage
-/admin/scores-bank  → AdminScoresBankPage
+/                    → StartPage (student login)
+/quiz                → QuizPage (student quiz)
+/finish              → FinishPage (student results)
+
+/admin               → AdminLoginPage
+/admin/dashboard     → AdminDashboardPage
+/admin/scores        → AdminScoresPage
+/admin/questions     → AdminQuestionEditorPage
+/admin/students      → AdminStudentsPage
+/admin/questions-bank → AdminBankManagerPage
+/admin/scores-bank   → AdminScoresBankPage
 /admin/students-bank → AdminStudentsBankPage
+/admin/images        → AdminImageManagerPage
 ```
 
 Password state is passed via React Router `location.state` (note: lost on refresh).
@@ -413,7 +389,7 @@ pnpm type-check
 
 ### API Connection Issues
 
-The dev server proxies API requests to `http://localhost:5000`. Ensure the backend is running.
+The dev server proxies API requests to `http://localhost:5001`. Ensure the backend is running.
 
 ### State Lost on Refresh
 
