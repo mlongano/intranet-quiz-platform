@@ -376,7 +376,12 @@ def update_scores_atomic(update_callback, max_retries=3):
 def clear_scores_with_backup():
     """Clears all scores by saving to a timestamped backup file and emptying the main scores file."""
     ts = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
-    backup_file = f"{SCORE_FILE}.{ts}.bak"
+    try:
+        quiz_data = load_questions()
+        quiz_slug = slugify(quiz_data.get("title", "")) or "no-title"
+    except Exception:
+        quiz_slug = "unknown-quiz"
+    backup_file = f"{SCORE_FILE}.{ts}.{quiz_slug}.bak"
 
     try:
         # Read current scores
