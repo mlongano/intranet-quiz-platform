@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import shutil
 import tempfile
 import time
+import datetime
 from filelock import FileLock, Timeout
 
 # --- Load Environment Variables ---
@@ -373,8 +374,9 @@ def update_scores_atomic(update_callback, max_retries=3):
             raise InternalServerError(description=f"Error updating scores: {e}")
 
 def clear_scores_with_backup():
-    """Clears all scores by saving to a temporary backup file and emptying the main scores file."""
-    backup_file = f"{SCORE_FILE}.temp_backup"
+    """Clears all scores by saving to a timestamped backup file and emptying the main scores file."""
+    ts = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
+    backup_file = f"{SCORE_FILE}.{ts}.bak"
 
     try:
         # Read current scores
@@ -402,13 +404,19 @@ def clear_scores_with_backup():
         print(f"Error clearing scores: {e}")
         raise InternalServerError(description=f"Error clearing scores: {e}")
 
-def restore_scores_from_backup():
-    """Restores scores from the temporary backup file."""
-    backup_file = f"{SCORE_FILE}.temp_backup"
-    backup_path = Path(backup_file)
+def restore_scores_from_backup(backup_filename: str | None = None):
+    """Restores scores from a timestamped backup file.
+    If no filename is given, restores from the most recent .bak file."""
+    if backup_filename:
+        backup_path = Path(backup_filename)
+    else:
+        backups = sorted(Path(".").glob(f"{SCORE_FILE}.*.bak"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not backups:
+            raise NotFound(description="No backup file found. Please clear scores first to create a backup.")
+        backup_path = backups[0]
 
     if not backup_path.exists():
-        raise NotFound(description="No temporary backup file found. Please clear scores first to create a backup.")
+        raise NotFound(description=f"Backup file '{backup_path}' not found.")
 
     try:
         # Read backup
@@ -421,11 +429,11 @@ def restore_scores_from_backup():
         # Save to main scores file
         save_scores(backup_scores)
 
-        print(f"Restored {len(backup_scores)} scores from {backup_file}")
+        print(f"Restored {len(backup_scores)} scores from {backup_path}")
 
         return {
             "success": True,
-            "message": f"Restored {len(backup_scores)} scores from temporary backup.",
+            "message": f"Restored {len(backup_scores)} scores from {backup_path.name}.",
             "restored_count": len(backup_scores)
         }
     except FileNotFoundError:
