@@ -189,8 +189,15 @@ def api_start():
         print(f"Unexpected error loading questions for start: {e}")
         return jsonify(error="Internal server error while loading quiz data"), 500
     quiz_title = quiz_data.get("title")
-    random.shuffle(qbank)
-    quiz_id, quiz_plan_steps = build_quiz_plan(qbank)
+    # Split into non-open and open questions, shuffle each group independently.
+    # Non-open (multiple choice, single choice, etc.) come first,
+    # open-ended questions come last — both groups in random order.
+    non_open = [q for q in qbank if q.get("type") != "open"]
+    open_qs = [q for q in qbank if q.get("type") == "open"]
+    random.shuffle(non_open)
+    random.shuffle(open_qs)
+    ordered_qbank = non_open + open_qs
+    quiz_id, quiz_plan_steps = build_quiz_plan(ordered_qbank)
 
     output_plan_path = Path(QUIZ_FOLDER) / f"{safe_id(student)}.json"
     meta = {
