@@ -1,0 +1,41 @@
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: quizparty
+      POSTGRES_USER: quizparty
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quizparty -d quizparty"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # ── QuizParty application ───────────────────────────────────────────────────
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env          # loads all vars from .env (see .env.example)
+    environment:
+      # Override / inject Docker-specific values on top of .env
+      DATABASE_URL: postgresql://quizparty:${POSTGRES_PASSWORD}@db:5432/quizparty
+      IMAGES_BASE: /app/images
+    ports:
+      - "${APP_PORT:-5001}:5001"
+    volumes:
+      - app_images:/app/images        # quiz images (persistent across deployments)
+      - app_backups:/app/backups      # pg_dump + tar archives
+
+volumes:
+  postgres_data:   # PostgreSQL data directory
+  app_images:      # uploaded quiz images
+  app_backups:     # database and image backup archives

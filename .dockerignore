@@ -1,0 +1,44 @@
+# Version control
+.git/
+.gitignore
+
+# Python runtime artifacts
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+
+# Node / frontend build artifacts
+frontend/node_modules/
+frontend/dist/          # rebuilt in Docker from source
+
+# Secrets — NEVER copy into the image; passed via compose env_file
+.env
+.env.*
+!.env.example
+
+# Persistent data directories — mounted as Docker volumes
+images/
+backups/
+banks/
+quizzes/
+
+# Dev/test artifacts
+tests/
+*.log
+
+# Docs (not needed at runtime)
+docs/
+*.md
+!README.md
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp
