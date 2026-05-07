@@ -12,11 +12,14 @@ wheels/
 .env
 quizzes/
 frontend/pnpm-workspace.yaml
-question*
+/questions.jsonc
+/questions.jsonc.bak
 *.bak
-students*
+/students.jsonc
+/students.jsonc.bak
 .DS_Store
-scores*
+/scores.jsonc
+/scores.jsonc.bak
 
 # Banks directory - synced separately with Git
 banks/
