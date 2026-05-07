@@ -69,9 +69,11 @@ uv run server.py
 server.py              # Flask app entry point, routes registration
 utils.py               # Core utilities, file operations, grading logic
 email_service.py       # Email functionality (optional)
+llm_evaluator.py       # Optional LLM grading for open-ended questions
+git_sync.py            # Git-based cloud sync for banks/
 routes/
-  ├── quiz.py          # Student endpoints: /api/start, /api/submit, /api/resume
-  └── admin.py         # Admin endpoints: scores, questions, banks, email
+  ├── quiz.py          # Student endpoints: /api/start, /api/save-answer, /api/submit, /api/resume, /api/quiz-info
+  └── admin.py         # Admin endpoints: scores, questions, banks, email, images, git sync
 ```
 
 ### Critical Backend Patterns
@@ -157,8 +159,8 @@ Location: `utils.py` - `grade()` function
   score = (num_user_correct * points_per_correct) - (num_user_wrong * points_per_wrong)
   ```
 - **Open questions**:
-  - Keyword matching: partial credit based on `min_keywords`
-  - LLM evaluation: Optional (requires `USE_LLM_EVAL=1` and API keys)
+  - Keyword matching: partial credit based on `min_keywords` (default)
+  - LLM evaluation: Optional via `llm_evaluator.py` (requires `USE_LLM_EVAL=1`); supports Anthropic, DeepSeek, and local Ollama models via the `llm` library
 
 #### 6. **Image Management**
 
@@ -172,15 +174,53 @@ Images are quiz-specific and copied/restored when loading from question bank.
 
 ```
 frontend/src/
-  ├── main.tsx              # App entry point
-  ├── App.tsx               # Router setup
-  ├── api.ts                # Backend API client functions
-  ├── pages/                # Route components
-  │   ├── HomePage.tsx      # Student login
-  │   ├── QuizPage.tsx      # Quiz taking interface
-  │   ├── AdminDashboardPage.tsx  # Admin overview
-  │   └── ...               # Other admin pages
-  └── components/           # Reusable UI components
+  ├── main.tsx              # App entry point, QueryClient + RouterProvider
+  ├── main.css              # @theme tokens (Neon Noir palette), .glass-panel, global resets
+  ├── api.ts                # ALL API call functions + TypeScript interfaces
+  ├── lib/theme.ts          # Theme initialization
+  ├── layouts/
+  │   └── AdminLayout.tsx   # Shared chrome: collapsible sidebar + sticky header
+  ├── components/
+  │   ├── QuestionDisplay.tsx      # Renders questions with Markdown + images
+  │   ├── SubmissionDetailView.tsx
+  │   ├── ImagePicker.tsx          # Reusable image selector
+  │   ├── AccessibilityPanel.tsx   # Font size, dyslexia mode, contrast controls
+  │   ├── ThemeToggle.tsx
+  │   ├── ErrorDisplay.tsx
+  │   ├── JsonSafeField.tsx
+  │   └── LoadingSpinner.tsx
+  └── pages/
+      ├── StartPage.tsx              # Student login/email entry
+      ├── QuizPage.tsx               # Quiz taking (question by question)
+      ├── FinishPage.tsx             # Post-submission results
+      ├── ErrorPage.tsx
+      ├── AdminLoginPage.tsx
+      ├── AdminDashboardPage.tsx
+      ├── AdminQuestionEditorPage.tsx
+      ├── AdminScoresPage.tsx
+      ├── AdminStudentsPage.tsx
+      ├── AdminBankManagerPage.tsx
+      ├── AdminScoresBankPage.tsx
+      ├── AdminScoresBankReviewPage.tsx
+      ├── AdminStudentsBankPage.tsx
+      └── AdminImageManagerPage.tsx
+```
+
+**Routing table:**
+```
+/                           → StartPage
+/quiz/:quizId               → QuizPage
+/finish                     → FinishPage
+/admin                      → AdminLoginPage
+/admin/dashboard            → AdminDashboardPage
+/admin/questions            → AdminQuestionEditorPage
+/admin/scores               → AdminScoresPage
+/admin/students             → AdminStudentsPage
+/admin/questions-bank       → AdminBankManagerPage
+/admin/scores-bank          → AdminScoresBankPage
+/admin/scores-bank-review   → AdminScoresBankReviewPage
+/admin/students-bank        → AdminStudentsBankPage
+/admin/images               → AdminImageManagerPage
 ```
 
 ### Critical Frontend Patterns
@@ -211,12 +251,15 @@ const saveAnswerMutation = useMutation({
 #### 2. **Quiz Flow**
 
 ```
-1. Student enters email → POST /api/start → returns quiz_id
-2. GET /api/resume/{quiz_id} → returns current_question, current_index
-3. Student answers → POST /api/save-answer → server saves and advances
-4. Repeat step 2-3 until is_complete = true
-5. POST /api/submit → server grades using stored answers
+1. GET /api/quiz-info → returns quiz title (shown before login)
+2. Student enters email → POST /api/start → returns quiz_id (or 409 if already started)
+3. GET /api/resume/{quiz_id} → returns current_question, current_index, is_complete
+4. Student answers → POST /api/save-answer → server saves answer, advances index
+5. Repeat steps 3-4 until is_complete = true
+6. POST /api/submit → server grades all stored answers, appends to scores.jsonc
 ```
+
+Quiz is question-by-question (each answer saved immediately), not all-at-once. Answers are immutable once saved and only forward progression is allowed.
 
 #### 3. **Admin UI Patterns**
 
@@ -281,6 +324,13 @@ SMTP_PORT=587
 # Optional - Git cloud sync
 BANKS_GIT_REMOTE=...
 BANKS_GIT_TOKEN=...
+BANKS_GIT_USERNAME=...        # Git commit author name
+
+# Optional - LLM grading for open questions
+USE_LLM_EVAL=1                # Set to "1" to enable
+LLM_MODEL=gpt-4o-mini         # Any model supported by the llm library
+LLM_RETRIES=2
+LLM_BACKOFF_FACTOR=0.5
 ```
 
 **Application fails to start if `ADMIN_PW` is not set.**
@@ -408,18 +458,24 @@ When modifying:
 **Backend (Python):**
 - Flask - Web framework
 - Werkzeug - WSGI utilities (provides exceptions)
-- Waitress - Production WSGI server
+- Waitress - Production WSGI server (6 threads)
 - commentjson - JSONC parsing
 - filelock - File locking for atomic operations
 - python-dotenv - Environment variable loading
+- python-magic - MIME type validation for image uploads
+- llm + llm-anthropic + llm-deepseek + llm-ollama - LLM grading (optional)
 
 **Frontend (Node.js):**
 - React 19 - UI framework
-- React Router - Client-side routing
+- React Router v7 - Client-side routing
 - TanStack Query - Server state management
-- Tailwind CSS - Styling
+- Tailwind CSS v4 - Styling (via @tailwindcss/vite)
 - Vite - Build tool
 - TypeScript - Type safety
+- framer-motion - Animations
+- lucide-react - Icon set
+- react-markdown + remark-gfm + rehype-sanitize + rehype-prism-plus - Markdown in questions
+- jsonc-parser - Client-side JSONC validation in question editor
 
 ## Production Deployment
 
@@ -434,8 +490,23 @@ Key considerations:
 
 ## Recent Changes
 
+**2026-05 (v2.5.0): Quiz flow & backup improvements**
+- Quiz is now question-by-question: `/api/save-answer` saves one answer at a time and advances the index
+- Backup filenames now include quiz slug and timestamp (e.g. `scores.jsonc.backup_2026-05-06_java-basics`)
+- Open questions are shuffled to the end of the quiz plan
+
+**2026-04 (v2.4.0): Neon Noir design system + accessibility**
+- Full design system defined in `frontend/src/main.css` (`@theme` tokens, `.glass-panel`)
+- `AccessibilityPanel` component: font size, dyslexia font, high-contrast mode
+- `AdminLayout` moved to `frontend/src/layouts/`
+- `ThemeToggle`, `ErrorDisplay`, `JsonSafeField` components added
+
 **2025-12-12: Race Condition Fix**
 - Added `append_score_atomic()` and `update_scores_atomic()` in utils.py
 - Updated `/api/submit`, `/admin/review`, `/admin/scores/recalculate` to use atomic operations
 - Prevents data loss when multiple operations happen concurrently
-- See conversation history for detailed explanation
+
+## Further Reading
+
+- `docs/PROJECT.md` — comprehensive system design reference (tech stack, all endpoints, data models, design decisions)
+- `docs/DESIGN.md` — Neon Noir design system specification (colors, typography, component patterns)

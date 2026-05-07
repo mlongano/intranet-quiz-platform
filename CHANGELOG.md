@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.6.0] - 2026-05-07
+
+### Added
+
+- **Open questions shuffled to end of plan** — when building a student's quiz plan, non-open questions (single/multiple choice) are placed first in randomised order, followed by open-ended questions in their own randomised group; this keeps the more objective questions together and avoids students running out of time on structured questions
+
+### Changed
+
+- **Score backup filenames include quiz slug** — timestamped backup files now embed the slugified quiz title for easier identification, e.g. `scores.jsonc.backup_2026-05-06_ospf-nat-acl` instead of a fixed name
+- **Score backup filename format** — backup filenames use a `YYYY-MM-DD` timestamp prefix instead of a fixed suffix, making backups sortable chronologically on the filesystem
+
+---
+
 ## [2.5.0] - 2026-04-05
 
 ### Added

@@ -1,6 +1,6 @@
 # QuizParty — System Design & Technical Reference
 
-> Version 2.3.0 · MIT License
+> Version 2.6.0 · MIT License
 
 ---
 
