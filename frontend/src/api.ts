@@ -1,289 +1,131 @@
-// frontend/src/api.ts (New file)
+import { getTeacherToken, getStudentToken, clearTeacherSession } from './lib/session';
 
-// Define expected shapes of API responses/requests (improves type safety)
-interface StartQuizPayload {
-  name: string;
-}
+const API_BASE = '/api';
 
-interface StartQuizResponse {
-  quiz_id: string;
-}
+// ── shared types ─────────────────────────────────────────────────────────────
 
-interface SaveAnswerPayload {
-  quiz_id: string;
-  answer: Answer;
-}
-
-interface SaveAnswerResponse {
-  success: boolean;
-  current_index: number;
-  total_questions: number;
-  is_complete: boolean;
-}
-
-interface SubmitPayload {
-  quiz_id: string;
-}
-
-interface SubmitResponse {
-  raw_points: number;
-  max_points: number;
-  percent: number;
-}
-
-interface ResumeResponse {
-  quiz_id: string;
-  student: string;
-  current_question?: Question;
-  current_index: number;
-  total_questions: number;
-  is_complete: boolean;
-  message?: string;
-}
-
-export interface Option {
-  // Assuming options are just strings based on main.js
-  // Adjust if options have IDs or other properties
-  text: string;
-}
-
-// --- NEW: Type for complex options ---
 export interface OptionObject {
   text: string;
-  image?: string; // Optional image path (URL)
+  image?: string;
 }
 
-// --- UPDATED: Question Type ---
 export interface Question {
   id: string;
-  type: "single" | "multiple" | "open";
+  type: 'single' | 'multiple' | 'open';
   weight: number;
   text: string;
-  question_image?: string; // Optional question image path (URL)
-  options: Array<string | OptionObject>; // Options can be strings or objects
+  question_image?: string;
+  options: Array<string | OptionObject>;
 }
 
-// Define Answer type based on how you store them (number, number[], string)
 export type Answer = number | number[] | string | null;
 
-// NEW: Quiz data structure with optional title
 export interface QuizData {
   title?: string;
   questions: Question[];
-  warning?: string; // Optional warning when file has invalid format but is loaded in lenient mode
+  warning?: string;
 }
 
-// Define Score type based on scores.jsonc structure + detailed answers
 export interface DetailedAnswer {
   question_id: string | number;
   question_text: string;
-  question_image?: string; // <-- Add question image here too
-  student_answer: any; // Could be string, number[], string[]
-  option_student_image?: string | string[] | null; // Optional student image path (URL)
-  option_correct_image?: string | string[] | null; // Optional student image path (URL)
-  correct_answer: any; // Could be string, string[], object
+  question_image?: string;
+  student_answer: any;
+  option_student_image?: string | string[] | null;
+  option_correct_image?: string | string[] | null;
+  correct_answer: any;
   weight: number;
   points_awarded: number;
   raw_points: number;
   raw_student_answer: any;
   raw_correct_answer: any;
-  // Optional LLM evaluation fields (teacher-only)
   llm_feedback?: string | null;
   llm_verdict?: string | null;
 }
 
 export interface ScoreEntry {
-  student: string;
-  quiz_id: string;
-  quiz_title?: string; // Add optional quiz_title field
-  answers: DetailedAnswer[]; // Use the detailed structure
+  id?: number;
+  student_id?: number;
+  student?: string;           // email (legacy compat)
+  student_email?: string;
+  student_display_name?: string;
+  session_id?: number;
+  quiz_id?: string;
+  quiz_title?: string;
+  answers: DetailedAnswer[];
   raw_points: number;
   max_points: number;
   percent: number;
-  timestamp: string;
+  timestamp?: string;
+  submitted_at?: string;
 }
 
-export interface QuestionBankFilesResponse {
-  files: string[]; // List of available quiz filenames in the bank
+export interface SnapshotMeta {
+  id: number;
+  title: string;
+  slug: string;
+  updated_at: string;
+  question_count: number;
 }
 
-export interface BankOperationResponse {
-  success: boolean;
-  message: string; // Message from the backend (e.g., filename on save)
-  warning?: string; // Optional warning message (e.g., for invalid format)
+export interface SnapshotDetail extends SnapshotMeta {
+  content: QuizData;
+  images_manifest: ImageMeta[];
 }
 
-// --- NEW: Response shapes for scores bank management ---
-export interface ScoresBankFilesResponse {
-  files: string[]; // List of available scores filenames in the bank
+export interface SessionMeta {
+  id: number;
+  title: string;
+  status: 'draft' | 'active' | 'closed';
+  join_code: string | null;
+  snapshot_id: number;
+  opens_at: string | null;
+  closes_at: string | null;
+  created_at: string;
+  classes: { id: number; name: string }[];
 }
 
-// --- API Functions ---
-
-const API_BASE = "/api"; // Or configure as needed
-
-/**
- * Get basic quiz information (title and question count) - Public endpoint
- */
-export async function getQuizInfo(): Promise<{ title: string; question_count: number }> {
-  const response = await fetch(`${API_BASE}/quiz-info`, {
-    method: "GET",
-  });
-  return handleResponse<{ title: string; question_count: number }>(response);
+export interface ClassMeta {
+  id: number;
+  name: string;
+  academic_year: string;
+  student_count: number;
 }
 
-async function handleResponse<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    let errorMsg = `Request failed: ${response.status} ${response.statusText}`;
-    try {
-      const serverError = await response.json();
-      errorMsg =
-        serverError.error ||
-        serverError.description ||
-        JSON.stringify(serverError);
-    } catch {
-      try {
-        const textError = await response.text();
-        if (textError) errorMsg = textError;
-      } catch {
-        /* ignore */
-      }
-    }
-    const error = new Error(errorMsg) as any;
-    if (response.status === 409) {
-      try {
-        const data = JSON.parse(await response.text()); // Re-parse if needed
-        error.quizId = data.quiz_id;
-        error.isConflict = true;
-      } catch {
-        /* ignore if parsing fails again */
-      }
-    }
-    throw error;
-  }
-  try {
-    return (await response.json()) as T;
-  } catch (e) {
-    throw new Error(
-      `Failed to parse server response: ${e instanceof Error ? e.message : String(e)}`,
-    );
-  }
+export interface StudentMeta {
+  id: number;
+  email: string;
+  display_name: string;
+  status: string;
 }
 
-export async function startQuiz(
-  payload: StartQuizPayload,
-): Promise<StartQuizResponse> {
-  const response = await fetch(`${API_BASE}/start`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  // Special handling for 409 Conflict needed here, as it's not strictly an error
-  // in the sense of failing the operation, but indicates existing state.
-  if (response.status === 409) {
-    const data = await response.json();
-    // Re-throw with specific info for the component to handle
-    const err = new Error(
-      data.error || "Quiz already started/completed.",
-    ) as any;
-    err.quizId = data.quiz_id; // Attach quizId if available for resume
-    err.isConflict = true;
-    throw err;
-  }
-  return handleResponse<StartQuizResponse>(response);
+export interface ArchiveMeta {
+  id: number;
+  title: string;
+  archived_at: string;
+  source_session_id: number | null;
 }
 
-export async function resumeQuiz(quizId: string): Promise<ResumeResponse> {
-  const response = await fetch(`${API_BASE}/resume/${quizId}`);
-  return handleResponse<ResumeResponse>(response);
+export interface ArchiveDetail extends ArchiveMeta {
+  content: ScoreEntry[];
+  notes?: string;
 }
 
-export async function saveAnswer(
-  payload: SaveAnswerPayload,
-): Promise<SaveAnswerResponse> {
-  const response = await fetch(`${API_BASE}/save-answer`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return handleResponse<SaveAnswerResponse>(response);
-}
-
-export async function submitQuiz(
-  payload: SubmitPayload,
-): Promise<SubmitResponse> {
-  const response = await fetch(`${API_BASE}/submit`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return handleResponse<SubmitResponse>(response);
-}
-
-export async function fetchScores(password: string): Promise<ScoreEntry[]> {
-  const response = await fetch(`${API_BASE}/scores`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pw: password }), // Send password as expected by backend
-  });
-  // Assuming handleResponse throws on non-ok status
-  return handleResponse<ScoreEntry[]>(response);
-}
-
-// Function to fetch details for review - REQUIRES NEW BACKEND ENDPOINT
-// Example: GET /api/review/student_email@example.com
-// Requires password, maybe via header
-export async function fetchSubmissionDetails(
-  studentId: string,
-  password: string,
-): Promise<ScoreEntry> {
-  // Assuming it returns one detailed entry
-  // Adjust URL and method based on your backend implementation
-  const safeStudentId = encodeURIComponent(studentId); // URL encode student ID
-  const response = await fetch(`${API_BASE}/review/${safeStudentId}`, {
-    method: "GET", // Or POST if preferred
-    headers: {
-      "Content-Type": "application/json",
-      "X-Admin-Pass": password, // Example: Send password in a header
-    },
-  });
-  return handleResponse<ScoreEntry>(response);
-}
-
-// Function to save overrides - REQUIRES NEW BACKEND ENDPOINT
-// Example: POST /api/review
-export interface OverridePayload {
-  student_id: string;
-  quiz_id: string; // To identify the specific submission
-  overrides: { question_id: string | number; points: number }[]; // List of questions to override points for
-  password: string;
-}
-export async function saveScoreOverrides(
-  payload: OverridePayload,
-): Promise<{ success: boolean }> {
-  // Example response
-  const response = await fetch(`${API_BASE}/review`, {
-    // Or appropriate endpoint
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    // Send necessary data, including password for verification
-    body: JSON.stringify(payload),
-  });
-  return handleResponse<{ success: boolean }>(response);
-}
-
-export interface BankOverridePayload {
+export interface ImageMeta {
   filename: string;
-  student_id: string;
-  quiz_id: string;
-  overrides: { question_id: string | number; points: number }[];
-  password: string;
+  size: number;
+  mime: string;
+  uploaded_at: string;
 }
 
-export interface BankOverrideResponse {
-  success: boolean;
-  message: string;
-  updated_submission: ScoreEntry;
+export interface TeacherMeta {
+  id: number;
+  email: string;
+  display_name: string;
+  role: 'teacher' | 'super_admin';
+  status: 'active' | 'disabled';
+  last_login_at: string | null;
+  last_synced_at: string | null;
 }
 
 export interface LlmInfoResponse {
@@ -291,850 +133,521 @@ export interface LlmInfoResponse {
   enabled: boolean;
 }
 
-export interface RegradeOpenBankResponse {
-  success: boolean;
-  message: string;
-  updated_submissions: number;
-  updated_answers: number;
-  errors?: string[];
+// ── core fetch helper ─────────────────────────────────────────────────────────
+
+class ApiError extends Error {
+  status: number;
+  code?: string;
+  quizId?: string;
+  isConflict: boolean;
+
+  constructor(message: string, status: number, code?: string, quizId?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.quizId = quizId;
+    this.isConflict = status === 409;
+  }
 }
 
-export async function saveBankScoreOverrides(
-  payload: BankOverridePayload,
-): Promise<BankOverrideResponse> {
-  const response = await fetch(`${API_BASE}/admin/scores-bank/override`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return handleResponse<BankOverrideResponse>(response);
-}
+export { ApiError };
 
-export async function regradeOpenScoresBank(
-  filename: string,
-  password: string,
-  useLLM?: boolean,
-): Promise<RegradeOpenBankResponse> {
-  const response = await fetch(`${API_BASE}/admin/scores-bank/regrade-open`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ filename, pw: password, use_llm: useLLM }),
-  });
-  return handleResponse<RegradeOpenBankResponse>(response);
-}
+type TokenSource = 'teacher' | 'student' | 'none';
 
-export async function fetchLlmInfo(password: string): Promise<LlmInfoResponse> {
-  const response = await fetch(`${API_BASE}/admin/llm-info`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pw: password }),
-  });
-  return handleResponse<LlmInfoResponse>(response);
-}
-
-// Define the shape of the response for updating questions
-export interface UpdateQuestionsResponse {
-  success: boolean;
-  message: string;
-}
-
-// --- New Admin Functions ---
-
-/**
- * Fetches the full quiz data (title and questions) from the admin endpoint.
- * Requires admin password.
- */
-export async function fetchAdminQuestions(
-  password: string,
-): Promise<QuizData> {
-  // Send password via header (more secure than query param)
-  const response = await fetch(`${API_BASE}/admin/questions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ pw: password }), // Send password as expected by backend
-    // Or use query param if backend expects that for GET:
-    // const response = await fetch(`${API_BASE}/admin/questions?pw=${encodeURIComponent(password)}`);
-  });
-  // handleResponse will throw for non-ok status (like 401 Unauthorized)
-  return handleResponse<QuizData>(response);
-}
-
-/**
- * Updates the questions file on the server.
- * Requires admin password and the quiz data (title and questions).
- */
-export async function updateAdminQuestions(
-  quizData: QuizData,
-  password: string,
-): Promise<UpdateQuestionsResponse> {
-  console.log(`Updating questions... with password ${password}`);
-  const response = await fetch(`${API_BASE}/admin/questions`, {
-    method: "PUT", // Or 'PUT' if you implemented that on the backend
-    headers: {
-      "Content-Type": "application/json",
-      "X-Admin-Pass": password, // Send password in a custom header
-    },
-    body: JSON.stringify(quizData), // Send the full quiz data object
-  });
-  // handleResponse will throw for non-ok status (like 400 Bad Request, 401 Unauthorized, 500 Internal Server Error)
-  return handleResponse<UpdateQuestionsResponse>(response);
-}
-
-/**
- * Fetches the list of available quiz files in the question_bank folder.
- * Requires admin password.
- */
-export async function fetchQuestionBankFiles(
-  password: string,
-): Promise<QuestionBankFilesResponse> {
-  const response = await fetch(`${API_BASE}/admin/bank/files`, {
-    method: "POST", // Based on backend implementation
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ pw: password }), // Send password
-  });
-  return handleResponse<QuestionBankFilesResponse>(response);
-}
-
-/**
- * Loads a specified quiz file from the question_bank into the active QUEST_FILE.
- * Requires admin password and the filename to load.
- */
-export async function loadQuizFromBank(
-  filename: string,
-  password: string,
-): Promise<BankOperationResponse> {
-  const response = await fetch(`${API_BASE}/admin/bank/load`, {
-    method: "POST", // Based on backend implementation
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ filename: filename, pw: password }), // Send filename and password
-  });
-  return handleResponse<BankOperationResponse>(response);
-}
-
-/**
- * Saves the current active QUEST_FILE to the question_bank with a date prefix and specified suffix.
- * Requires admin password and the filename suffix.
- */
-export async function saveQuizToBank(
-  filename_suffix: string,
-  password: string,
-): Promise<BankOperationResponse> {
-  const response = await fetch(`${API_BASE}/admin/bank/save`, {
-    method: "POST", // Based on backend implementation
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ filename_suffix: filename_suffix, pw: password }), // Send suffix and password
-  });
-  return handleResponse<BankOperationResponse>(response);
-}
-
-/**
- * Deletes a quiz file from the question_bank.
- * Requires admin password and the filename to delete.
- */
-export async function deleteQuizFromBank(
-  filename: string,
-  password: string,
-): Promise<BankOperationResponse> {
-  const response = await fetch(`${API_BASE}/admin/bank/delete`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ filename: filename, pw: password }),
-  });
-  return handleResponse<BankOperationResponse>(response);
-}
-
-/**
- * Fetches the content (questions) of a specific file in the question_bank for preview.
- * Requires admin password and the filename to preview.
- */
-export async function fetchPreviewBankFile(
-  filename: string,
-  password: string,
-): Promise<Question[]> {
-  const response = await fetch(`${API_BASE}/admin/bank/preview`, {
-    method: "POST", // Based on backend
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ filename: filename, pw: password }), // Send filename and password
-  });
-  const quizData = await handleResponse<QuizData>(response);
-  // Backend returns QuizData with {title, questions}, but we only need the questions array
-  return quizData.questions;
-}
-
-/**
- * Fetches the full quiz data from a bank file for editing (lenient mode).
- */
-export async function fetchBankQuizData(
-  filename: string,
-  password: string,
-): Promise<QuizData> {
-  const response = await fetch(`${API_BASE}/admin/bank/preview`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ filename, pw: password, lenient: true }),
-  });
-  return handleResponse<QuizData>(response);
-}
-
-/**
- * Updates a bank quiz file in-place.
- */
-export async function updateBankQuiz(
-  filename: string,
-  quizData: QuizData,
-  password: string,
-): Promise<UpdateQuestionsResponse> {
-  const response = await fetch(`${API_BASE}/admin/bank/update`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Admin-Pass": password,
-    },
-    body: JSON.stringify({ filename, ...quizData }),
-  });
-  return handleResponse<UpdateQuestionsResponse>(response);
-}
-
-// --- NEW Admin Functions for Scores Bank Management ---
-
-/**
- * Fetches the list of available scores files in the scores_bank folder.
- * Requires admin password.
- */
-export async function fetchScoresBankFiles(
-  password: string,
-): Promise<ScoresBankFilesResponse> {
-  const response = await fetch(`${API_BASE}/admin/scores-bank/files`, {
-    method: "POST", // Based on backend
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ pw: password }), // Send password
-  });
-  return handleResponse<ScoresBankFilesResponse>(response);
-}
-
-/**
- * Loads a specified scores file from the scores_bank into the active SCORE_FILE.
- * Requires admin password and the filename to load.
- */
-export async function loadScoresFromBank(
-  filename: string,
-  password: string,
-): Promise<BankOperationResponse> {
-  const response = await fetch(`${API_BASE}/admin/scores-bank/load`, {
-    method: "POST", // Based on backend
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ filename: filename, pw: password }), // Send filename and password
-  });
-  return handleResponse<BankOperationResponse>(response);
-}
-
-/**
- * Saves the current active SCORE_FILE to the scores_bank with a date prefix and specified suffix.
- * Requires admin password and the filename suffix.
- */
-export async function saveScoresToBank(
-  filename_suffix: string,
-  password: string,
-): Promise<BankOperationResponse> {
-  const response = await fetch(`${API_BASE}/admin/scores-bank/save`, {
-    method: "POST", // Based on backend
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ filename_suffix: filename_suffix, pw: password }), // Send suffix and password
-  });
-  return handleResponse<BankOperationResponse>(response);
-}
-
-/**
- * Deletes a specified scores file from the scores_bank.
- */
-export async function deleteScoresFromBank(
-  filename: string,
-  password: string,
-): Promise<BankOperationResponse> {
-  const response = await fetch(`${API_BASE}/admin/scores-bank/delete`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ filename: filename, pw: password }),
-  });
-  return handleResponse<BankOperationResponse>(response);
-}
-
-/**
- * Fetches the content (scores) of a specific file in the scores_bank for preview.
- * Requires admin password and the filename to preview.
- */
-export async function fetchPreviewScoresBankFile(
-  filename: string,
-  password: string,
-): Promise<ScoreEntry[]> {
-  // Expecting an array of ScoreEntry objects
-  const response = await fetch(`${API_BASE}/admin/scores-bank/preview`, {
-    method: "POST", // Based on backend
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ filename: filename, pw: password }), // Send filename and password
-  });
-  return handleResponse<ScoreEntry[]>(response);
-}
-
-/**
- * Recalculates all scores against the current question bank.
- * This is useful when question correct answers have been updated.
- */
-export async function recalculateAllScores(
-  password: string,
-): Promise<{
-  success: boolean;
-  message: string;
-  updated_count: number;
-  total_count: number;
-  errors: string[];
-}> {
-  const response = await fetch(`${API_BASE}/admin/scores/recalculate`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ pw: password }),
-  });
-  return handleResponse<{
-    success: boolean;
-    message: string;
-    updated_count: number;
-    total_count: number;
-    errors: string[];
-  }>(response);
-}
-
-/**
- * Clear all scores with a temporary backup.
- */
-export async function clearScores(
-  password: string,
-): Promise<{
-  success: boolean;
-  message: string;
-  backup_file?: string;
-  cleared_count?: number;
-}> {
-  const response = await fetch(`${API_BASE}/admin/scores/clear`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ pw: password }),
-  });
-  return handleResponse<{
-    success: boolean;
-    message: string;
-    backup_file?: string;
-    cleared_count?: number;
-  }>(response);
-}
-
-/**
- * Restore scores from temporary backup.
- */
-export async function restoreScores(
-  password: string,
-): Promise<{
-  success: boolean;
-  message: string;
-  restored_count?: number;
-}> {
-  const response = await fetch(`${API_BASE}/admin/scores/restore`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ pw: password }),
-  });
-  return handleResponse<{
-    success: boolean;
-    message: string;
-    restored_count?: number;
-  }>(response);
-}
-
-/**
- * Send quiz result email to a single student.
- */
-export async function sendResultEmail(
-  student_email: string,
-  quiz_id: string,
-  password: string,
-  subject?: string,
-  includeDetails?: boolean,
-): Promise<{
-  success: boolean;
-  message: string;
-}> {
-  const response = await fetch(`${API_BASE}/admin/email/send-result`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ student_email, quiz_id, pw: password, subject, include_details: includeDetails }),
-  });
-  return handleResponse<{
-    success: boolean;
-    message: string;
-  }>(response);
-}
-
-/**
- * Send quiz result emails to all students.
- */
-export async function sendAllResultEmails(
-  password: string,
-  subject?: string,
-  includeDetails?: boolean,
-): Promise<{
-  success: boolean;
-  message: string;
-  success_count: number;
-  failed_count: number;
-  errors: string[];
-}> {
-  const response = await fetch(`${API_BASE}/admin/email/send-all-results`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ pw: password, subject, include_details: includeDetails }),
-  });
-  return handleResponse<{
-    success: boolean;
-    message: string;
-    success_count: number;
-    failed_count: number;
-    errors: string[];
-  }>(response);
-}
-
-/**
- * Student entry type - can be:
- * - A simple email string
- * - An object with email and optional group
- * - An object with group and emails array (for defining multiple students in same group)
- */
-export type StudentEntry =
-  | string
-  | { email: string; group?: string }
-  | { group: string; emails: string[] };
-
-/**
- * Fetch the current students list.
- */
-export async function fetchStudents(password: string): Promise<StudentEntry[]> {
-  const response = await fetch(`${API_BASE}/admin/students?pw=${encodeURIComponent(password)}`, {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
-  return handleResponse<StudentEntry[]>(response);
-}
-
-/**
- * Update the students list.
- */
-export async function updateStudents(
-  students: StudentEntry[],
-  password: string,
-): Promise<{ success: boolean; message: string }> {
-  const response = await fetch(`${API_BASE}/admin/students`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ students, pw: password }),
-  });
-  return handleResponse<{ success: boolean; message: string }>(response);
-}
-
-/**
- * List available students bank files.
- */
-export async function listStudentsBankFiles(password: string): Promise<{ files: string[] }> {
-  const response = await fetch(`${API_BASE}/admin/students-bank/files`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ pw: password }),
-  });
-  return handleResponse<{ files: string[] }>(response);
-}
-
-/**
- * Load a students file from the students bank.
- */
-export async function loadStudentsFromBank(
-  filename: string,
-  password: string,
-): Promise<{ success: boolean; message: string }> {
-  const response = await fetch(`${API_BASE}/admin/students-bank/load`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ filename, pw: password }),
-  });
-  return handleResponse<{ success: boolean; message: string }>(response);
-}
-
-/**
- * Save current students to the students bank.
- */
-export async function saveStudentsToBank(
-  filename: string,
-  password: string,
-): Promise<{ success: boolean; message: string }> {
-  const response = await fetch(`${API_BASE}/admin/students-bank/save`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ filename, pw: password }),
-  });
-  return handleResponse<{ success: boolean; message: string }>(response);
-}
-
-
-
-/**
- * Renames a quiz file in the question_bank.
- */
-export async function renameQuizInBank(
-  filename: string,
-  newFilename: string,
-  password: string,
-): Promise<BankOperationResponse> {
-  const response = await fetch(`${API_BASE}/admin/bank/rename`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ filename, new_filename: newFilename, pw: password }),
-  });
-  return handleResponse<BankOperationResponse>(response);
-}
-
-/**
- * Renames a scores file in the scores_bank.
- */
-export async function renameScoresInBank(
-  filename: string,
-  newFilename: string,
-  password: string,
-): Promise<BankOperationResponse> {
-  const response = await fetch(`${API_BASE}/admin/scores-bank/rename`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ filename, new_filename: newFilename, pw: password }),
-  });
-  return handleResponse<BankOperationResponse>(response);
-}
-
-/**
- * Renames a students file in the students_bank.
- */
-export async function renameStudentsInBank(
-  filename: string,
-  newFilename: string,
-  password: string,
-): Promise<BankOperationResponse> {
-  const response = await fetch(`${API_BASE}/admin/students-bank/rename`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ filename, new_filename: newFilename, pw: password }),
-  });
-  return handleResponse<BankOperationResponse>(response);
-}
-
-/**
- * Generates the download URL for a quiz file.
- */
-export function getQuizDownloadUrl(filename: string, password: string): string {
-  return `${API_BASE}/admin/bank/download/${encodeURIComponent(filename)}?password=${encodeURIComponent(password)}`;
-}
-
-/**
- * Generates the download URL for a scores file.
- */
-export function getScoresDownloadUrl(filename: string, password: string): string {
-  return `${API_BASE}/admin/scores-bank/download/${encodeURIComponent(filename)}?password=${encodeURIComponent(password)}`;
-}
-
-/**
- * Generates the download URL for a students file.
- */
-export function getStudentsDownloadUrl(filename: string, password: string): string {
-  return `${API_BASE}/admin/students-bank/download/${encodeURIComponent(filename)}?password=${encodeURIComponent(password)}`;
-}
-
-/**
- * Deletes a specified students file from the students_bank.
- */
-export async function deleteStudentsFromBank(
-  filename: string,
-  password: string,
-): Promise<BankOperationResponse> {
-  const response = await fetch(`${API_BASE}/admin/students-bank/delete`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ filename: filename, pw: password }),
-  });
-  return handleResponse<BankOperationResponse>(response);
-}
-
-/**
- * Preview a students bank file.
- */
-export async function previewStudentsBankFile(
-  filename: string,
-  password: string,
-): Promise<{ students: StudentEntry[]; filename: string }> {
-  const response = await fetch(`${API_BASE}/admin/students-bank/preview`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ filename, pw: password }),
-  });
-  return handleResponse<{ students: StudentEntry[]; filename: string }>(response);
-}
-
-/**
- * Git Sync Types and Functions
- */
-export interface GitSyncStatus {
-  configured: boolean;
-  initialized: boolean;
-  remote_url: string | null;
-  has_changes: boolean;
-  last_commit: string | null;
-  behind_remote: boolean;
-}
-
-export interface GitSyncResult {
-  success: boolean;
-  message: string;
-  details?: {
-    pulled: boolean;
-    committed: boolean;
-    pushed: boolean;
-    changes: string[];
+async function apiFetch<T>(
+  path: string,
+  init: RequestInit = {},
+  tokenSource: TokenSource = 'teacher',
+): Promise<T> {
+  const headers: Record<string, string> = {
+    ...(init.headers as Record<string, string> ?? {}),
   };
+
+  if (!(init.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const token =
+    tokenSource === 'teacher' ? getTeacherToken() :
+    tokenSource === 'student' ? getStudentToken() :
+    null;
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
+
+  if (!response.ok) {
+    let errorMsg = `${response.status} ${response.statusText}`;
+    let code: string | undefined;
+    let quizId: string | undefined;
+
+    try {
+      const body = await response.json();
+      errorMsg = body.error || body.description || errorMsg;
+      code = body.code;
+      quizId = body.quiz_id;
+    } catch {
+      try { errorMsg = await response.text() || errorMsg; } catch { /* ignore */ }
+    }
+
+    if (response.status === 401 && code === 'TOKEN_EXPIRED') {
+      if (tokenSource === 'teacher') clearTeacherSession();
+    }
+
+    throw new ApiError(errorMsg, response.status, code, quizId);
+  }
+
+  try {
+    return (await response.json()) as T;
+  } catch {
+    return undefined as unknown as T;
+  }
 }
 
-/**
- * Get Git sync status.
- */
-export async function getGitSyncStatus(password: string): Promise<GitSyncStatus> {
-  const response = await fetch(`${API_BASE}/admin/git-sync/status`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ password }),
-  });
-  return handleResponse<GitSyncStatus>(response);
+// ── auth ──────────────────────────────────────────────────────────────────────
+
+export interface TeacherLoginResponse {
+  token: string;
+  teacher_id: number;
+  role: 'teacher' | 'super_admin';
+  email: string;
+  display_name: string;
+  must_change_password?: boolean;
+  change_token?: string;
 }
 
-/**
- * Initialize Git repository in banks directory.
- */
-export async function initGitSync(password: string): Promise<GitSyncResult> {
-  const response = await fetch(`${API_BASE}/admin/git-sync/init`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ password }),
-  });
-  return handleResponse<GitSyncResult>(response);
+export async function teacherLogin(email: string, password: string): Promise<TeacherLoginResponse> {
+  return apiFetch<TeacherLoginResponse>('/auth/teacher-login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  }, 'none');
 }
 
-/**
- * Sync banks with remote Git repository.
- */
-export async function syncBanks(password: string, pullFirst: boolean = true): Promise<GitSyncResult> {
-  const response = await fetch(`${API_BASE}/admin/git-sync/sync`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ password, pull_first: pullFirst }),
-  });
-  return handleResponse<GitSyncResult>(response);
+export async function teacherChangePassword(
+  old_password: string,
+  new_password: string,
+  changeToken?: string,
+): Promise<TeacherLoginResponse> {
+  const headers: Record<string, string> = {};
+  if (changeToken) headers['Authorization'] = `Bearer ${changeToken}`;
+  return apiFetch<TeacherLoginResponse>('/auth/teacher-change-password', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ old_password, new_password }),
+  }, changeToken ? 'none' : 'teacher');
 }
 
-
-/**
- * Quiz Status Types and Functions
- */
-export interface QuizStatus {
-  enabled: boolean;
+export interface StudentJoinResponse {
+  token: string;
+  student_id: number;
+  session_id: number;
+  session_title: string;
+  quiz_id?: string;
 }
 
-/**
- * Get the current quiz enabled/disabled status (public endpoint).
- */
-export async function getQuizStatus(): Promise<QuizStatus> {
-  const response = await fetch(`${API_BASE}/admin/quiz-status`, {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
-  return handleResponse<QuizStatus>(response);
+export async function studentJoin(email: string, join_code: string): Promise<StudentJoinResponse> {
+  return apiFetch<StudentJoinResponse>('/auth/student-join', {
+    method: 'POST',
+    body: JSON.stringify({ email, join_code }),
+  }, 'none');
 }
 
-/**
- * Set the quiz enabled/disabled status (requires admin password).
- */
-export async function setQuizStatus(enabled: boolean, password: string): Promise<{
+export async function getMe(): Promise<{ role: string; display_name: string; teacher_id?: number }> {
+  return apiFetch('/auth/me', {}, 'teacher');
+}
+
+// ── student / quiz ────────────────────────────────────────────────────────────
+
+export interface SessionInfoResponse {
+  title: string;
+  question_count: number;
+  opens_at: string | null;
+  closes_at: string | null;
+}
+
+export async function getSessionInfo(): Promise<SessionInfoResponse> {
+  return apiFetch<SessionInfoResponse>('/quiz/session-info', {}, 'student');
+}
+
+export async function startQuiz(): Promise<{ quiz_id: string }> {
+  return apiFetch<{ quiz_id: string }>('/quiz/start', { method: 'POST' }, 'student');
+}
+
+export interface ResumeResponse {
+  quiz_id: string;
+  current_question?: Question;
+  current_index: number;
+  total_questions: number;
+  is_complete: boolean;
+}
+
+export async function resumeQuiz(quizId: string): Promise<ResumeResponse> {
+  return apiFetch<ResumeResponse>(`/quiz/resume/${quizId}`, {}, 'student');
+}
+
+export interface SaveAnswerResponse {
   success: boolean;
-  message: string;
-  status: QuizStatus;
-}> {
-  const response = await fetch(`${API_BASE}/admin/quiz-status`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ enabled, pw: password }),
+  current_index: number;
+  total_questions: number;
+  is_complete: boolean;
+}
+
+export async function saveAnswer(quiz_id: string, answer: Answer): Promise<SaveAnswerResponse> {
+  return apiFetch<SaveAnswerResponse>('/quiz/save-answer', {
+    method: 'POST',
+    body: JSON.stringify({ quiz_id, answer }),
+  }, 'student');
+}
+
+export interface SubmitResponse {
+  raw_points: number;
+  max_points: number;
+  percent: number;
+}
+
+export async function submitQuiz(quiz_id: string): Promise<SubmitResponse> {
+  return apiFetch<SubmitResponse>('/quiz/submit', {
+    method: 'POST',
+    body: JSON.stringify({ quiz_id }),
+  }, 'student');
+}
+
+// ── teacher — snapshots ───────────────────────────────────────────────────────
+
+export async function listSnapshots(): Promise<SnapshotMeta[]> {
+  return apiFetch<SnapshotMeta[]>('/teacher/snapshots');
+}
+
+export async function createSnapshot(title: string, jsonc: string): Promise<SnapshotMeta> {
+  return apiFetch<SnapshotMeta>('/teacher/snapshots', {
+    method: 'POST',
+    body: JSON.stringify({ title, jsonc }),
   });
-  return handleResponse<{
-    success: boolean;
-    message: string;
-    status: QuizStatus;
-  }>(response);
 }
 
-
-/**
- * Image Management Types and Functions
- */
-
-export interface QuizImage {
-  filename: string;
-  path: string;
-  size: number;
+export async function getSnapshot(id: number): Promise<SnapshotDetail> {
+  return apiFetch<SnapshotDetail>(`/teacher/snapshots/${id}`);
 }
 
-export interface UploadImageResponse {
-  success: boolean;
-  path: string;
-  filename: string;
+export async function updateSnapshot(id: number, fields: { title?: string; jsonc?: string }): Promise<SnapshotMeta> {
+  return apiFetch<SnapshotMeta>(`/teacher/snapshots/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(fields),
+  });
 }
 
-/**
- * Upload an image for a specific quiz.
- */
-export async function uploadImage(
-  quizFilename: string,
-  imageFile: File,
-  password: string
-): Promise<UploadImageResponse> {
+export async function deleteSnapshot(id: number): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/teacher/snapshots/${id}`, { method: 'DELETE' });
+}
+
+export function getSnapshotExportUrl(id: number): string {
+  const token = getTeacherToken();
+  return `${API_BASE}/teacher/snapshots/${id}/export?token=${encodeURIComponent(token ?? '')}`;
+}
+
+export async function renameSnapshot(id: number, title: string): Promise<{ slug: string }> {
+  return apiFetch<{ slug: string }>(`/teacher/snapshots/${id}/rename`, {
+    method: 'POST',
+    body: JSON.stringify({ title }),
+  });
+}
+
+// ── teacher — images ──────────────────────────────────────────────────────────
+
+export async function uploadSnapshotImage(snapshotId: number, file: File): Promise<ImageMeta> {
   const formData = new FormData();
-  formData.append('quiz_filename', quizFilename);
-  formData.append('image', imageFile);
-  formData.append('password', password);
-
-  const response = await fetch(`${API_BASE}/admin/images/upload`, {
-    method: "POST",
+  formData.append('image', file);
+  return apiFetch<ImageMeta>(`/teacher/snapshots/${snapshotId}/images`, {
+    method: 'POST',
     body: formData,
   });
-  return handleResponse<UploadImageResponse>(response);
 }
 
-/**
- * List all images for a specific quiz.
- */
-export async function listQuizImages(
-  quizFilename: string,
-  password: string
-): Promise<QuizImage[]> {
-  const response = await fetch(
-    `${API_BASE}/admin/images/list/${encodeURIComponent(quizFilename)}?password=${encodeURIComponent(password)}`,
-    {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    }
+export async function listSnapshotImages(snapshotId: number): Promise<ImageMeta[]> {
+  return apiFetch<ImageMeta[]>(`/teacher/snapshots/${snapshotId}/images`);
+}
+
+export async function deleteSnapshotImage(snapshotId: number, filename: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(
+    `/teacher/snapshots/${snapshotId}/images/${encodeURIComponent(filename)}`,
+    { method: 'DELETE' },
   );
-  const data = await handleResponse<{ images: QuizImage[] }>(response);
-  return data.images;
 }
 
-/**
- * Delete an image from a quiz's images folder.
- */
-export async function deleteImage(
-  quizFilename: string,
-  imageFilename: string,
-  password: string
-): Promise<{ success: boolean; message: string }> {
-  const response = await fetch(`${API_BASE}/admin/images/delete`, {
-    method: "DELETE",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      quiz_filename: quizFilename,
-      image_filename: imageFilename,
-      password,
-    }),
+export async function clearSnapshotImages(snapshotId: number): Promise<{ deleted: number }> {
+  return apiFetch<{ deleted: number }>(`/teacher/snapshots/${snapshotId}/images/clear`, {
+    method: 'POST',
   });
-  return handleResponse<{ success: boolean; message: string }>(response);
 }
 
-/**
- * Clear all images from the active quiz images folder.
- */
-export async function clearActiveQuizImages(
-  password: string
-): Promise<{ success: boolean; message: string; deleted_count: number }> {
-  const response = await fetch(`${API_BASE}/admin/images/clear-active`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ password }),
+// ── teacher — classes ─────────────────────────────────────────────────────────
+
+export async function listClasses(): Promise<ClassMeta[]> {
+  return apiFetch<ClassMeta[]>('/teacher/classes');
+}
+
+export async function getClassStudents(classId: number): Promise<StudentMeta[]> {
+  return apiFetch<StudentMeta[]>(`/teacher/classes/${classId}/students`);
+}
+
+// ── teacher — sessions ────────────────────────────────────────────────────────
+
+export async function listSessions(status?: string): Promise<SessionMeta[]> {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+  return apiFetch<SessionMeta[]>(`/teacher/sessions${qs}`);
+}
+
+export interface CreateSessionPayload {
+  snapshot_id: number;
+  title?: string;
+  class_ids: number[];
+  opens_at?: string;
+  closes_at?: string;
+}
+
+export async function createSession(payload: CreateSessionPayload): Promise<SessionMeta> {
+  return apiFetch<SessionMeta>('/teacher/sessions', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
-  return handleResponse<{ success: boolean; message: string; deleted_count: number }>(response);
 }
 
+export async function activateSession(sessionId: number): Promise<{ join_code: string }> {
+  return apiFetch<{ join_code: string }>(`/teacher/sessions/${sessionId}/activate`, {
+    method: 'POST',
+  });
+}
+
+export async function closeSession(sessionId: number): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/teacher/sessions/${sessionId}/close`, {
+    method: 'POST',
+  });
+}
+
+export async function regenJoinCode(sessionId: number): Promise<{ join_code: string }> {
+  return apiFetch<{ join_code: string }>(`/teacher/sessions/${sessionId}/regen-code`, {
+    method: 'POST',
+  });
+}
+
+export async function deleteSession(sessionId: number): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/teacher/sessions/${sessionId}`, { method: 'DELETE' });
+}
+
+// ── teacher — scores ──────────────────────────────────────────────────────────
+
+export async function getSessionScores(sessionId: number): Promise<ScoreEntry[]> {
+  return apiFetch<ScoreEntry[]>(`/teacher/sessions/${sessionId}/scores`);
+}
+
+export async function recalculateScores(sessionId: number): Promise<{ updated: number }> {
+  return apiFetch<{ updated: number }>(`/teacher/sessions/${sessionId}/scores/recalculate`, {
+    method: 'POST',
+  });
+}
+
+export interface ScoreOverride {
+  student_id: number;
+  question_id: string | number;
+  points: number;
+}
+
+export async function reviewScores(sessionId: number, overrides: ScoreOverride[]): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/teacher/sessions/${sessionId}/scores/review`, {
+    method: 'POST',
+    body: JSON.stringify({ overrides }),
+  });
+}
+
+export async function regradeOpenScores(sessionId: number): Promise<{ updated: number }> {
+  return apiFetch<{ updated: number }>(`/teacher/sessions/${sessionId}/scores/regrade-open`, {
+    method: 'POST',
+  });
+}
+
+export async function archiveSessionScores(
+  sessionId: number,
+  title?: string,
+  notes?: string,
+): Promise<{ archive_id: number }> {
+  return apiFetch<{ archive_id: number }>(`/teacher/sessions/${sessionId}/archive`, {
+    method: 'POST',
+    body: JSON.stringify({ title, notes }),
+  });
+}
+
+// ── teacher — archives ────────────────────────────────────────────────────────
+
+export async function listArchives(): Promise<ArchiveMeta[]> {
+  return apiFetch<ArchiveMeta[]>('/teacher/archives');
+}
+
+export async function getArchive(archiveId: number): Promise<ArchiveDetail> {
+  return apiFetch<ArchiveDetail>(`/teacher/archives/${archiveId}`);
+}
+
+export async function deleteArchive(archiveId: number): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/teacher/archives/${archiveId}`, { method: 'DELETE' });
+}
+
+export async function renameArchive(archiveId: number, title: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/teacher/archives/${archiveId}/rename`, {
+    method: 'POST',
+    body: JSON.stringify({ title }),
+  });
+}
+
+export function getArchiveExportUrl(archiveId: number): string {
+  const token = getTeacherToken();
+  return `${API_BASE}/teacher/archives/${archiveId}/export?token=${encodeURIComponent(token ?? '')}`;
+}
+
+// ── teacher — student list snapshots ─────────────────────────────────────────
+
+export interface StudentListSnapshotMeta {
+  id: number;
+  title: string;
+  created_at: string;
+}
+
+export interface StudentListSnapshotDetail extends StudentListSnapshotMeta {
+  content: { email: string; display_name: string; classes: string[] }[];
+}
+
+export async function listStudentSnapshots(): Promise<StudentListSnapshotMeta[]> {
+  return apiFetch<StudentListSnapshotMeta[]>('/teacher/student-snapshots');
+}
+
+export async function getStudentSnapshot(id: number): Promise<StudentListSnapshotDetail> {
+  return apiFetch<StudentListSnapshotDetail>(`/teacher/student-snapshots/${id}`);
+}
+
+export async function deleteStudentSnapshot(id: number): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/teacher/student-snapshots/${id}`, { method: 'DELETE' });
+}
+
+export async function renameStudentSnapshot(id: number, title: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/teacher/student-snapshots/${id}/rename`, {
+    method: 'POST',
+    body: JSON.stringify({ title }),
+  });
+}
+
+export function getStudentSnapshotExportUrl(id: number): string {
+  const token = getTeacherToken();
+  return `${API_BASE}/teacher/student-snapshots/${id}/export?token=${encodeURIComponent(token ?? '')}`;
+}
+
+// ── teacher — email ───────────────────────────────────────────────────────────
+
+export async function sendResultEmail(scoreId: number): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>('/teacher/email/send-result', {
+    method: 'POST',
+    body: JSON.stringify({ score_id: scoreId }),
+  });
+}
+
+export async function sendAllResultEmails(sessionId: number): Promise<{ sent: number }> {
+  return apiFetch<{ sent: number }>(`/teacher/sessions/${sessionId}/email/send-all`, {
+    method: 'POST',
+  });
+}
+
+// ── teacher — llm ─────────────────────────────────────────────────────────────
+
+export async function getLlmInfo(): Promise<LlmInfoResponse> {
+  return apiFetch<LlmInfoResponse>('/teacher/llm-info');
+}
+
+// ── super-admin ───────────────────────────────────────────────────────────────
+
+export async function listTeachers(): Promise<TeacherMeta[]> {
+  return apiFetch<TeacherMeta[]>('/super-admin/teachers');
+}
+
+export interface CreateTeacherPayload {
+  email: string;
+  display_name: string;
+  role: 'teacher' | 'super_admin';
+}
+
+export interface CreateTeacherResponse extends TeacherMeta {
+  temp_password: string;
+}
+
+export async function createTeacher(payload: CreateTeacherPayload): Promise<CreateTeacherResponse> {
+  return apiFetch<CreateTeacherResponse>('/super-admin/teachers', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateTeacher(
+  teacherId: number,
+  fields: { role?: string; status?: string },
+): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/super-admin/teachers/${teacherId}`, {
+    method: 'PUT',
+    body: JSON.stringify(fields),
+  });
+}
+
+export async function resetTeacherPassword(teacherId: number): Promise<{ temp_password: string }> {
+  return apiFetch<{ temp_password: string }>(`/super-admin/teachers/${teacherId}/reset-password`, {
+    method: 'POST',
+  });
+}
+
+export async function listAllStudents(params?: { class_id?: number; query?: string }): Promise<StudentMeta[]> {
+  const qs = new URLSearchParams();
+  if (params?.class_id) qs.set('class_id', String(params.class_id));
+  if (params?.query) qs.set('query', params.query);
+  const q = qs.toString();
+  return apiFetch<StudentMeta[]>(`/super-admin/students${q ? `?${q}` : ''}`);
+}
+
+export async function listAllClasses(): Promise<ClassMeta[]> {
+  return apiFetch<ClassMeta[]>('/super-admin/classes');
+}
+
+export async function assignTeacherToClass(classId: number, teacherId: number): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/super-admin/classes/${classId}/teachers`, {
+    method: 'POST',
+    body: JSON.stringify({ teacher_id: teacherId }),
+  });
+}
+
+export async function triggerSync(): Promise<{ run_id: number }> {
+  return apiFetch<{ run_id: number }>('/super-admin/sync', { method: 'POST' });
+}
+
+export interface SyncStatus {
+  id: number;
+  status: 'running' | 'success' | 'error';
+  started_at: string;
+  finished_at: string | null;
+  result: {
+    teachers_added?: number;
+    students_added?: number;
+    classes_added?: number;
+    errors?: string[];
+  } | null;
+}
+
+export async function getSyncStatus(runId: number): Promise<SyncStatus> {
+  return apiFetch<SyncStatus>(`/super-admin/sync/${runId}`);
+}
+
+export async function getSuperAdminScores(params?: {
+  teacher_id?: number;
+  session_id?: number;
+}): Promise<ScoreEntry[]> {
+  const qs = new URLSearchParams();
+  if (params?.teacher_id) qs.set('teacher_id', String(params.teacher_id));
+  if (params?.session_id) qs.set('session_id', String(params.session_id));
+  const q = qs.toString();
+  return apiFetch<ScoreEntry[]>(`/super-admin/scores${q ? `?${q}` : ''}`);
+}

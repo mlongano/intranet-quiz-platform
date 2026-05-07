@@ -1,346 +1,206 @@
-// frontend/src/components/SubmissionDetailView.tsx
-import { useState, useEffect } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeSanitize from "rehype-sanitize";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ScoreEntry, saveScoreOverrides, OverridePayload, saveBankScoreOverrides, BankOverridePayload } from "../api";
-import LoadingSpinner from "./LoadingSpinner";
-import ErrorDisplay from "./ErrorDisplay";
+import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { X, Save, RotateCcw } from 'lucide-react';
+import { ScoreEntry, DetailedAnswer, ScoreOverride, reviewScores } from '../api';
 
 interface Props {
-  studentSubmission: ScoreEntry | null;
-  adminPassword: string;
+  score: ScoreEntry;
+  sessionId: number;
   onClose: () => void;
-  bankFilename?: string;
-  onSubmissionUpdated?: (updatedSubmission: ScoreEntry) => void;
 }
 
-function SubmissionDetailView({
-  studentSubmission,
-  adminPassword,
-  onClose,
-  bankFilename,
-  onSubmissionUpdated,
-}: Props) {
-  const queryClient = useQueryClient();
-  // State to hold the score overrides keyed by question_id
-  const [overrides, setOverrides] = useState<Record<string | number, number>>(
-    {},
-  );
-  // State for displaying saving errors or success messages
-  const [saveStatus, setSaveStatus] = useState<{
-    error?: string | null;
-    success?: string | null;
-  }>({});
-
-  useEffect(() => {
-    setOverrides({});
-    setSaveStatus({});
-  }, [studentSubmission]);
-
-  const saveMutation = useMutation({
-    mutationFn: saveScoreOverrides,
-    onSuccess: () => {
-      setSaveStatus({ success: "Overrides saved successfully!", error: null });
-      setOverrides({});
-      queryClient.invalidateQueries({ queryKey: ["adminScores"] });
-      setTimeout(onClose, 1500);
-    },
-    onError: (err: any) => {
-      setSaveStatus({
-        error: `Failed to save overrides: ${err.message}`,
-        success: null,
-      });
-    },
-  });
-
-  const saveBankMutation = useMutation({
-    mutationFn: saveBankScoreOverrides,
-    onSuccess: (data) => {
-      setSaveStatus({ success: "Bank scores updated successfully!", error: null });
-      setOverrides({});
-      queryClient.invalidateQueries({ queryKey: ["scoresBankPreview", bankFilename] });
-      if (onSubmissionUpdated && data.updated_submission) {
-        onSubmissionUpdated(data.updated_submission);
-      }
-      setTimeout(onClose, 1500);
-    },
-    onError: (err: any) => {
-      setSaveStatus({
-        error: `Failed to save bank overrides: ${err.message}`,
-        success: null,
-      });
-    },
-  });
-
-  const handleOverrideChange = (
-    questionId: string | number,
-    pointsStr: string,
-    maxPoints: number,
-  ) => {
-    const points = pointsStr === "" ? undefined : parseFloat(pointsStr);
-
-    setOverrides((prev) => {
-      const newOverrides = { ...prev };
-      if (points === undefined || isNaN(points)) {
-        delete newOverrides[questionId];
-      } else {
-        // Clamp the value between 0 and the question's weight (maxPoints)
-        newOverrides[questionId] = Math.max(0, Math.min(points, maxPoints));
-      }
-      return newOverrides;
-    });
-    setSaveStatus({});
-  };
-
-  // Handler for the save button click
-  const handleSaveChanges = () => {
-    setSaveStatus({}); // Clear previous messages
-    if (!studentSubmission || !adminPassword) {
-      setSaveStatus({
-        error: "Missing submission data or admin credentials.",
-        success: null,
-      });
-      return;
-    }
-
-    // Format the overrides into the payload expected by the API
-    const overridePayloadData = Object.entries(overrides).map(([qid, pts]) => ({
-      // Ensure question_id format matches backend expectation (string or number)
-      question_id:
-        studentSubmission.answers.find((a) => String(a.question_id) === qid)
-          ?.question_id ?? qid,
-      points: pts, // Send the stored number
-    }));
-
-    if (overridePayloadData.length === 0) {
-      setSaveStatus({ error: "No score changes to save.", success: null });
-      return;
-    }
-
-    if (bankFilename) {
-      const bankPayload: BankOverridePayload = {
-        filename: bankFilename,
-        student_id: studentSubmission.student,
-        quiz_id: studentSubmission.quiz_id,
-        overrides: overridePayloadData,
-        password: adminPassword,
-      };
-      saveBankMutation.mutate(bankPayload);
-    } else {
-      const payload: OverridePayload = {
-        student_id: studentSubmission.student,
-        quiz_id: studentSubmission.quiz_id,
-        overrides: overridePayloadData,
-        password: adminPassword,
-      };
-      saveMutation.mutate(payload);
-    }
-  };
-
-  if (!studentSubmission) {
-    return null;
-  }
-
-  const hasPendingOverrides = Object.keys(overrides).length > 0;
-  const isSaving = saveMutation.isPending || saveBankMutation.isPending;
-
-  function displayOptionImages(images: any, answers: any) {
-    // Implement logic to display option images
-    return (
-      <div>
-        {Array.isArray(images)
-          ? images.map(
-            (image, index) =>
-              image && (
-                <img
-                  key={index}
-                  src={image}
-                  alt={`${answers[index]}`}
-                  className="w-40 max-w-10 mx-auto my-2"
-                />
-              ),
-          )
-          : images && (
-            <img
-              src={images}
-              alt={`${answers}`}
-              className="w-40 max-w-10 mx-auto my-2"
-            />
-          )}
-      </div>
-    );
-  }
+function AnswerRow({
+  answer,
+  override,
+  onChange,
+}: {
+  answer: DetailedAnswer;
+  override: number | undefined;
+  onChange: (points: number) => void;
+}) {
+  const current = override !== undefined ? override : answer.points_awarded;
+  const isDirty = override !== undefined && override !== answer.points_awarded;
 
   return (
-    <div className="mt-8 p-6 border border-outline-variant/30 rounded-lg bg-surface-container space-y-4 relative">
-      <button
-        onClick={onClose}
-        className="absolute top-2 right-2 text-on-surface-variant hover:text-on-surface text-2xl font-bold"
-        aria-label="Close details"
-      >
-        &times;
-      </button>
-
-      <div className="border-b border-outline-variant/20 pb-2 mb-4">
-        <h3 className="text-xl font-semibold text-on-surface">
-          Reviewing: {studentSubmission.student}
-        </h3>
-        <p className="text-sm text-on-surface-variant">
-          Quiz ID: {studentSubmission.quiz_id}
-        </p>
-        <p className="text-sm text-on-surface-variant font-medium">
-          Overall Score: {studentSubmission.raw_points} /{" "}
-          {studentSubmission.max_points} ({studentSubmission.percent}%)
-        </p>
-      </div>
-
-      <div className="space-y-5 max-h-[60vh] overflow-y-auto pr-2">
-        {studentSubmission.answers.map((ans, index) => {
-          const questionWeight = ans.weight ?? 1;
-          return (
-            <div
-              key={index}
-              className="p-4 border border-outline-variant/20 rounded-md bg-surface-container-low"
+    <div className={`rounded-lg border p-4 ${isDirty ? 'border-secondary/50 bg-secondary/5' : 'border-outline-variant/30 bg-surface-container'}`}>
+      <div className="flex items-start justify-between gap-4 mb-3">
+        <p className="text-sm text-on-surface flex-1">{answer.question_text}</p>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <input
+            type="number"
+            min={0}
+            max={answer.weight}
+            step={0.5}
+            value={current}
+            onChange={e => onChange(Number(e.target.value))}
+            className="w-20 px-2 py-1 text-sm text-center bg-surface border border-outline-variant/50 rounded-lg text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+          />
+          <span className="text-sm text-on-surface-variant">/ {answer.weight}</span>
+          {isDirty && (
+            <button
+              onClick={() => onChange(answer.points_awarded)}
+              className="text-on-surface-variant hover:text-on-surface transition-colors"
+              title="Ripristina"
             >
-              <div className="font-semibold text-on-surface mb-1">
-                <span className="mr-1">{index + 1}.</span>
-                <span className="align-middle">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    rehypePlugins={[rehypeSanitize]}
-                  >
-                    {ans.question_text || ""}
-                  </ReactMarkdown>
-                </span>
-                <span className="text-xs text-on-surface-variant ml-2 align-middle">
-                  (ID: {ans.question_id})
-                </span>
-              </div>
-              {ans.question_image && (
-                <img
-                  src={ans.question_image}
-                  alt={`Question ${index + 1} Image`}
-                  className="w-40 max-w-sm mx-auto my-2"
-                />
-              )}
-
-              <div className="flex justify-start items-center gap-2 ml-4 mb-2 text-sm">
-                <span className="font-medium text-on-surface-variant">
-                  Student Answer:{" "}
-                </span>
-                <pre className="inline-block font-mono bg-surface-container-high p-1 rounded text-xs whitespace-pre-wrap break-words text-on-surface">
-                  {JSON.stringify(ans.student_answer, null, 2)}
-                </pre>
-                {displayOptionImages(
-                  ans.option_student_image,
-                  ans.student_answer,
-                )}
-                {ans.points_awarded === ans.weight && (
-                  <span className="font-bold text-xl text-tertiary">✓</span>
-                )}
-                {ans.points_awarded > 0 && ans.points_awarded < ans.weight && (
-                  <span className="font-bold text-xl text-yellow-400">⚠</span>
-                )}
-                {ans.points_awarded === 0 && (
-                  <span className="font-bold text-xl text-error">❌</span>
-                )}
-              </div>
-
-              <div className="flex justify-start items-center gap-2 ml-4 mb-2 text-sm">
-                <span className="font-medium text-tertiary">
-                  Correct Answer:{" "}
-                </span>
-                <pre className="inline-block font-mono bg-tertiary/10 p-1 rounded text-xs whitespace-pre-wrap break-words text-tertiary">
-                  {JSON.stringify(ans.correct_answer, null, 2)}
-                </pre>
-                {displayOptionImages(
-                  ans.option_correct_image,
-                  ans.correct_answer,
-                )}
-              </div>
-
-              <div
-                className={`ml-4 mt-2 flex items-center gap-3 text-sm ${ans.points_awarded !== ans.raw_points && "text-error"}`}
-              >
-                <span className="font-medium text-on-surface">
-                  Points Awarded:{" "}
-                  <span className="font-bold">{ans.points_awarded}</span>
-                </span>
-                <span className="text-on-surface-variant">|</span>
-                <label
-                  htmlFor={`override-${ans.question_id}`}
-                  className="text-on-surface-variant"
-                >
-                  Override Score:
-                </label>
-                <input
-                  id={`override-${ans.question_id}`}
-                  type="number"
-                  min="0"
-                  max={questionWeight}
-                  step="0.5"
-                  className="w-24 border border-outline-variant/30 bg-surface-container-low text-on-surface p-1 text-sm rounded focus:ring-1 focus:ring-primary/50 focus:border-primary/50"
-                  placeholder={ans.raw_points.toString()}
-                  value={
-                    overrides[ans.question_id] ?? ans.raw_points.toString()
-                  }
-                  onChange={(e) =>
-                    handleOverrideChange(
-                      ans.question_id,
-                      e.target.value,
-                      questionWeight,
-                    )
-                  }
-                />
-                <span className="text-xs text-on-surface-variant">
-                  (Max: {questionWeight})
-                </span>
-              </div>
-
-              {(ans.llm_verdict || ans.llm_feedback) && (
-                <div className="ml-4 mt-2 bg-secondary/10 border border-secondary/20 p-3 rounded text-sm">
-                  <div className="font-semibold text-sm text-secondary mb-1">LLM Evaluation</div>
-                  {ans.llm_verdict && (
-                    <div className="text-xs text-secondary mb-1">
-                      <strong>Verdict:</strong> {String(ans.llm_verdict)}
-                    </div>
-                  )}
-                  {ans.llm_feedback && (
-                    <div className="text-xs text-secondary">
-                      <strong>Feedback:</strong> {String(ans.llm_feedback)}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+              <RotateCcw size={14} />
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="mt-6 flex justify-end items-center gap-4 border-t border-outline-variant/20 pt-4">
-        {saveStatus.error && <ErrorDisplay message={saveStatus.error} />}
-        {saveStatus.success && (
-          <div className="p-2 bg-tertiary/10 border border-tertiary/30 text-tertiary rounded-lg text-sm">
-            {saveStatus.success}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <p className="text-xs font-medium text-on-surface-variant mb-1">Risposta studente</p>
+          <p className="text-xs text-on-surface bg-surface rounded px-2 py-1.5 min-h-[2rem]">
+            {formatAnswer(answer.student_answer)}
+          </p>
+          {answer.llm_feedback && (
+            <p className="text-xs text-secondary mt-1 italic">{answer.llm_feedback}</p>
+          )}
+        </div>
+        <div>
+          <p className="text-xs font-medium text-on-surface-variant mb-1">Risposta corretta</p>
+          <p className="text-xs text-on-surface bg-surface rounded px-2 py-1.5 min-h-[2rem]">
+            {formatAnswer(answer.correct_answer)}
+          </p>
+        </div>
+      </div>
+
+      {answer.llm_verdict && (
+        <p className="text-xs mt-2">
+          <span className="text-on-surface-variant">Verdetto LLM: </span>
+          <span className={answer.llm_verdict === 'correct' ? 'text-primary' : answer.llm_verdict === 'partial' ? 'text-secondary' : 'text-error'}>
+            {answer.llm_verdict}
+          </span>
+        </p>
+      )}
+    </div>
+  );
+}
+
+function formatAnswer(value: any): string {
+  if (value == null) return '—';
+  if (typeof value === 'string') return value || '—';
+  if (Array.isArray(value)) return value.join(', ') || '—';
+  return String(value);
+}
+
+function SubmissionDetailView({ score, sessionId, onClose }: Props) {
+  const queryClient = useQueryClient();
+  const [overrides, setOverrides] = useState<Record<string, number>>({});
+
+  const answers: DetailedAnswer[] = score.answers ?? [];
+  const studentName = score.student_display_name ?? score.student_email ?? score.student ?? '—';
+  const studentId = score.student_id;
+
+  const dirtyCount = Object.keys(overrides).filter(
+    qid => overrides[qid] !== answers.find(a => String(a.question_id) === qid)?.points_awarded
+  ).length;
+
+  const computedRaw = answers.reduce((sum, a) => {
+    const ov = overrides[String(a.question_id)];
+    return sum + (ov !== undefined ? ov : a.points_awarded);
+  }, 0);
+  const maxPts = score.max_points;
+  const computedPct = maxPts > 0 ? (computedRaw / maxPts) * 100 : 0;
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      if (studentId == null) throw new Error('student_id mancante nel punteggio');
+      const payload: ScoreOverride[] = answers
+        .filter(a => {
+          const ov = overrides[String(a.question_id)];
+          return ov !== undefined && ov !== a.points_awarded;
+        })
+        .map(a => ({
+          student_id: studentId,
+          question_id: a.question_id,
+          points: overrides[String(a.question_id)],
+        }));
+      return reviewScores(sessionId, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['session-scores', sessionId] });
+      onClose();
+    },
+  });
+
+  const pctColor = computedPct >= 60 ? 'text-primary' : computedPct >= 40 ? 'text-secondary' : 'text-error';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-sm overflow-y-auto py-8 px-4">
+      <div className="bg-surface rounded-2xl border border-outline-variant/30 shadow-2xl w-full max-w-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-outline-variant/20">
+          <div>
+            <h2 className="text-lg font-semibold text-on-surface">{studentName}</h2>
+            <p className="text-sm text-on-surface-variant">{score.student_email ?? score.student}</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <p className={`text-2xl font-bold ${pctColor}`}>{computedPct.toFixed(1)}%</p>
+              <p className="text-xs text-on-surface-variant">
+                {computedRaw.toFixed(1)} / {maxPts.toFixed(1)}
+                {dirtyCount > 0 && <span className="text-secondary ml-1">(modificato)</span>}
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 text-on-surface-variant hover:text-on-surface transition-colors rounded-lg hover:bg-surface-container"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Answers */}
+        <div className="p-6 space-y-3 max-h-[60vh] overflow-y-auto">
+          {answers.length === 0 && (
+            <p className="text-center text-on-surface-variant py-8">Nessun dettaglio disponibile.</p>
+          )}
+          {answers.map((a, i) => (
+            <AnswerRow
+              key={String(a.question_id) ?? i}
+              answer={a}
+              override={overrides[String(a.question_id)]}
+              onChange={pts => setOverrides(prev => ({
+                ...prev,
+                [String(a.question_id)]: Math.max(0, Math.min(pts, a.weight)),
+              }))}
+            />
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between p-6 border-t border-outline-variant/20">
+          <p className="text-sm text-on-surface-variant">
+            {dirtyCount > 0
+              ? `${dirtyCount} domanda${dirtyCount !== 1 ? 'e' : ''} modificata`
+              : 'Nessuna modifica'}
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm border border-outline-variant/40 text-on-surface rounded-lg hover:bg-surface-container transition-colors"
+            >
+              Annulla
+            </button>
+            <button
+              onClick={() => saveMutation.mutate()}
+              disabled={dirtyCount === 0 || saveMutation.isPending}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-primary text-on-primary rounded-lg hover:bg-primary/90 disabled:opacity-40 transition-colors"
+            >
+              <Save size={14} />
+              {saveMutation.isPending ? 'Salvataggio...' : 'Salva modifiche'}
+            </button>
+          </div>
+        </div>
+
+        {saveMutation.isError && (
+          <div className="px-6 pb-4 text-sm text-error">
+            {(saveMutation.error as any)?.message ?? 'Errore nel salvataggio.'}
           </div>
         )}
-
-        <button
-          onClick={handleSaveChanges}
-          disabled={isSaving || !hasPendingOverrides}
-          className="px-5 py-2 bg-secondary text-on-secondary font-medium rounded-md hover:bg-secondary/80 focus:outline-none focus:ring-2 focus:ring-secondary/30 disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          {isSaving ? (
-            <>
-              <LoadingSpinner message="" />
-              Saving...
-            </>
-          ) : (
-            "Save Score Overrides"
-          )}
-        </button>
       </div>
     </div>
   );
