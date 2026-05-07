@@ -1,13 +1,21 @@
 # Changelog
 
-All notable changes to QuizParty will be documented in this file.
+All notable changes to intranet-quiz-platform will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-(No unreleased changes yet)
+(Refactor in design phase — see `docs/REFACTOR-PLAN-PROMPT.md`)
+
+---
+
+## [1.0.0-alpha] - 2026-05-07
+
+Fork point from `mlongano/intranet-quiz-manager` at v2.6.0 (commit 5fd8ad5).
+Codebase still reflects the single-tenant architecture; multi-tenant refactor not yet started.
+See `docs/ARCHITECTURE-CURRENT.md` for the as-is baseline and `docs/REFACTOR-PLAN-PROMPT.md` for the refactor plan.
 
 ---
 

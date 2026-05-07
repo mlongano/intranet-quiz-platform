@@ -1,7 +1,7 @@
 [project]
-name = "local-quizzies"
-version = "2.6.0"
-description = "Add your description here"
+name = "intranet-quiz-platform"
+version = "1.0.0-alpha"
+description = "Multi-teacher, multi-class quiz platform for school intranets"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

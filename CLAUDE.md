@@ -2,16 +2,24 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **This is the `intranet-quiz-platform` branch — the multi-tenant refactor.**
+> It forked from `intranet-quiz-manager` at v2.6.0 (commit 5fd8ad5) on 2026-05-07.
+> The single-teacher self-hosted version is maintained separately at `mlongano/intranet-quiz-manager`.
+> This codebase is pre-development (v1.0.0-alpha). The current code still reflects the single-tenant
+> architecture; the refactor plan is in `docs/REFACTOR-PLAN-PROMPT.md`.
+
 ## Project Overview
 
-**QuizParty** is a self-contained quiz application for secure, offline classroom assessments. It runs on a local network without requiring internet, designed for controlled testing in schools and educational institutions.
+**intranet-quiz-platform** is a multi-teacher, multi-class quiz platform for school intranets. It targets deployment on a central school server managed by IT staff, supporting the full staff of a secondary school (~150 teachers, ~40 classes, ~800 students) with concurrent quiz sessions, Google Workspace account integration, and fully offline operation.
 
-**Key Characteristics:**
-- Offline-first design with optional email functionality
-- Flask backend + React (TypeScript) frontend
-- JSONC for data storage (questions, scores, students)
-- File-based architecture with atomic operations to prevent data corruption
-- Server-authoritative quiz state (not client-side local storage)
+It was forked from the single-teacher `intranet-quiz-manager` and retains its quiz-taking UI and design system. The backend and auth model are being replaced entirely — see `docs/REFACTOR-PLAN-PROMPT.md` for the architecture decisions and `docs/ARCHITECTURE-CURRENT.md` for the as-is baseline.
+
+**Target Characteristics:**
+- Multi-tenant: each teacher owns their quizzes, classes, and scores
+- PostgreSQL as single source of truth; JSONC retained as import/export format for question authoring
+- Offline-first: Google Workspace identity, local credential validation (no outbound auth at quiz time)
+- Central server deployment (Waitress + Nginx + PostgreSQL on one machine)
+- Student network cut off from internet during assessments
 
 ## Development Commands
 
