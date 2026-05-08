@@ -1,38 +1,81 @@
 import { useState, type ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Archive, BarChart3, ChevronDown, ChevronRight, FileText, LayoutDashboard, Menu, Users, LogOut, Shield } from 'lucide-react';
+import { Archive, BarChart3, ChevronDown, ChevronRight, LayoutDashboard, Menu, Users, LogOut, Shield } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 import { clearTeacherSession, getTeacherSession, isSuperAdmin } from '../lib/session';
+
+type Accent = 'primary' | 'secondary' | 'tertiary';
 
 interface NavChild {
   label: string;
   path: string;
+  accent: Accent;
 }
 
 interface NavItem {
   label: string;
   Icon: React.ComponentType<{ size?: number; className?: string }>;
   path: string;
+  accent: Accent;
   children?: NavChild[];
   superAdminOnly?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Dashboard', Icon: LayoutDashboard, path: '/teacher' },
-  { label: 'Sessioni', Icon: BarChart3, path: '/teacher/sessions' },
-  { label: 'Quiz (Snapshot)', Icon: FileText, path: '/teacher/snapshots' },
+  { label: 'Dashboard', Icon: LayoutDashboard, path: '/teacher', accent: 'primary' },
+  { label: 'Sessioni', Icon: BarChart3, path: '/teacher/sessions', accent: 'primary' },
   {
     label: 'Archivi',
     Icon: Archive,
-    path: '/teacher/archives',
+    path: '/teacher/snapshots',
+    accent: 'primary',
     children: [
-      { label: 'Punteggi', path: '/teacher/archives' },
-      { label: 'Studenti', path: '/teacher/student-snapshots' },
+      { label: 'Domande', path: '/teacher/snapshots', accent: 'primary' },
+      { label: 'Punteggi', path: '/teacher/archives', accent: 'secondary' },
+      { label: 'Studenti', path: '/teacher/student-snapshots', accent: 'tertiary' },
     ],
   },
-  { label: 'Classi', Icon: Users, path: '/teacher/classes' },
-  { label: 'Super Admin', Icon: Shield, path: '/super-admin', superAdminOnly: true },
+  { label: 'Classi', Icon: Users, path: '/teacher/classes', accent: 'tertiary' },
+  { label: 'Super Admin', Icon: Shield, path: '/super-admin', superAdminOnly: true, accent: 'primary' },
 ];
+
+/** Resolve the accent color for a given pathname (children win over parents). */
+function resolveAccent(pathname: string): Accent {
+  for (const item of NAV_ITEMS) {
+    if (item.children) {
+      const child = item.children.find(c => pathname === c.path || pathname.startsWith(c.path + '/'));
+      if (child) return child.accent;
+    }
+    if (pathname === item.path || (item.path !== '/teacher' && pathname.startsWith(item.path + '/'))) {
+      return item.accent;
+    }
+  }
+  return 'primary';
+}
+
+const ACCENT_GRADIENT: Record<Accent, string> = {
+  primary: 'from-primary to-primary/50',
+  secondary: 'from-secondary to-secondary/50',
+  tertiary: 'from-tertiary to-tertiary/50',
+};
+
+const ACCENT_TEXT: Record<Accent, string> = {
+  primary: 'text-primary',
+  secondary: 'text-secondary',
+  tertiary: 'text-tertiary',
+};
+
+const ACCENT_BORDER: Record<Accent, string> = {
+  primary: 'border-primary',
+  secondary: 'border-secondary',
+  tertiary: 'border-tertiary',
+};
+
+const ACCENT_BG_ACTIVE: Record<Accent, string> = {
+  primary: 'bg-primary/5',
+  secondary: 'bg-secondary/5',
+  tertiary: 'bg-tertiary/5',
+};
 
 interface TeacherLayoutProps {
   children: ReactNode;
@@ -47,6 +90,13 @@ export default function TeacherLayout({ children, pageTitle, titleClassName, hea
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const session = getTeacherSession();
   const superAdmin = isSuperAdmin();
+  const accent = resolveAccent(pathname);
+
+  // Defense-in-depth: redirect if no session (router guard should catch this first)
+  if (!session) {
+    navigate('/teacher/login', { replace: true });
+    return null;
+  }
 
   const [openSections, setOpenSections] = useState<Set<string>>(() => {
     const initial = new Set<string>();
@@ -97,6 +147,7 @@ export default function TeacherLayout({ children, pageTitle, titleClassName, hea
             const isChildActive = hasChildren && subItems!.some((c) => pathname === c.path || pathname.startsWith(c.path + '/'));
             const isActive = !hasChildren && (pathname === path || (path !== '/teacher' && pathname.startsWith(path + '/')));
             const isOpen = openSections.has(label);
+            const active = isActive || isChildActive;
 
             return (
               <div key={label}>
@@ -111,8 +162,8 @@ export default function TeacherLayout({ children, pageTitle, titleClassName, hea
                     }
                   }}
                   className={`w-full flex items-center gap-3 px-4 py-3 transition-all border-l-4 ${
-                    isActive || isChildActive
-                      ? 'bg-surface-bright text-primary border-primary translate-x-0.5'
+                    active
+                      ? `bg-surface-bright ${ACCENT_TEXT[accent]} ${ACCENT_BORDER[accent]} translate-x-0.5`
                       : 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high border-transparent'
                   } ${!sidebarOpen ? 'justify-center' : ''}`}
                 >
@@ -132,13 +183,14 @@ export default function TeacherLayout({ children, pageTitle, titleClassName, hea
                   <div className="ml-4 border-l border-outline-variant/30">
                     {subItems!.map((child) => {
                       const isChildItemActive = pathname === child.path || pathname.startsWith(child.path + '/');
+                      const childAccent = isChildItemActive ? accent : 'primary';
                       return (
                         <button
                           key={child.path}
                           onClick={() => navigate(child.path)}
                           className={`w-full flex items-center gap-2 pl-6 pr-4 py-2.5 transition-all border-l-2 -ml-px text-left ${
                             isChildItemActive
-                              ? 'text-primary border-primary bg-primary/5'
+                              ? `${ACCENT_TEXT[childAccent]} ${ACCENT_BORDER[childAccent]} ${ACCENT_BG_ACTIVE[childAccent]}`
                               : 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high border-transparent'
                           }`}
                         >
@@ -194,7 +246,7 @@ export default function TeacherLayout({ children, pageTitle, titleClassName, hea
       <div className={`flex flex-col flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-16'}`}>
         <header className="sticky top-0 z-30 bg-surface/80 backdrop-blur-xl border-b border-outline-variant/20 px-8 py-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <h1 className={`font-headline text-xl font-bold bg-gradient-to-r ${titleClassName ?? 'from-primary to-primary-dim'} bg-clip-text text-transparent`}>
+            <h1 className={`font-headline text-xl font-bold bg-gradient-to-r ${titleClassName ?? ACCENT_GRADIENT[accent]} bg-clip-text text-transparent`}>
               {pageTitle || 'QuizParty'}
             </h1>
             <div className="flex items-center gap-4">

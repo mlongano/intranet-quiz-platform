@@ -27,7 +27,7 @@ function JoinCodeBadge({ code }: { code: string }) {
 
 function StatusBadge({ status }: { status: SessionMeta['status'] }) {
   const map = {
-    active: 'bg-primary/10 text-primary border-primary/30',
+    active: 'bg-tertiary/10 text-tertiary border-tertiary/30',
     draft: 'bg-secondary/10 text-secondary border-secondary/30',
     closed: 'bg-outline-variant/20 text-on-surface-variant border-outline-variant/30',
   };
@@ -221,7 +221,7 @@ function SessionsPage() {
             <h2 className="text-base font-semibold text-on-surface mb-3">Attive</h2>
             <div className="space-y-3">
               {activeSessions.map(s => (
-                <div key={s.id} className="bg-surface-container rounded-xl border border-primary/20 p-5">
+                <div key={s.id} className="bg-surface-container rounded-xl border border-tertiary/20 p-5">
                   <div className="flex items-start justify-between gap-4 flex-wrap">
                     <div>
                       <div className="flex items-center gap-3 mb-1">

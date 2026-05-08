@@ -5,19 +5,25 @@ import TeacherLayout from '../layouts/TeacherLayout';
 import { listSessions, listSnapshots, listClasses } from '../api';
 import { getTeacherSession } from '../lib/session';
 
-function StatCard({ label, value, icon: Icon, onClick }: {
+type AccentColor = 'primary' | 'secondary' | 'tertiary';
+
+function StatCard({ label, value, icon: Icon, accent = 'primary', onClick }: {
   label: string;
   value: number | string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
+  accent?: AccentColor;
   onClick?: () => void;
 }) {
+  const bgClass = accent === 'primary' ? 'bg-primary/10' : accent === 'secondary' ? 'bg-secondary/10' : 'bg-tertiary/10';
+  const textClass = accent === 'primary' ? 'text-primary' : accent === 'secondary' ? 'text-secondary' : 'text-tertiary';
   return (
     <div
       onClick={onClick}
-      className={`bg-surface-container rounded-xl border border-outline-variant/30 p-6 flex items-center gap-4 ${onClick ? 'cursor-pointer hover:bg-surface-container-high transition-colors' : ''}`}
+      className={`bg-surface-container rounded-xl border-t-2 border-${accent}/40 border border-outline-variant/30 border-t-${accent} p-6 flex items-center gap-4 ${onClick ? 'cursor-pointer hover:bg-surface-container-high transition-colors' : ''}`}
+      style={{ borderTopColor: `var(--${accent})`, borderTopWidth: '2px' }}
     >
-      <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-        <Icon size={22} className="text-primary" />
+      <div className={`w-12 h-12 rounded-lg ${bgClass} flex items-center justify-center flex-shrink-0`}>
+        <Icon size={22} className={textClass} />
       </div>
       <div>
         <p className="text-2xl font-bold text-on-surface">{value}</p>
@@ -46,18 +52,21 @@ function TeacherDashboardPage() {
             label="Sessioni attive"
             value={activeSessions.length}
             icon={BarChart3}
+            accent="secondary"
             onClick={() => navigate('/teacher/sessions')}
           />
           <StatCard
             label="Quiz (snapshot)"
             value={snapshots?.length ?? '—'}
             icon={FileText}
+            accent="primary"
             onClick={() => navigate('/teacher/snapshots')}
           />
           <StatCard
             label="Le mie classi"
             value={classes?.length ?? '—'}
             icon={Users}
+            accent="tertiary"
             onClick={() => navigate('/teacher/classes')}
           />
         </div>
