@@ -517,4 +517,4 @@ Key considerations:
 ## Further Reading
 
 - `docs/PROJECT.md` — comprehensive system design reference (tech stack, all endpoints, data models, design decisions)
-- `docs/DESIGN.md` — Neon Noir design system specification (colors, typography, component patterns)
+- `docs/DESIGN.md` — Neon Noir design system specification (colors, typography, component patterns). Include la mappatura vincolante colori → tipi dato: **primary** (cyan) per Domande/Quiz, **secondary** (magenta) per Punteggi/Score, **tertiary** (green) per Studenti/Classi. Ogni nuova pagina DEVE rispettare questa mappatura.

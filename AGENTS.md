@@ -123,6 +123,10 @@ try { await op(); } catch (err) { setError("Failed: " + String(err)); }
 - Tailwind v4 utility classes only
 - Custom CSS only in `main.css`: `@theme` tokens and `.glass-panel`
 - Design system: Neon Noir palette — tokens in `frontend/src/main.css`
+- **Color mapping** (vincolante, da `docs/DESIGN.md`):
+  - `primary` (cyan `#81ecff`) = Domande / Quiz
+  - `secondary` (magenta `#e966ff`) = Punteggi / Score
+  - `tertiary` (green `#c2ff99`) = Studenti / Classi
 - Responsive: `md:` / `lg:` prefixes
 
 ---

@@ -20,10 +20,19 @@ Our palette is anchored in deep, ink-like foundations to allow neon accents to a
 - **Surface Bright:** `#262c36` (Used for active, elevated states)
 
 ### The Neon Accents
-- **Primary (Electric Cyan):** `#81ecff` — Action-oriented, core focus.
-- **Secondary (Neon Magenta):** `#e966ff` — Alternative actions, GitHub/Sync integrations.
-- **Tertiary (Lime Green):** `#c2ff99` — Status: Active, Success, Growth.
+- **Primary (Electric Cyan):** `#81ecff` — Domande / Quiz. Usato per: question snapshots, contenuti quiz, pulsanti primari.
+- **Secondary (Neon Magenta):** `#e966ff` — Punteggi / Score. Usato per: score entries, archivi punteggi, stati draft.
+- **Tertiary (Lime Green):** `#c2ff99` — Studenti / Classi. Usato per: classi, studenti, stati attivi, azioni di conferma.
 - **Error (Vibrant Orange/Red):** `#ff716c` — Critical alerts and destructive actions.
+
+### Mappatura colori → tipi dato (vincolante)
+| Colore | Token | Dominio | Esempi |
+|--------|-------|---------|--------|
+| Cyan | `primary` | Domande | Snapshot card, quiz editor, pulsante "Nuova sessione" |
+| Magenta | `secondary` | Punteggi | Score card, archivio punteggi, bozze |
+| Verde | `tertiary` | Studenti | Classi card, lista studenti, stato "attivo" |
+
+Questa mappatura era presente nel sistema v2.6.0 originale (AdminDashboardPage: text-primary per questions, text-secondary per scores, text-tertiary per students) e DEVE essere mantenuta in ogni pagina della nuova piattaforma.
 
 ### Creative Color Rules
 * **The "No-Line" Rule:** 1px solid borders are strictly prohibited for structural sectioning. Separation must be achieved through background shifts (e.g., placing a `surface_container_low` card against the `background`).
