@@ -5,6 +5,7 @@ import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { initTheme } from './lib/theme';
+import RequireAuth from './components/RequireAuth';
 
 initTheme();
 
@@ -49,20 +50,20 @@ const router = createBrowserRouter([
   { path: '/teacher/login', element: <TeacherLoginPage />, errorElement: <ErrorPage /> },
   { path: '/teacher/change-password', element: <ChangePasswordPage />, errorElement: <ErrorPage /> },
 
-  // ── teacher pages ───────────────────────────────────────────────────
-  { path: '/teacher', element: <TeacherDashboardPage />, errorElement: <ErrorPage /> },
-  { path: '/teacher/sessions', element: <SessionsPage />, errorElement: <ErrorPage /> },
-  { path: '/teacher/sessions/:sessionId', element: <SessionScoresPage />, errorElement: <ErrorPage /> },
-  { path: '/teacher/snapshots', element: <SnapshotsListPage />, errorElement: <ErrorPage /> },
-  { path: '/teacher/snapshots/:id', element: <SnapshotEditorPage />, errorElement: <ErrorPage /> },
-  { path: '/teacher/snapshots/:id/images', element: <SnapshotImagesPage />, errorElement: <ErrorPage /> },
-  { path: '/teacher/classes', element: <ClassesPage />, errorElement: <ErrorPage /> },
-  { path: '/teacher/archives', element: <ArchivesPage />, errorElement: <ErrorPage /> },
-  { path: '/teacher/archives/:archiveId', element: <ArchiveDetailPage />, errorElement: <ErrorPage /> },
-  { path: '/teacher/student-snapshots', element: <StudentSnapshotsPage />, errorElement: <ErrorPage /> },
+  // ── teacher pages (auth required) ───────────────────────────────────
+  { path: '/teacher', element: <RequireAuth><TeacherDashboardPage /></RequireAuth>, errorElement: <ErrorPage /> },
+  { path: '/teacher/sessions', element: <RequireAuth><SessionsPage /></RequireAuth>, errorElement: <ErrorPage /> },
+  { path: '/teacher/sessions/:sessionId', element: <RequireAuth><SessionScoresPage /></RequireAuth>, errorElement: <ErrorPage /> },
+  { path: '/teacher/snapshots', element: <RequireAuth><SnapshotsListPage /></RequireAuth>, errorElement: <ErrorPage /> },
+  { path: '/teacher/snapshots/:id', element: <RequireAuth><SnapshotEditorPage /></RequireAuth>, errorElement: <ErrorPage /> },
+  { path: '/teacher/snapshots/:id/images', element: <RequireAuth><SnapshotImagesPage /></RequireAuth>, errorElement: <ErrorPage /> },
+  { path: '/teacher/classes', element: <RequireAuth><ClassesPage /></RequireAuth>, errorElement: <ErrorPage /> },
+  { path: '/teacher/archives', element: <RequireAuth><ArchivesPage /></RequireAuth>, errorElement: <ErrorPage /> },
+  { path: '/teacher/archives/:archiveId', element: <RequireAuth><ArchiveDetailPage /></RequireAuth>, errorElement: <ErrorPage /> },
+  { path: '/teacher/student-snapshots', element: <RequireAuth><StudentSnapshotsPage /></RequireAuth>, errorElement: <ErrorPage /> },
 
-  // ── super-admin ─────────────────────────────────────────────────────
-  { path: '/super-admin', element: <SuperAdminPage />, errorElement: <ErrorPage /> },
+  // ── super-admin (auth required) ─────────────────────────────────────
+  { path: '/super-admin', element: <RequireAuth><SuperAdminPage /></RequireAuth>, errorElement: <ErrorPage /> },
 
   // ── legacy admin redirect ────────────────────────────────────────────
   { path: '/admin', element: <Navigate to="/teacher/login" replace /> },
