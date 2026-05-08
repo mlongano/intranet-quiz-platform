@@ -4,10 +4,10 @@ FROM node:22-alpine AS frontend-builder
 WORKDIR /build
 
 # Install pnpm via corepack (built into Node 22)
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10 --activate
 
 # Cache dependency layer separately from source
-COPY frontend/package.json frontend/pnpm-lock.yaml ./
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/.npmrc ./
 RUN pnpm install --frozen-lockfile
 
 COPY frontend/ ./
@@ -35,7 +35,8 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 #   SYSTEM_PYTHON=1   → install into the system Python, skip venv creation
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    UV_SYSTEM_PYTHON=1
+    UV_SYSTEM_PYTHON=1 \
+    PATH="/app/.venv/bin:$PATH"
 
 # Install Python dependencies (cache this layer when only source changes)
 COPY pyproject.toml uv.lock ./
