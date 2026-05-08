@@ -721,8 +721,9 @@ def send_result_email():
 
     try:
         from email_service import send_result_to_student  # type: ignore[import]
+        teacher_email = g.current_user.get('email', '')
         answers = row[3] if isinstance(row[3], list) else json.loads(row[3] or '[]')
-        send_result_to_student(
+        ok, msg = send_result_to_student(
             student_email=row[5],
             student_name=row[6],
             quiz_title=row[7],
@@ -730,7 +731,10 @@ def send_result_email():
             max_score=float(row[1]),
             percent=float(row[2]),
             answers=answers,
+            teacher_email=teacher_email,
         )
+        if not ok:
+            return jsonify({'error': msg}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -741,6 +745,7 @@ def send_result_email():
 @require_teacher
 def send_all_emails(session_id: int):
     teacher_id = _teacher_id()
+    teacher_email = g.current_user.get('email', '')
     sent = 0
     errors = []
 
@@ -756,7 +761,7 @@ def send_all_emails(session_id: int):
         try:
             from email_service import send_result_to_student  # type: ignore[import]
             answers = r[4] if isinstance(r[4], list) else json.loads(r[4] or '[]')
-            send_result_to_student(
+            ok, msg = send_result_to_student(
                 student_email=r[6],
                 student_name=r[7],
                 quiz_title=quiz_title,
@@ -764,8 +769,12 @@ def send_all_emails(session_id: int):
                 max_score=float(r[2]),
                 percent=float(r[3]),
                 answers=answers,
+                teacher_email=teacher_email,
             )
-            sent += 1
+            if ok:
+                sent += 1
+            else:
+                errors.append({'email': r[6], 'error': msg})
         except Exception as e:
             errors.append({'email': r[6], 'error': str(e)})
 

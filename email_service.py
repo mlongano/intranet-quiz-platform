@@ -262,6 +262,66 @@ def send_quiz_result_email(
         return False, f"Error sending email: {str(e)}"
 
 
+def send_result_to_student(
+    student_email: str,
+    student_name: str,
+    quiz_title: str,
+    score: float,
+    max_score: float,
+    percent: float,
+    answers: list[dict],
+    teacher_email: str = "",
+) -> tuple[bool, str]:
+    """
+    Send quiz result to one student.
+
+    The From: header uses teacher_email (the logged-in teacher).
+    EMAIL_SENDER is used only for SMTP authentication.
+    If SMTP auth and teacher_email differ, Gmail requires domain-wide
+    'Send mail as' delegation on the authenticated account.
+    """
+    submission = {
+        "student": student_name or student_email,
+        "raw_points": score,
+        "max_points": max_score,
+        "percent": percent,
+        "answers": answers,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    subject = f"{quiz_title} — Punteggio: {percent}%"
+
+    if not EMAIL_SENDER or not EMAIL_PASSWORD:
+        return False, "Email service not configured."
+    if not is_valid_email(student_email):
+        return False, f"Invalid email: {student_email}"
+
+    try:
+        msg = MIMEMultipart("alternative")
+        # From = the logged-in teacher; SMTP auth = EMAIL_SENDER
+        sender = teacher_email or EMAIL_SENDER
+        msg["From"] = sender
+        msg["To"] = student_email
+        msg["Reply-To"] = sender
+        msg["Subject"] = subject
+
+        html_content = format_quiz_results_html(submission, subject=subject)
+        msg.attach(MIMEText(html_content, "html"))
+
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+            server.send_message(msg)
+
+        return True, f"Email sent to {student_email}"
+
+    except smtplib.SMTPAuthenticationError:
+        return False, "SMTP auth failed. Check EMAIL_SENDER / EMAIL_PASSWORD."
+    except smtplib.SMTPException as e:
+        return False, f"SMTP error: {e}"
+    except Exception as e:
+        return False, f"Error: {e}"
+
+
 def send_bulk_quiz_results(
     submissions: list[dict],
     custom_subject: Optional[str] = None,
