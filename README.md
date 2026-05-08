@@ -178,6 +178,35 @@ The `app_backups` Docker volume stores `pg_dump` archives and image tarballs. Ad
 
 ---
 
+## Email sending (optional)
+
+QuizParty can email quiz results to students. Fill in the Email section of `.env`:
+
+```bash
+EMAIL_SENDER=noreply@yourschool.it
+EMAIL_PASSWORD=your_app_password
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+```
+
+Emails are sent **from the logged-in teacher** (via the `From:` header), so each student sees the email coming from their own teacher. The `EMAIL_SENDER` account is used only for SMTP authentication.
+
+### Gmail / Google Workspace: domain-wide delegation
+
+Gmail SMTP does not allow sending as another user by default. To let teachers send emails that appear to come from themselves, the authenticated SMTP account (`EMAIL_SENDER`) needs **domain-wide "Send mail as" delegation**:
+
+1. Create a dedicated account on your Google Workspace, e.g. `noreply@yourschool.it`
+2. Set `EMAIL_SENDER=noreply@yourschool.it` in `.env`
+3. In the [Google Admin Console](https://admin.google.com):
+   - Go to **Apps → Google Workspace → Gmail → User settings**
+   - Enable **"Allow per-user outbound gateways"** at the domain level
+   - Or add each teacher as a **"Send mail as"** alias on the `noreply` account via [Gmail settings](https://mail.google.com/mail/u/0/#settings/accounts)
+4. Generate an [App Password](https://myaccount.google.com/apppasswords) for the `noreply` account and put it in `EMAIL_PASSWORD`
+
+After setup, each teacher's outgoing emails carry their own name and address in the `From:` field, and replies go directly to the teacher.
+
+---
+
 ## Google Workspace sync (optional)
 
 Fill in the Google section of `.env` (service account JSON path, domain, teacher group, class group prefix — see `.env.example` for details), then trigger sync from **Super-Admin → Sync** in the UI, or via:
