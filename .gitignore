@@ -10,16 +10,17 @@ wheels/
 .venv
 
 .env
-quizzes/
-frontend/pnpm-workspace.yaml
-/questions.jsonc
-/questions.jsonc.bak
+
+# Legacy v2.6.0 single-tenant data files (now in PostgreSQL)
+/quizzes/
+/questions.jsonc*
+/scores*.jsonc*
+/students.jsonc*
+/quiz_status.jsonc*
 *.bak
-/students.jsonc
-/students.jsonc.bak
+
+frontend/pnpm-workspace.yaml
 .DS_Store
-/scores.jsonc
-/scores.jsonc.bak
 
 # Banks directory - synced separately with Git
 banks/
