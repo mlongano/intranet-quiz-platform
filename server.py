@@ -92,6 +92,9 @@ def serve_react_app(path):
 
 # ── startup ───────────────────────────────────────────────────────────────────
 
+import sys
+
+
 def _local_ips() -> list[str]:
     addrs = ['127.0.0.1']
     try:
@@ -106,7 +109,7 @@ def _local_ips() -> list[str]:
     return addrs
 
 
-def run_server() -> None:
+def run_prod() -> None:
     port = 5001
     print("=" * 60)
     print("Starting QuizParty (multi-tenant edition)")
@@ -127,5 +130,23 @@ def run_server() -> None:
     )
 
 
+def run_dev() -> None:
+    port = int(os.environ.get('PORT', 5001))
+    print("=" * 60)
+    print("Starting QuizParty (debug mode — hot reload)")
+    print(f"Images: {IMAGES_FOLDER}")
+    print("=" * 60)
+    APP.run(
+        host='0.0.0.0',
+        port=port,
+        debug=True,
+        use_reloader=True,
+        use_debugger=True,
+    )
+
+
 if __name__ == '__main__':
-    run_server()
+    if '--debug' in sys.argv:
+        run_dev()
+    else:
+        run_prod()

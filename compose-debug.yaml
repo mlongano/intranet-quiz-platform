@@ -1,0 +1,46 @@
+# ── Debug / hot‑reload override ─────────────────────────────────────────────
+# Usage:  docker compose -f compose.yaml -f compose-debug.yaml up --build
+#
+# Overrides the `app` service to run Flask's dev server with werkzeug
+# auto‑reloader + bind‑mounted source. Adds a `frontend` service running
+# Vite dev server (HMR) proxying /api and /images to the `app` container.
+# Source bind-mounts ensure changes to .py and .tsx files trigger live reload.
+
+services:
+
+  # ── Override: Flask dev server with hot reload ────────────────────────────
+  app:
+    # Keep the same build, ports, db dependency from compose.yaml.
+    # Override only the command and add source bind-mounts.
+    volumes:
+      - app_images:/app/images
+      - app_backups:/app/backups
+      # Bind-mount Python source for live reload
+      - ./auth:/app/auth:ro
+      - ./db:/app/db:ro
+      - ./routes:/app/routes:ro
+      - ./services:/app/services:ro
+      - ./scripts:/app/scripts:ro
+      - ./email_service.py:/app/email_service.py:ro
+      - ./llm_evaluator.py:/app/llm_evaluator.py:ro
+      - ./server.py:/app/server.py:ro
+      - ./utils.py:/app/utils.py:ro
+    command: ["--debug"]
+
+  # ── New: Vite frontend with HMR ───────────────────────────────────────────
+  frontend:
+    image: node:22-alpine
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      VITE_BACKEND_URL: http://app:5001
+      CI: "true"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+    command: >
+      sh -c "corepack enable &&
+             corepack prepare pnpm@10 --activate &&
+             pnpm install &&
+             pnpm dev"

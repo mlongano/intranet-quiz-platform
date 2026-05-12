@@ -28,4 +28,4 @@ python -m db.migrate up
 
 # ── Start server ──────────────────────────────────────────────────────────────
 echo "[entrypoint] Starting QuizParty..."
-exec python server.py
+exec python server.py "$@"

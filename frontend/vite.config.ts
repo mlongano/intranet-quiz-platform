@@ -3,6 +3,10 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { visualizer } from "rollup-plugin-visualizer";
 
+// VITE_BACKEND_URL overrides the API proxy target (useful in Docker).
+// Defaults to http://localhost:5001 for local dev.
+const backendUrl = process.env.VITE_BACKEND_URL || "http://localhost:5001";
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss(),
@@ -44,18 +48,14 @@ export default defineConfig({
     proxy: {
       // Proxy /api requests to your Flask backend
       "/images": {
-        target: "http://localhost:5001", // Your Flask backend URL
+        target: backendUrl,
         changeOrigin: true, // Recommended for virtual hosted sites
         secure: false, // Optional: Set to false if backend uses self-signed certs (not recommended for prod)
-        // Optional: You might not need rewrite if your Flask routes start with /api
-        // rewrite: (path) => path.replace(/^\/api/, '/api')
       },
       "/api": {
-        target: "http://localhost:5001", // Your Flask backend URL
+        target: backendUrl,
         changeOrigin: true, // Recommended for virtual hosted sites
         secure: false, // Optional: Set to false if backend uses self-signed certs (not recommended for prod)
-        // Optional: You might not need rewrite if your Flask routes start with /api
-        // rewrite: (path) => path.replace(/^\/api/, '/api')
       },
     },
   },
