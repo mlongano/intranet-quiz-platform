@@ -85,13 +85,14 @@ def teacher_change_password():
         if not old_password:
             return jsonify({'error': 'MISSING_OLD_PASSWORD'}), 400
         with db.get_conn() as conn:
-            teacher_row = conn.execute(Q.GET_TEACHER_BY_ID, (teacher_id,)).fetchone()
-        if not teacher_row:
+            row = conn.execute(
+                "SELECT id, email, role, status, display_name, "
+                "password_must_change, password_hash "
+                "FROM teachers WHERE id = %s", (teacher_id,)
+            ).fetchone()
+        if not row:
             return jsonify({'error': 'INVALID_CREDENTIALS'}), 401
-        pw_hash_stored = conn.execute(
-            "SELECT password_hash FROM teachers WHERE id = %s", (teacher_id,)
-        ).fetchone()[0]
-        if not bcrypt.checkpw(old_password.encode(), pw_hash_stored.encode()):
+        if not bcrypt.checkpw(old_password.encode(), row[6].encode()):
             return jsonify({'error': 'INVALID_CREDENTIALS'}), 401
 
     new_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt(rounds=12)).decode()
