@@ -284,6 +284,16 @@ def create_session():
     if not snap_row:
         return jsonify({'error': 'SNAPSHOT_NOT_FOUND'}), 404
 
+    # Verify teacher owns every class
+    with db.get_conn() as conn:
+        for cid in class_ids:
+            owns = conn.execute(
+                "SELECT 1 FROM class_teachers WHERE class_id = %s AND teacher_id = %s",
+                (cid, teacher_id),
+            ).fetchone()
+            if not owns:
+                return jsonify({'error': f'Class {cid} not found or not yours.'}), 403
+
     session_title = title or snap_row[0]
     result = qs_service.create_session(
         teacher_id=teacher_id,
