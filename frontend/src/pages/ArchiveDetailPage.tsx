@@ -62,7 +62,7 @@ function ArchiveDetailPage() {
           >
             <Download size={14} />
             Esporta
-          </a>
+          </button>
         )}
       </div>
 

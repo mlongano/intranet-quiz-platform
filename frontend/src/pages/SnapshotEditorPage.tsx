@@ -84,7 +84,7 @@ function SnapshotEditorPage() {
           >
             <Download size={14} />
             Esporta
-          </a>
+          </button>
           <button
             onClick={() => setShowImagePicker(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-outline-variant/40 text-on-surface rounded-lg hover:bg-surface-container-high transition-colors"

@@ -12,6 +12,7 @@ function TeachersTab() {
   const queryClient = useQueryClient();
   const { ask: askConfirm, modal: confirmModal } = useConfirmModal();
   const { data: teachers, isLoading } = useQuery({ queryKey: ['sa-teachers'], queryFn: listTeachers });
+  const [message, setMessage] = useState<string | null>(null);
 
   const [showCreate, setShowCreate] = useState(false);
   const [email, setEmail] = useState('');
@@ -36,11 +37,22 @@ function TeachersTab() {
 
   const resetPw = useMutation({
     mutationFn: (id: number) => resetTeacherPassword(id),
-    onSuccess: (data) => alert(`Nuova password temporanea: ${data.temp_password}`),
+    onSuccess: (data) => {
+      // Show password in a non-dismissible inline notification
+      const msg = `Nuova password temporanea: ${data.temp_password}`;
+      setMessage(msg);
+      setTimeout(() => setMessage(null), 15000);
+    },
   });
 
   return (
     <div className="space-y-6">
+      {message && (
+        <div className="p-3 bg-tertiary/10 border border-tertiary/30 text-tertiary rounded-lg text-sm">
+          {message}
+          <button onClick={() => setMessage(null)} className="ml-3 text-tertiary/60 hover:text-tertiary">✕</button>
+        </div>
+      )}
       <div className="flex justify-between items-center">
         <h2 className="font-semibold text-on-surface">Docenti</h2>
         <button
@@ -100,9 +112,11 @@ function TeachersTab() {
           </div>
         ))}
       </div>
+      {confirmModal}
     </div>
   );
 }
+
 
 function SyncTab() {
   const [runId, setRunId] = useState<number | null>(null);
@@ -186,7 +200,6 @@ function SuperAdminPage() {
       </div>
       {tab === 'teachers' && <TeachersTab />}
       {tab === 'sync' && <SyncTab />}
-      {confirmModal}
     </TeacherLayout>
   );
 }

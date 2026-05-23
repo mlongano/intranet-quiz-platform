@@ -2,11 +2,13 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Download, Trash2 } from 'lucide-react';
 import TeacherLayout from '../layouts/TeacherLayout';
-import { listArchives, deleteArchive, getArchiveExportUrl } from '../api';
+import { listArchives, deleteArchive, getArchiveExportUrl, downloadExport } from '../api';
+import { useConfirmModal } from '../lib/useConfirmModal';
 
 function ArchivesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { ask: askConfirm, modal: confirmModal } = useConfirmModal();
 
   const { data: archives, isLoading } = useQuery({
     queryKey: ['archives'],
@@ -48,9 +50,7 @@ function ArchivesPage() {
                 Apri <ArrowRight size={12} />
               </button>
               <button
-                onClick={() => {
-                  if (confirm(`Eliminare "${a.title}"?`)) deleteMutation.mutate(a.id);
-                }}
+                onClick={() => askConfirm(`Eliminare "${a.title}"?`, () => deleteMutation.mutate(a.id))}
                 disabled={deleteMutation.isPending}
                 className="p-2 text-on-surface-variant hover:text-error transition-colors disabled:opacity-40"
                 title="Elimina"
