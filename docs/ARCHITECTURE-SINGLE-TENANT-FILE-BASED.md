@@ -1,7 +1,9 @@
-# QuizParty — Current Architecture (Single-Tenant)
+# QuizParty — Current Architecture (Single-Tenant, File-Based)
 
-> This document describes the as-is architecture as of v2.6.0.
-> Its purpose is to serve as a precise baseline for designing the multi-teacher / multi-class refactor.
+> This document describes the as-is architecture as of v2.6.0, before the
+> multi-tenant PostgreSQL refactor.
+>
+> The current architecture is described in [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ---
 
