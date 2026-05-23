@@ -23,7 +23,7 @@ def _teacher_ttl() -> int:
 def encode_teacher_token(teacher_id: int, role: str, email: str) -> str:
     now = datetime.now(timezone.utc)
     payload = {
-        'sub': teacher_id,
+        'sub': str(teacher_id),
         'role': role,
         'email': email,
         'iat': now,
@@ -42,7 +42,7 @@ def encode_student_token(student_id: int, session_id: int, closes_at: datetime |
     else:
         exp = max_exp
     payload = {
-        'sub': student_id,
+        'sub': str(student_id),
         'sid': session_id,
         'role': 'student',
         'iat': now,
@@ -54,7 +54,7 @@ def encode_student_token(student_id: int, session_id: int, closes_at: datetime |
 def encode_change_password_token(teacher_id: int) -> str:
     now = datetime.now(timezone.utc)
     payload = {
-        'sub': teacher_id,
+        'sub': str(teacher_id),
         'scope': 'password_change',
         'iat': now,
         'exp': now + timedelta(minutes=15),

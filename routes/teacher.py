@@ -66,7 +66,8 @@ from auth.decorators import require_teacher
 from services import images as img_service
 from services import quiz_session as qs_service
 from services import snapshots as snap_service
-from services.grading import format_detailed_answers, grade
+from services.grading import format_detailed_answers, grade, score_open
+from services import score_transforms
 
 teacher_bp = Blueprint('teacher', __name__, url_prefix='/api/teacher')
 
@@ -359,41 +360,29 @@ def review_scores(session_id: int):
     overrides = data.get('overrides', [])
     teacher_id = _teacher_id()
 
-    with db.get_conn() as conn:
-        _assert_session_owner(conn, session_id, teacher_id)
-        for override in overrides:
-            score_id = override.get('score_id')
-            if not score_id:
-                continue
-            row = conn.execute(
-                "SELECT answers, raw_points, max_points FROM score_entries "
-                "WHERE id = %s AND session_id = %s",
-                (score_id, session_id),
-            ).fetchone()
-            if not row:
-                continue
-            answers = row[0] if isinstance(row[0], list) else json.loads(row[0] or '[]')
-            per_q_overrides = override.get('per_question', {})
-            new_raw = 0.0
-            for i, ans in enumerate(answers):
-                q_id = str(ans.get('question_id'))
-                if q_id in per_q_overrides:
-                    new_pts = float(per_q_overrides[q_id])
-                    ans['points_awarded'] = new_pts
-                    ans['raw_points'] = new_pts
-                new_raw += ans.get('points_awarded', 0)
-            max_pts = float(row[2])
-            new_pct = round(new_raw / max_pts * 100, 2) if max_pts else 0
-            conn.execute(Q.UPDATE_SCORE_ANSWERS, {
-                'answers': json.dumps(answers),
-                'raw_points': round(new_raw, 2),
-                'max_points': max_pts,
-                'percent': new_pct,
-                'id': score_id,
-                'teacher_id': teacher_id,
-            })
-        conn.commit()
-    return jsonify({'ok': True}), 200
+    # Build lookup: {score_entry_id -> {question_id -> new_points}}
+    overrides_by_id: dict[int, dict[str, float]] = {}
+    for o in overrides:
+        sid = o.get('score_id')
+        if sid:
+            overrides_by_id[sid] = {str(k): float(v) for k, v in o.get('per_question', {}).items()}
+
+    def _review_fn(score_id: int, answers: list[dict], _qbank_map: dict) -> list[dict] | None:
+        per_q = overrides_by_id.get(score_id)
+        if not per_q:
+            return None
+        for ans in answers:
+            q_id = str(ans.get('question_id'))
+            if q_id in per_q:
+                ans['points_awarded'] = ans['raw_points'] = per_q[q_id]
+        return answers
+
+    updated = score_transforms.transform_scores(
+        session_id, teacher_id,
+        entry_ids=list(overrides_by_id.keys()),
+        transform_fn=_review_fn,
+    )
+    return jsonify({'ok': True, 'updated': updated}), 200
 
 
 @teacher_bp.post('/sessions/<int:session_id>/scores/recalculate')
@@ -401,53 +390,25 @@ def review_scores(session_id: int):
 def recalculate_scores(session_id: int):
     """Re-grade all score entries for a session against the current snapshot."""
     teacher_id = _teacher_id()
-    updated = 0
-    with db.get_conn() as conn:
-        _assert_session_owner(conn, session_id, teacher_id)
-        snap_row = conn.execute(
-            "SELECT snap.content FROM question_snapshots snap "
-            "JOIN quiz_sessions s ON s.snapshot_id = snap.id WHERE s.id = %s",
-            (session_id,),
-        ).fetchone()
-        if not snap_row:
-            return jsonify({'error': 'SNAPSHOT_NOT_FOUND'}), 404
 
-        content = snap_row[0] if isinstance(snap_row[0], dict) else json.loads(snap_row[0])
-        questions_list = content.get('questions', [])
-        qbank_map = {str(q['id']): q for q in questions_list}
+    def _recalc_fn(_score_id: int, answers: list[dict], qbank_map: dict) -> list[dict] | None:
+        plan_steps = [
+            {'id': str(a['question_id']), 'option_order': a.get('option_order', [])}
+            for a in answers
+        ]
+        raw_answers = [a.get('raw_student_answer') for a in answers]
+        questions_list = list(qbank_map.values())
+        result = grade(raw_answers, {'plan': plan_steps}, {'questions': questions_list})
+        return format_detailed_answers(
+            {'plan': plan_steps}, qbank_map, raw_answers,
+            result['scores_per_question'],
+            result['feedbacks_per_question'],
+            result['verdicts_per_question'],
+        )
 
-        score_rows = conn.execute(
-            "SELECT id, answers, max_points FROM score_entries WHERE session_id = %s",
-            (session_id,),
-        ).fetchall()
-
-        for score_id, answers_raw, max_pts in score_rows:
-            answers = answers_raw if isinstance(answers_raw, list) else json.loads(answers_raw or '[]')
-            # Reconstruct plan steps from stored option_order in answers
-            plan_steps = [
-                {'id': str(a['question_id']), 'option_order': a.get('option_order', [])}
-                for a in answers
-            ]
-            raw_answers = [a.get('raw_student_answer') for a in answers]
-            grading_plan = {'plan': plan_steps}
-            grading_qbank = {'questions': questions_list}
-            result = grade(raw_answers, grading_plan, grading_qbank)
-            new_detailed = format_detailed_answers(
-                grading_plan, qbank_map, raw_answers,
-                result['scores_per_question'],
-                result['feedbacks_per_question'],
-                result['verdicts_per_question'],
-            )
-            conn.execute(Q.UPDATE_SCORE_ANSWERS, {
-                'answers': json.dumps(new_detailed),
-                'raw_points': result['raw_points'],
-                'max_points': result['max_points'],
-                'percent': result['percent'],
-                'id': score_id,
-                'teacher_id': teacher_id,
-            })
-            updated += 1
-        conn.commit()
+    updated = score_transforms.transform_scores(
+        session_id, teacher_id, transform_fn=_recalc_fn,
+    )
     return jsonify({'updated': updated}), 200
 
 
@@ -494,64 +455,27 @@ def archive_session_scores(session_id: int):
 def regrade_open_questions(session_id: int):
     """Re-grade open questions using the current LLM/keyword settings."""
     teacher_id = _teacher_id()
-    updated = 0
-    with db.get_conn() as conn:
-        _assert_session_owner(conn, session_id, teacher_id)
-        snap_row = conn.execute(
-            "SELECT snap.content FROM question_snapshots snap "
-            "JOIN quiz_sessions s ON s.snapshot_id = snap.id WHERE s.id = %s",
-            (session_id,),
-        ).fetchone()
-        if not snap_row:
-            return jsonify({'error': 'SNAPSHOT_NOT_FOUND'}), 404
 
-        content = snap_row[0] if isinstance(snap_row[0], dict) else json.loads(snap_row[0])
-        questions_list = content.get('questions', [])
-        open_ids = {str(q['id']) for q in questions_list if q.get('type') == 'open'}
+    def _regrade_open_fn(_score_id: int, answers: list[dict], qbank_map: dict) -> list[dict] | None:
+        changed = False
+        for ans in answers:
+            q = ans.get('question_snapshot')
+            if not isinstance(q, dict):
+                q = qbank_map.get(str(ans.get('question_id')))
+            if not isinstance(q, dict) or q.get('type') != 'open':
+                continue
+            raw_student = ans.get('raw_student_answer') or ''
+            new_fraction = score_open(raw_student, q)
+            new_pts = round(new_fraction * q.get('weight', 1), 2)
+            old_pts = ans.get('raw_points', 0)
+            if abs(new_pts - old_pts) > 0.001:
+                ans['points_awarded'] = ans['raw_points'] = new_pts
+                changed = True
+        return answers if changed else None
 
-        if not open_ids:
-            return jsonify({'updated': 0}), 200
-
-        score_rows = conn.execute(
-            "SELECT id, answers, raw_points, max_points FROM score_entries WHERE session_id = %s",
-            (session_id,),
-        ).fetchall()
-
-        qbank_map = {str(q['id']): q for q in questions_list}
-
-        for score_id, answers_raw, raw_pts, max_pts in score_rows:
-            answers = answers_raw if isinstance(answers_raw, list) else json.loads(answers_raw or '[]')
-            changed = False
-            new_raw = float(raw_pts)
-
-            for ans in answers:
-                q_id = str(ans.get('question_id'))
-                if q_id not in open_ids:
-                    continue
-                q = qbank_map.get(q_id, {})
-                raw_student = ans.get('raw_student_answer') or ''
-                from services.grading import score_open
-                new_fraction = score_open(raw_student, q)
-                new_pts = round(new_fraction * q.get('weight', 1), 2)
-                old_pts = ans.get('raw_points', 0)
-                if abs(new_pts - old_pts) > 0.001:
-                    new_raw += new_pts - old_pts
-                    ans['points_awarded'] = new_pts
-                    ans['raw_points'] = new_pts
-                    changed = True
-
-            if changed:
-                new_pct = round(new_raw / float(max_pts) * 100, 2) if max_pts else 0
-                conn.execute(Q.UPDATE_SCORE_ANSWERS, {
-                    'answers': json.dumps(answers),
-                    'raw_points': round(new_raw, 2),
-                    'max_points': float(max_pts),
-                    'percent': new_pct,
-                    'id': score_id,
-                    'teacher_id': teacher_id,
-                })
-                updated += 1
-        conn.commit()
+    updated = score_transforms.transform_scores(
+        session_id, teacher_id, transform_fn=_regrade_open_fn,
+    )
     return jsonify({'updated': updated}), 200
 
 

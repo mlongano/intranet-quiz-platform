@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Architecture review — intranet-quiz-platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+    </script>
+    <style>
+      .seam { stroke-dasharray: 4 4; }
+      .leak { stroke: #dc2626; }
+      .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+    </style>
+  </head>
+  <body class="bg-stone-50 text-slate-900 font-sans">
+    <main class="max-w-5xl mx-auto px-6 py-12 space-y-12">
+
+      <!-- HEADER -->
+      <header class="space-y-3">
+        <h1 class="text-3xl font-serif font-bold tracking-tight">Architecture Review</h1>
+        <p class="text-sm text-stone-500">intranet-quiz-platform · multi-tenant refactor (pre-alpha) · 2026-05-23</p>
+        <div class="flex gap-6 text-xs uppercase tracking-wider text-stone-400 pt-2">
+          <span class="flex items-center gap-1.5">
+            <span class="inline-block w-4 h-4 border-2 border-slate-700 rounded-sm"></span> module
+          </span>
+          <span class="flex items-center gap-1.5">
+            <svg width="16" height="2"><line x1="0" y1="1" x2="16" y2="1" stroke="#94a3b8" stroke-dasharray="3 3" stroke-width="2"/></svg>
+            seam
+          </span>
+          <span class="flex items-center gap-1.5">
+            <svg width="16" height="2"><line x1="0" y1="1" x2="16" y2="1" stroke="#dc2626" stroke-width="2"/></svg>
+            leakage
+          </span>
+          <span class="flex items-center gap-1.5">
+            <span class="inline-block w-4 h-4 rounded-sm deep border border-slate-600"></span>
+            deep module
+          </span>
+        </div>
+      </header>
+
+      <!-- CANDIDATES -->
+      <section id="candidates" class="space-y-10">
+
+        <!-- CANDIDATE 1: Collapse the score trio -->
+        <article class="rounded-xl border border-slate-200 bg-white p-6 space-y-5">
+          <div class="flex items-start justify-between">
+            <h2 class="text-lg font-serif font-semibold">Collapse the score‑review / recalculate / regrade trio</h2>
+            <div class="flex gap-2">
+              <span class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700">Strong</span>
+              <span class="px-2.5 py-0.5 text-xs rounded-full bg-slate-100 text-green-700">✅ Done</span>
+            </div>
+          </div>
+
+          <p class="text-sm font-mono text-stone-500">
+            routes/teacher.py (lines 155–280) · services/grading.py
+          </p>
+
+          <!-- Before / After -->
+          <div class="grid grid-cols-2 gap-6">
+            <!-- BEFORE -->
+            <div class="rounded-lg border border-red-100 bg-red-50/30 p-3 space-y-2">
+              <p class="text-[10px] uppercase tracking-widest text-red-400 mb-1">Before — three shallow modules</p>
+              <pre class="mermaid text-[10px]">
+flowchart LR
+    subgraph R1["`**review_scores**`"]
+        direction TB
+        A1[parse overrides] --> A2[load snapshot]
+        A2 --> A3[iterate entries]
+        A3 --> A4[apply per-question overrides]
+        A4 --> A5[update scores one by one]
+    end
+    subgraph R2["`**recalculate_scores**`"]
+        direction TB
+        B1[load snapshot] --> B2[build qbank map]
+        B2 --> B3[iterate entries]
+        B3 --> B4[call grade]
+        B4 --> B5[format answers]
+        B5 --> B6[update scores one by one]
+    end
+    subgraph R3["`**regrade_open**`"]
+        direction TB
+        C1[load snapshot] --> C2[build qbank map]
+        C2 --> C3[iterate entries]
+        C3 --> C4[call score_open]
+        C4 --> C5[update scores one by one]
+    end
+    R1 -.-> R2 -.-> R3
+    classDef leak stroke:#dc2626,stroke-width:2px,stroke-dasharray:4 4;
+    class A2,B1,C1 leak
+              </pre>
+            </div>
+            <!-- AFTER -->
+            <div class="rounded-lg border border-emerald-100 bg-emerald-50/30 p-3 space-y-2">
+              <p class="text-[10px] uppercase tracking-widest text-emerald-500 mb-1">After — one deep module</p>
+              <pre class="mermaid text-[10px]">
+flowchart TB
+    R[review_scores] --> T
+    S[recalculate_scores] --> T
+    Rg[regrade_open] --> T
+    subgraph D["`**transform_scores**  (deep module)`"]
+        direction TB
+        T["transform_scores(session_id, teacher_id, fn)"]
+        T --> L[load snapshot once]
+        L --> I[iterate entries once]
+        I --> X[apply transformation fn]
+        X --> U[batch UPDATE]
+    end
+    classDef deep fill:#0f172a,color:#e2e8f0,stroke:#475569;
+    class D deep
+              </pre>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <p class="font-semibold text-red-600 text-xs uppercase tracking-wider">Problem</p>
+              <p class="text-stone-600 mt-1">Three route handlers independently load the same snapshot, build the same qbank_map, iterate the same score entries, and issue individual UPDATEs. Each is a shallow module — the interface (parse request → load snapshot → iterate → update) nearly matches the implementation line-for-line.</p>
+            </div>
+            <div>
+              <p class="font-semibold text-emerald-600 text-xs uppercase tracking-wider">Solution</p>
+              <p class="text-stone-600 mt-1">Extract a <code class="bg-stone-100 px-1 rounded">transform_scores(session_id, teacher_id, fn)</code> module. It loads the snapshot once, iterates score entries once, applies the caller's transformation callback to each entry's answers, and batch‑updates. The three route handlers become thin adapters that pass different callbacks.</p>
+            </div>
+          </div>
+
+          <div>
+            <p class="font-semibold text-xs uppercase tracking-wider mb-1.5">Wins</p>
+            <ul class="list-disc list-inside text-sm text-stone-600 space-y-0.5">
+              <li>locality: snapshot loading, qbank_map building, and iteration live in one module</li>
+              <li>leverage: one interface serves three callers; adding a fourth score mutation costs one callback</li>
+              <li>interface shrinks: route handlers drop ~60 lines of duplicated scaffolding each</li>
+              <li>test surface: one module to test with fake transformation callbacks</li>
+            </ul>
+          </div>
+        </article>
+
+        <!-- CANDIDATE 2: Snapshot loading + qbank_map -->
+        <article class="rounded-xl border border-slate-200 bg-white p-6 space-y-5">
+          <div class="flex items-start justify-between">
+            <h2 class="text-lg font-serif font-semibold">Extract snapshot loading + qbank_map construction</h2>
+            <div class="flex gap-2">
+              <span class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-700">Worth exploring</span>
+              <span class="px-2.5 py-0.5 text-xs rounded-full bg-slate-100 text-green-700">✅ Done</span>
+            </div>
+          </div>
+
+          <p class="text-sm font-mono text-stone-500">
+            routes/quiz.py:86–95 · routes/teacher.py:184–195,220–230 · services/quiz_session.py:360–378
+          </p>
+
+          <div class="grid grid-cols-2 gap-6">
+            <div class="rounded-lg border border-red-100 bg-red-50/30 p-3">
+              <p class="text-[10px] uppercase tracking-widest text-red-400 mb-3">Before — pass‑through at 4 call sites</p>
+              <div class="space-y-2">
+                <div class="border border-red-200 rounded p-2 bg-white text-[10px]">
+                  <span class="font-mono text-red-500">quiz.py:resume()</span>
+                  <div class="text-stone-400 mt-0.5">conn.execute(JOIN query) → content → questions_list → qbank_map</div>
+                </div>
+                <div class="border border-red-200 rounded p-2 bg-white text-[10px]">
+                  <span class="font-mono text-red-500">teacher.py:recalculate_scores()</span>
+                  <div class="text-stone-400 mt-0.5">conn.execute(JOIN query) → content → questions_list → qbank_map</div>
+                </div>
+                <div class="border border-red-200 rounded p-2 bg-white text-[10px]">
+                  <span class="font-mono text-red-500">teacher.py:regrade_open_questions()</span>
+                  <div class="text-stone-400 mt-0.5">conn.execute(JOIN query) → content → questions_list → qbank_map</div>
+                </div>
+                <div class="border border-red-200 rounded p-2 bg-white text-[10px]">
+                  <span class="font-mono text-red-500">quiz_session.py:_build_question_response()</span>
+                  <div class="text-stone-400 mt-0.5">receives conn → executes JOIN → content → questions_list → qbank_map</div>
+                </div>
+              </div>
+            </div>
+            <div class="rounded-lg border border-emerald-100 bg-emerald-50/30 p-3 flex items-center justify-center">
+              <div class="text-center">
+                <p class="text-[10px] uppercase tracking-widest text-emerald-500 mb-2">After — one module</p>
+                <div class="deep rounded-lg p-4 text-white text-xs space-y-1">
+                  <p class="font-mono text-emerald-300">get_qbank_for_session(conn, session_id) → dict[str, Question]</p>
+                  <p class="text-stone-400 text-[10px]">Single JOIN query<br/>JSONB deserialised once<br/>qbank_map indexed by str(id)</p>
+                </div>
+                <p class="text-[10px] text-stone-400 mt-2">4 call sites → 1 import, 1 call each</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <p class="font-semibold text-red-600 text-xs uppercase tracking-wider">Problem</p>
+              <p class="text-stone-600 mt-1">The JOIN query that loads a session's snapshot content, parses its JSONB, extracts <code>questions</code>, and builds a <code>{str(id) → q}</code> dictionary is repeated verbatim at 4 sites. Deleting each copy would shift the complexity to the remaining 3 — the deletion test confirms this is a pass‑through, not a module earning its keep.</p>
+            </div>
+            <div>
+              <p class="font-semibold text-emerald-600 text-xs uppercase tracking-wider">Solution</p>
+              <p class="text-stone-600 mt-1">Create a <code>get_qbank_for_session(conn, session_id) → dict</code> module in <code>services/</code>. Callers pass their open connection and receive a qbank_map. The JOIN query, JSONB handling, and id‑to‑string coercion concentrate in one place.</p>
+            </div>
+          </div>
+
+          <div>
+            <p class="font-semibold text-xs uppercase tracking-wider mb-1.5">Wins</p>
+            <ul class="list-disc list-inside text-sm text-stone-600 space-y-0.5">
+              <li>locality: change the query, the JSONB shape, or the indexing key → fix once</li>
+              <li>leverage: 4 callers, 1 interface, ~15 lines each evaporate</li>
+              <li>test surface: test the query and qbank construction independently of route handlers</li>
+              <li>enables candidate #1 (transform_scores would use this module)</li>
+            </ul>
+          </div>
+        </article>
+
+        <!-- CANDIDATE 3: Quiz submission race condition -->
+        <article class="rounded-xl border border-slate-200 bg-white p-6 space-y-5">
+          <div class="flex items-start justify-between">
+            <h2 class="text-lg font-serif font-semibold">Close the quiz‑submission transaction gap</h2>
+            <div class="flex gap-2">
+              <span class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700">Strong</span>
+              <span class="px-2.5 py-0.5 text-xs rounded-full bg-slate-100 text-green-700">✅ Done</span>
+            </div>
+          </div>
+
+          <p class="text-sm font-mono text-stone-500">
+            routes/quiz.py:62–82,113–131 · services/quiz_session.py (find_plan_by_quiz_id, save_answer, submit_plan)
+          </p>
+
+          <div class="grid grid-cols-2 gap-6">
+            <div class="rounded-lg border border-red-100 bg-red-50/30 p-3">
+              <p class="text-[10px] uppercase tracking-widest text-red-400 mb-2">Before — two connections, no lock across ownership check</p>
+              <pre class="mermaid text-[10px]">
+sequenceDiagram
+    actor R as route handler
+    participant P as find_plan_by_quiz_id
+    participant D as DB conn 1
+    participant S as save_answer
+    participant D2 as DB conn 2
+
+    R->>P: find_plan quiz_id
+    P->>D: SELECT quiz_plans
+    D-->>P: plan data returned
+    P-->>R: plan_data
+    Note over R: validates student_id matches<br/>but no lock held here
+    R->>S: save_answer quiz_id, answer
+    S->>D2: SELECT FOR UPDATE
+    Note over D2: locks row too late<br/>ownership validated on stale data
+              </pre>
+            </div>
+            <div class="rounded-lg border border-emerald-100 bg-emerald-50/30 p-3">
+              <p class="text-[10px] uppercase tracking-widest text-emerald-500 mb-2">After — single transaction, ownership inside lock</p>
+              <pre class="mermaid text-[10px]">
+sequenceDiagram
+    actor R as route handler
+    participant Q as save_answer
+    participant D as DB single txn
+
+    R->>Q: save_answer quiz_id, answer, student_id
+    Q->>D: BEGIN
+    Q->>D: SELECT FOR UPDATE
+    D-->>Q: plan_data
+    Q->>Q: assert student_id matches
+    Q->>Q: modify progression
+    Q->>Q: UPDATE quiz_plans
+    Q->>D: COMMIT
+    Q-->>R: result
+              </pre>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <p class="font-semibold text-red-600 text-xs uppercase tracking-wider">Problem</p>
+              <p class="text-stone-600 mt-1">The route handler validates plan ownership in one connection, then calls <code>save_answer</code> in another. Between these two connections, the plan could be deleted or reassigned. The correctness invariant — "only the owning student can answer" — is spread across two modules with no shared transaction. The <code>FOR UPDATE</code> in save_answer locks the row too late.</p>
+            </div>
+            <div>
+              <p class="font-semibold text-emerald-600 text-xs uppercase tracking-wider">Solution</p>
+              <p class="text-stone-600 mt-1">Push <code>student_id</code> into save_answer and submit_plan as a parameter. The service module opens one transaction, SELECTs FOR UPDATE, asserts ownership inside the lock, then proceeds. Remove the separate <code>find_plan_by_quiz_id</code> call from the route handlers — it becomes an internal detail of the service.</p>
+            </div>
+          </div>
+
+          <div>
+            <p class="font-semibold text-xs uppercase tracking-wider mb-1.5">Wins</p>
+            <ul class="list-disc list-inside text-sm text-stone-600 space-y-0.5">
+              <li>locality: the "ownership → mutation" invariant lives in one transaction, one module</li>
+              <li>leverage: route handlers shrink — no manual find_plan + check + call pattern</li>
+              <li>correctness: FOR UPDATE protects the full read‑check‑write cycle</li>
+              <li>test surface: save_answer can be tested with invalid student_id → FORBIDDEN in one call</li>
+            </ul>
+          </div>
+        </article>
+
+        <!-- CANDIDATE 4: teacher.py route depth -->
+        <article class="rounded-xl border border-slate-200 bg-white p-6 space-y-5">
+          <div class="flex items-start justify-between">
+            <h2 class="text-lg font-serif font-semibold">Route‑service seam in teacher.py is blurry</h2>
+            <div class="flex gap-2">
+              <span class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-700">Worth exploring</span>
+              <span class="px-2.5 py-0.5 text-xs rounded-full bg-slate-100 text-green-700">✅ Done</span>
+            </div>
+          </div>
+
+          <p class="text-sm font-mono text-stone-500">
+            routes/teacher.py (781 lines) · services/quiz_session.py · services/grading.py · services/snapshots.py
+          </p>
+
+          <div class="grid grid-cols-2 gap-6">
+            <div class="rounded-lg border border-red-100 bg-red-50/30 p-3">
+              <p class="text-[10px] uppercase tracking-widest text-red-400 mb-2">Before — cross‑section of teacher.py's 781 lines</p>
+              <div class="space-y-1">
+                <div class="h-5 border-l-4 border-red-300 pl-2 text-[10px] text-red-500 bg-red-50/50">request parsing + JSON loads</div>
+                <div class="h-5 border-l-4 border-red-300 pl-2 text-[10px] text-red-500 bg-red-50/50">permission checks (_assert_session_owner)</div>
+                <div class="h-5 border-l-4 border-amber-300 pl-2 text-[10px] text-amber-600 bg-amber-50/50">inline DB queries (JOIN, SELECT, INSERT)</div>
+                <div class="h-5 border-l-4 border-amber-300 pl-2 text-[10px] text-amber-600 bg-amber-50/50">JSON parsing (isinstance checks, json.loads)</div>
+                <div class="h-5 border-l-4 border-amber-300 pl-2 text-[10px] text-amber-600 bg-amber-50/50">answer manipulation + point recalculation</div>
+                <div class="h-5 border-l-4 border-amber-300 pl-2 text-[10px] text-amber-600 bg-amber-50/50">email_service lazy import (× 2 handlers)</div>
+                <div class="h-5 border-l-4 border-red-300 pl-2 text-[10px] text-red-500 bg-red-50/50">response serialisation</div>
+              </div>
+            </div>
+            <div class="rounded-lg border border-emerald-100 bg-emerald-50/30 p-3">
+              <p class="text-[10px] uppercase tracking-widest text-emerald-500 mb-2">After — clean seam</p>
+              <div class="space-y-1">
+                <div class="h-5 border-l-4 border-red-300 pl-2 text-[10px] text-red-500 bg-red-50/50">request parsing + response serialisation</div>
+                <div class="h-8 border-l-4 border-dashed border-emerald-400 pl-2 text-[10px] text-emerald-600 flex items-center gap-1">
+                  <span>── seam ──</span>
+                </div>
+                <div class="deep rounded p-2 text-white text-[10px] space-y-1">
+                  <div class="h-5 pl-2 text-emerald-300">session ownership resolved by decorator</div>
+                  <div class="h-5 pl-2 text-emerald-300">all DB access in services/*</div>
+                  <div class="h-5 pl-2 text-emerald-300">JSON parsing centralised in _parse_json_field</div>
+                  <div class="h-5 pl-2 text-emerald-300">score transformations via transform_scores (candidate #1)</div>
+                  <div class="h-5 pl-2 text-emerald-300">email dispatch in its own service adapter</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <p class="font-semibold text-red-600 text-xs uppercase tracking-wider">Problem</p>
+              <p class="text-stone-600 mt-1">teacher.py is 781 lines. It imports from db, db.queries, services.*, email_service, and auth — sitting at 5 architectural layers. About 40% of its body is business logic (DB queries, JSON parsing, answer manipulation) that belongs behind the service seam. The route‑to‑service seam exists (<code>services/</code>) but it's inconsistently used.</p>
+            </div>
+            <div>
+              <p class="font-semibold text-emerald-600 text-xs uppercase tracking-wider">Solution</p>
+              <p class="text-stone-600 mt-1">Move ownership checks into a Flask <code>before_request</code> or param‑level decorator (session_id → verify belongs to g.current_user['sub']). Move inline DB queries for session/scores into service functions. Candidate #1 and #2 already pull most of the weight — this is the cleanup step after they land.</p>
+            </div>
+          </div>
+
+          <div>
+            <p class="font-semibold text-xs uppercase tracking-wider mb-1.5">Wins</p>
+            <ul class="list-disc list-inside text-sm text-stone-600 space-y-0.5">
+              <li>locality: business logic concentrates in services/; route file drops to ~300 lines</li>
+              <li>leverage: new teacher endpoints follow a single pattern — thin handler + service call</li>
+              <li>test surface: services testable without Flask; routes testable with mocked services</li>
+              <li>readability: one file to understand HTTP concerns, another for domain logic</li>
+            </ul>
+          </div>
+        </article>
+
+        <!-- CANDIDATE 5: JSON parsing scattered -->
+        <article class="rounded-xl border border-slate-200 bg-white p-6 space-y-5">
+          <div class="flex items-start justify-between">
+            <h2 class="text-lg font-serif font-semibold">Centralise JSON deserialisation guards</h2>
+            <div class="flex gap-2">
+              <span class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-slate-200 text-slate-600">Speculative</span>
+              <span class="px-2.5 py-0.5 text-xs rounded-full bg-slate-100 text-green-700">✅ Done</span>
+            </div>
+          </div>
+
+          <p class="text-sm font-mono text-stone-500">
+            routes/quiz.py:68–69,84–85 · routes/teacher.py (7 sites) · services/quiz_session.py:343–347
+          </p>
+
+          <div class="grid grid-cols-2 gap-6">
+            <div class="rounded-lg border border-red-100 bg-red-50/30 p-3">
+              <p class="text-[10px] uppercase tracking-widest text-red-400 mb-2">Before — mass diagram</p>
+              <div class="flex gap-4 items-end">
+                <div class="flex flex-col items-center">
+                  <div class="w-16 border border-red-300 bg-red-100 h-24 rounded-t flex items-center justify-center text-[9px] text-red-500 text-center leading-tight">I<br/>isinstance +<br/>json.loads</div>
+                  <div class="w-20 border border-red-300 bg-white h-20 rounded-t mt-1 flex items-center justify-center text-[9px] text-red-400 text-center leading-tight">Impl<br/>just a<br/>type check</div>
+                  <p class="text-[9px] text-red-400 mt-1">× 9 call sites</p>
+                </div>
+                <span class="text-red-400 text-lg">≈</span>
+                <p class="text-[9px] text-red-400">interface ≈ implementation → shallow</p>
+              </div>
+            </div>
+            <div class="rounded-lg border border-emerald-100 bg-emerald-50/30 p-3">
+              <p class="text-[10px] uppercase tracking-widest text-emerald-500 mb-2">After — mass diagram</p>
+              <div class="flex gap-4 items-end">
+                <div class="flex flex-col items-center">
+                  <div class="w-10 border-2 border-emerald-400 bg-emerald-100 h-6 rounded-t flex items-center justify-center text-[9px] text-emerald-600 font-semibold">I</div>
+                  <div class="w-20 border-2 border-emerald-400 bg-emerald-200 h-32 rounded-t mt-1 flex flex-col items-center justify-center gap-0.5">
+                    <p class="text-[9px] text-emerald-700 font-mono">ensure_dict()</p>
+                    <p class="text-[9px] text-emerald-700 font-mono">ensure_list()</p>
+                    <p class="text-[9px] text-emerald-700 font-mono">ensure_json_field()</p>
+                  </div>
+                  <p class="text-[9px] text-emerald-500 mt-1">× 1 definition</p>
+                </div>
+                <span class="text-emerald-500 text-lg">&gt;&gt;</span>
+                <p class="text-[9px] text-emerald-500">interface ≪ implementation → deep</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <p class="font-semibold text-red-600 text-xs uppercase tracking-wider">Problem</p>
+              <p class="text-stone-600 mt-1">The pattern <code>x if isinstance(x, list) else json.loads(x or '[]')</code> appears at ~9 sites across 3 files. It's a shallow pass‑through — deleting one copy shifts the work to the remaining 8. The <code>_parse_json_field</code> helper exists in quiz_session.py but isn't used by other modules.</p>
+            </div>
+            <div>
+              <p class="font-semibold text-emerald-600 text-xs uppercase tracking-wider">Solution</p>
+              <p class="text-stone-600 mt-1">Move <code>_parse_json_field</code> (and its two narrower variants: <code>ensure_list</code>, <code>ensure_dict</code>) from quiz_session.py to <code>utils.py</code>. The module already contains pure string/formatting helpers — adding JSON deserialisation guards fits. All callers import from one place.</p>
+            </div>
+          </div>
+
+          <div>
+            <p class="font-semibold text-xs uppercase tracking-wider mb-1.5">Wins</p>
+            <ul class="list-disc list-inside text-sm text-stone-600 space-y-0.5">
+              <li>locality: JSON deserialisation logic in one module, not 9 scattered sites</li>
+              <li>leverage: ~9 callers share 3 small functions</li>
+              <li>deletion test: remove the pattern from one site → complexity reappears at 8 others</li>
+            </ul>
+          </div>
+        </article>
+
+      </section>
+
+      <!-- TOP RECOMMENDATION -->
+      <section id="top-recommendation" class="rounded-xl border-2 border-emerald-200 bg-emerald-50/50 p-6 space-y-3">
+        <h2 class="text-lg font-serif font-semibold text-emerald-800">Top recommendation</h2>
+        <p class="text-sm text-emerald-700">
+          <a href="#candidates" class="underline underline-offset-2">Candidate #1 — Collapse the score‑review / recalculate / regrade trio</a>.
+          It delivers the highest leverage (3 route handlers → 1 module + 3 thin callbacks) and the clearest test surface.
+          Candidate #2 (snapshot loading) is a natural prerequisite — tackle it first as a 20‑minute extraction, then use it inside Candidate #1.
+          Candidate #3 (transaction gap) is a correctness bug that should be fixed regardless of deepening — it's not speculative.
+        </p>
+      </section>
+
+    </main>
+  </body>
+</html>

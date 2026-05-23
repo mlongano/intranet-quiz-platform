@@ -14,10 +14,11 @@ from typing import Any
 
 import psycopg
 from psycopg import errors as pg_errors
-from werkzeug.exceptions import Conflict, NotFound
+from werkzeug.exceptions import Conflict, Forbidden, NotFound
 
 import db
 from db import queries as Q
+from services.score_transforms import load_qbank_for_session
 from services.grading import format_detailed_answers, grade
 
 # Characters for join codes: unambiguous (no O/0, I/1, etc.)
@@ -181,9 +182,10 @@ def find_plan_by_quiz_id(quiz_id: str) -> dict | None:
     return _plan_row_to_dict(row)
 
 
-def save_answer(quiz_id: str, answer: Any) -> dict:
+def save_answer(quiz_id: str, answer: Any, student_id: int) -> dict:
     """
     Save the answer for the current question and advance the index.
+    Ownership is verified inside the FOR UPDATE lock — no TOCTOU gap.
     Returns {'next_question': {...}, 'current_index': N, 'total': N} or {'is_complete': True}.
     """
     with db.get_conn() as conn:
@@ -194,6 +196,8 @@ def save_answer(quiz_id: str, answer: Any) -> dict:
         ).fetchone()
         if not row:
             raise NotFound(description="Quiz plan not found.")
+        if row[2] != student_id:
+            raise Forbidden(description="Not your plan.")
 
         plan_data = _parse_json_field(row[3])
         progression = _parse_json_field(row[4])
@@ -229,9 +233,10 @@ def save_answer(quiz_id: str, answer: Any) -> dict:
     return result
 
 
-def submit_plan(quiz_id: str) -> dict:
+def submit_plan(quiz_id: str, student_id: int) -> dict:
     """
     Grade the completed plan, insert a score_entries row, and delete the plan.
+    Ownership is verified inside the FOR UPDATE lock — no TOCTOU gap.
     Returns {raw_points, max_points, percent}.
     Raises Conflict if already submitted.
     """
@@ -246,6 +251,8 @@ def submit_plan(quiz_id: str) -> dict:
         ).fetchone()
         if not row:
             raise NotFound(description="Quiz plan not found.")
+        if row[2] != student_id:
+            raise Forbidden(description="Not your plan.")
 
         session_id = row[1]
         student_id = row[2]
@@ -349,16 +356,7 @@ def _build_question_response(
     step = plan_steps[current_index]
     q_id = str(step.get('id'))
 
-    snap_row = conn.execute(
-        "SELECT content FROM question_snapshots qs "
-        "JOIN quiz_sessions s ON s.snapshot_id = qs.id "
-        "WHERE s.id = %s",
-        (session_id,),
-    ).fetchone()
-
-    content = snap_row[0] if snap_row else {}
-    questions_list = content.get('questions', []) if isinstance(content, dict) else []
-    qbank_map = {str(q['id']): q for q in questions_list}
+    qbank_map = load_qbank_for_session(conn, session_id)
     q = qbank_map.get(q_id)
     if not q:
         return {'is_complete': False, 'current_index': current_index, 'total': total,

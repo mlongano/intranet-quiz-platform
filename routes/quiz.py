@@ -16,6 +16,7 @@ import db
 from db import queries as Q
 from auth.decorators import require_student
 from services import quiz_session as qs
+from services.score_transforms import load_qbank_for_session
 
 quiz_bp = Blueprint('quiz', __name__, url_prefix='/api/quiz')
 
@@ -84,19 +85,10 @@ def resume(quiz_id: str):
 
     with db.get_conn() as conn:
         session_id = plan_data['session_id']
-        snap_row = conn.execute(
-            """SELECT snap.content FROM question_snapshots snap
-               JOIN quiz_sessions s ON s.snapshot_id = snap.id
-               WHERE s.id = %s""",
-            (session_id,),
-        ).fetchone()
+        qbank_map = load_qbank_for_session(conn, session_id)
 
-    if not snap_row:
+    if not qbank_map:
         return jsonify({'error': 'SNAPSHOT_NOT_FOUND'}), 404
-
-    content = snap_row[0] if isinstance(snap_row[0], dict) else json.loads(snap_row[0])
-    questions_list = content.get('questions', [])
-    qbank_map = {str(q['id']): q for q in questions_list}
 
     step = plan_steps[current_index]
     q_id = str(step.get('id'))
@@ -135,13 +127,7 @@ def save_answer():
         return jsonify({'error': 'MISSING_ANSWER'}), 400
 
     student_id = g.current_user['sub']
-    plan_data = qs.find_plan_by_quiz_id(quiz_id)
-    if not plan_data:
-        return jsonify({'error': 'NOT_FOUND'}), 404
-    if plan_data['student_id'] != student_id:
-        return jsonify({'error': 'FORBIDDEN'}), 403
-
-    result = qs.save_answer(quiz_id, data['answer'])
+    result = qs.save_answer(quiz_id, data['answer'], student_id)
     return jsonify(result), 200
 
 
@@ -155,11 +141,5 @@ def submit():
         return jsonify({'error': 'MISSING_QUIZ_ID'}), 400
 
     student_id = g.current_user['sub']
-    plan_data = qs.find_plan_by_quiz_id(quiz_id)
-    if not plan_data:
-        return jsonify({'error': 'NOT_FOUND'}), 404
-    if plan_data['student_id'] != student_id:
-        return jsonify({'error': 'FORBIDDEN'}), 403
-
-    result = qs.submit_plan(quiz_id)
+    result = qs.submit_plan(quiz_id, student_id)
     return jsonify(result), 200
