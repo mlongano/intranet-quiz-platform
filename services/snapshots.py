@@ -125,8 +125,11 @@ def list_snapshots(teacher_id: int) -> list[dict]:
             'title': r[1],
             'slug': r[2],
             'question_count': r[3],
-            'updated_at': r[4].isoformat() if r[4] else None,
-            'created_at': r[5].isoformat() if r[5] else None,
+            'single_count': r[4],
+            'multiple_count': r[5],
+            'open_count': r[6],
+            'updated_at': r[7].isoformat() if r[7] else None,
+            'created_at': r[8].isoformat() if r[8] else None,
         }
         for r in rows
     ]

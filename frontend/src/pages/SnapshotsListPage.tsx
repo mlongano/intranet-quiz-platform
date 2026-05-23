@@ -1,9 +1,37 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Upload, Trash2, Download, ArrowRight, Image } from 'lucide-react';
+import { Upload, Trash2, Download, ArrowRight, Image, Eye, EyeOff } from 'lucide-react';
 import TeacherLayout from '../layouts/TeacherLayout';
-import { listSnapshots, createSnapshot, deleteSnapshot, getSnapshotExportUrl } from '../api';
+import QuestionDisplay from '../components/QuestionDisplay';
+import {
+  listSnapshots, getSnapshot, createSnapshot, deleteSnapshot,
+  getSnapshotExportUrl, type Question, type SnapshotMeta,
+} from '../api';
+
+function getHighlightIndices(q: Question): number[] {
+  const question = q as Question & { correct?: number | number[] };
+  if (question.type === 'single') {
+    return typeof question.correct === 'number' && question.correct >= 0 ? [question.correct] : [];
+  }
+  if (question.type === 'multiple') {
+    return Array.isArray(question.correct)
+      ? question.correct.filter((n) => Number.isInteger(n) && n >= 0)
+      : [];
+  }
+  return [];
+}
+
+function formatLabel(s: SnapshotMeta) {
+  const date = new Date(s.created_at ?? s.updated_at);
+  const dateStr = date.toISOString().slice(0, 10); // YYYY-MM-DD
+  const parts = [
+    s.single_count != null && `${s.single_count} singole`,
+    s.multiple_count != null && `${s.multiple_count} multiple`,
+    s.open_count != null && `${s.open_count} aperte`,
+  ].filter(Boolean).join(' - ');
+  return { dateStr, meta: parts, name: s.title };
+}
 
 function SnapshotsListPage() {
   const navigate = useNavigate();
@@ -11,10 +39,18 @@ function SnapshotsListPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [previewingId, setPreviewingId] = useState<number | null>(null);
 
   const { data: snapshots, isLoading } = useQuery({
     queryKey: ['snapshots'],
     queryFn: listSnapshots,
+  });
+
+  const { data: previewData, isLoading: isPreviewLoading } = useQuery({
+    queryKey: ['snapshot', previewingId],
+    queryFn: () => getSnapshot(previewingId!),
+    enabled: !!previewingId,
+    staleTime: Infinity,
   });
 
   const deleteMutation = useMutation({
@@ -41,9 +77,13 @@ function SnapshotsListPage() {
     }
   };
 
+  const togglePreview = (id: number) => {
+    setPreviewingId(prev => prev === id ? null : id);
+  };
+
   return (
     <TeacherLayout
-      pageTitle="Quiz (Snapshot)"
+      pageTitle="Banca Domande"
       headerActions={
         <>
           <input
@@ -73,53 +113,95 @@ function SnapshotsListPage() {
 
       {isLoading && <p className="text-on-surface-variant">Caricamento...</p>}
 
-      <div className="space-y-2">
-        {snapshots?.map(s => (
-          <div
-            key={s.id}
-            className="bg-surface-container rounded-xl border border-outline-variant/30 p-4 flex items-center justify-between gap-4 flex-wrap"
-          >
-            <div className="flex-1 min-w-0">
-              <h3 className="font-medium text-on-surface truncate">{s.title}</h3>
-              <p className="text-xs text-on-surface-variant mt-0.5">
-                {s.question_count} domande · aggiornato {new Date(s.updated_at).toLocaleDateString('it-IT')}
-              </p>
+      <div className="space-y-1">
+        {snapshots?.map(s => {
+          const label = formatLabel(s);
+          return (
+            <div key={s.id} className="bg-surface-container hover:bg-surface-container-high border-b border-outline-variant/10 rounded-lg p-4 mb-2 last:mb-0">
+              {/* ── header row ── */}
+              <div className="flex justify-between items-center mb-2">
+                <div className="flex min-w-0 flex-col">
+                  <span className="text-xs font-mono text-primary/90">
+                    {label.dateStr}
+                    <span className="text-on-surface-variant/50 mx-2">·</span>
+                    <span className="text-on-surface-variant/60">{label.meta}</span>
+                  </span>
+                  <span className="text-sm font-medium text-on-surface truncate">{label.name}</span>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => togglePreview(s.id)}
+                    className="bg-surface-container-high border border-outline-variant/30 text-on-surface-variant hover:text-on-surface py-1 px-3 rounded text-sm transition-colors"
+                    title={previewingId === s.id ? 'Nascondi anteprima' : 'Anteprima'}
+                  >
+                    {previewingId === s.id ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                  <a
+                    href={getSnapshotExportUrl(s.id)}
+                    download
+                    className="p-2 text-on-surface-variant hover:text-primary transition-colors"
+                    title="Esporta JSONC"
+                  >
+                    <Download size={16} />
+                  </a>
+                  <button
+                    onClick={() => navigate(`/teacher/snapshots/${s.id}/images`)}
+                    className="p-2 text-on-surface-variant hover:text-primary transition-colors"
+                    title="Gestisci immagini"
+                  >
+                    <Image size={16} />
+                  </button>
+                  <button
+                    onClick={() => navigate(`/teacher/snapshots/${s.id}`)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-outline-variant/40 text-on-surface rounded-lg hover:bg-surface-container-high transition-colors"
+                  >
+                    Modifica <ArrowRight size={12} />
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Eliminare "${s.title}"?`)) deleteMutation.mutate(s.id);
+                    }}
+                    disabled={deleteMutation.isPending}
+                    className="p-2 text-on-surface-variant hover:text-error transition-colors disabled:opacity-40"
+                    title="Elimina"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* ── preview ── */}
+              {previewingId === s.id && (
+                <div className="bg-surface-container-low border border-outline-variant/20 rounded-lg p-4 mt-2">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-on-surface text-sm">Anteprima (risposte corrette evidenziate)</h3>
+                    <span className="text-xs text-on-surface-variant">Verde = risposta corretta</span>
+                  </div>
+                  {isPreviewLoading && <p className="text-on-surface-variant text-sm">Caricamento anteprima...</p>}
+                  {previewData && previewData.content?.questions?.length > 0 ? (
+                    <div className="space-y-6">
+                      {previewData.content.questions.map((q, idx) => (
+                        <div key={q.id ?? idx} className="p-4 rounded-lg bg-surface-container border border-outline-variant/20">
+                          <div className="mb-2 text-sm text-on-surface-variant">ID: {String(q.id)}</div>
+                          <QuestionDisplay
+                            question={q}
+                            currentAnswer={null}
+                            onAnswerChange={() => {}}
+                            readOnly
+                            highlightIndices={getHighlightIndices(q)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ) : previewData && (
+                    <p className="text-on-surface-variant text-sm">Nessuna domanda in questo snapshot.</p>
+                  )}
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-2">
-              <a
-                href={getSnapshotExportUrl(s.id)}
-                download
-                className="p-2 text-on-surface-variant hover:text-primary transition-colors"
-                title="Esporta JSONC"
-              >
-                <Download size={16} />
-              </a>
-              <button
-                onClick={() => navigate(`/teacher/snapshots/${s.id}/images`)}
-                className="p-2 text-on-surface-variant hover:text-primary transition-colors"
-                title="Gestisci immagini"
-              >
-                <Image size={16} />
-              </button>
-              <button
-                onClick={() => navigate(`/teacher/snapshots/${s.id}`)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-outline-variant/40 text-on-surface rounded-lg hover:bg-surface-container-high transition-colors"
-              >
-                Modifica <ArrowRight size={12} />
-              </button>
-              <button
-                onClick={() => {
-                  if (confirm(`Eliminare "${s.title}"?`)) deleteMutation.mutate(s.id);
-                }}
-                disabled={deleteMutation.isPending}
-                className="p-2 text-on-surface-variant hover:text-error transition-colors disabled:opacity-40"
-                title="Elimina"
-              >
-                <Trash2 size={16} />
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
         {!isLoading && !snapshots?.length && (
           <div className="text-center py-16 text-on-surface-variant">

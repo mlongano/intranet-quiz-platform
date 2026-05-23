@@ -142,10 +142,22 @@ INSERT_CLASS_STUDENT = """
 LIST_SNAPSHOTS = """
     SELECT id, title, slug,
            jsonb_array_length(content->'questions') AS question_count,
+           COALESCE(
+               (SELECT COUNT(*) FROM jsonb_array_elements(content->'questions') AS q
+                WHERE q->>'type' = 'single'), 0
+           ) AS single_count,
+           COALESCE(
+               (SELECT COUNT(*) FROM jsonb_array_elements(content->'questions') AS q
+                WHERE q->>'type' = 'multiple'), 0
+           ) AS multiple_count,
+           COALESCE(
+               (SELECT COUNT(*) FROM jsonb_array_elements(content->'questions') AS q
+                WHERE q->>'type' = 'open'), 0
+           ) AS open_count,
            updated_at, created_at
     FROM question_snapshots
     WHERE teacher_id = %s
-    ORDER BY updated_at DESC
+    ORDER BY created_at DESC
 """
 
 GET_SNAPSHOT = """

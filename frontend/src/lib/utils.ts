@@ -32,3 +32,14 @@ export function slugify(text: string): string {
     .replace(/^-+/, '') // Trim hyphens from start
     .replace(/-+$/, ''); // Trim hyphens from end
 }
+
+/**
+ * Prettify a slug-like title: reverse of slugify for display.
+ * "3ai-info-2q-esercizi-fatti-e-oop-in-java" → "3ai info 2q Esercizi Fatti E Oop In Java"
+ */
+export function prettifySlugTitle(title: string): string {
+  return title
+    .replace(/[-_]/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase())
+    .trim();
+}

@@ -65,7 +65,11 @@ export interface SnapshotMeta {
   title: string;
   slug: string;
   updated_at: string;
+  created_at?: string;
   question_count: number;
+  single_count?: number;
+  multiple_count?: number;
+  open_count?: number;
 }
 
 export interface SnapshotDetail extends SnapshotMeta {
