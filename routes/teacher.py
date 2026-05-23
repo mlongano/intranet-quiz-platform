@@ -621,6 +621,42 @@ def delete_student_snapshot(snapshot_id: int):
     return jsonify({'ok': True}), 200
 
 
+@teacher_bp.post('/student-snapshots/<int:snapshot_id>/rename')
+@require_teacher
+def rename_student_snapshot(snapshot_id: int):
+    data = request.get_json(silent=True) or {}
+    title = (data.get('title') or '').strip()
+    if not title:
+        return jsonify({'error': 'MISSING_TITLE'}), 400
+    with db.get_conn() as conn:
+        result = conn.execute(
+            "UPDATE student_list_snapshots SET title = %s WHERE id = %s AND teacher_id = %s",
+            (title, snapshot_id, _teacher_id()),
+        )
+        if result.rowcount == 0:
+            conn.rollback()
+            return jsonify({'error': 'NOT_FOUND'}), 404
+        conn.commit()
+    return jsonify({'ok': True}), 200
+
+
+@teacher_bp.get('/student-snapshots/<int:snapshot_id>/export')
+@require_teacher
+def export_student_snapshot(snapshot_id: int):
+    with db.get_conn() as conn:
+        row = conn.execute(Q.GET_STUDENT_SNAPSHOT, (snapshot_id, _teacher_id())).fetchone()
+    if not row:
+        return jsonify({'error': 'NOT_FOUND'}), 404
+    title = row[1]
+    content = row[2] if isinstance(row[2], list) else json.loads(row[2] or '[]')
+    filename = f"{title}.json"
+    return Response(
+        json.dumps(content, ensure_ascii=False, indent=2),
+        mimetype='application/json',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
+
+
 # ── misc ──────────────────────────────────────────────────────────────────────
 
 @teacher_bp.get('/llm-info')
