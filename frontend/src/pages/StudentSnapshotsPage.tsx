@@ -12,6 +12,7 @@ function SnapshotCard({ snap }: { snap: { id: number; title: string; created_at:
   const [expanded, setExpanded] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [newTitle, setNewTitle] = useState(snap.title);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   const { data: detail, isLoading } = useQuery<StudentListSnapshotDetail>({
     queryKey: ['student-snapshot', snap.id],
@@ -90,15 +91,37 @@ function SnapshotCard({ snap }: { snap: { id: number; title: string; created_at:
             <Download size={14} />
           </a>
           <button
-            onClick={() => {
-              if (confirm(`Eliminare "${snap.title}"?`)) deleteMutation.mutate();
-            }}
+            onClick={() => setDeleteConfirm(true)}
             disabled={deleteMutation.isPending}
             className="p-1.5 text-on-surface-variant hover:text-error transition-colors disabled:opacity-40"
             title="Elimina"
           >
             <Trash2 size={14} />
           </button>
+          {deleteConfirm && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setDeleteConfirm(false)}>
+              <div className="bg-surface-container rounded-xl border border-outline-variant/30 p-5 mx-4 max-w-sm shadow-xl" onClick={e => e.stopPropagation()}>
+                <p className="text-sm text-on-surface mb-4">Eliminare "{snap.title}"?</p>
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setDeleteConfirm(false)}
+                    className="px-3 py-1.5 text-sm border border-outline-variant/40 text-on-surface rounded-lg hover:bg-surface-container-low transition-colors"
+                  >
+                    Annulla
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDeleteConfirm(false);
+                      deleteMutation.mutate();
+                    }}
+                    className="px-3 py-1.5 text-sm bg-error/20 border border-error/50 text-error rounded-lg hover:bg-error/30 transition-colors"
+                  >
+                    Elimina
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
