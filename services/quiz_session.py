@@ -40,6 +40,15 @@ def create_session(
     closes_at: datetime | None = None,
 ) -> dict:
     with db.get_conn() as conn:
+        # Verify teacher owns every class (inside the same transaction as the INSERT)
+        for cid in class_ids:
+            owns = conn.execute(
+                "SELECT 1 FROM class_teachers WHERE class_id = %s AND teacher_id = %s",
+                (cid, teacher_id),
+            ).fetchone()
+            if not owns:
+                raise Forbidden(description=f"Class {cid} not found or not yours.")
+
         row = conn.execute(Q.INSERT_SESSION, {
             'teacher_id': teacher_id,
             'snapshot_id': snapshot_id,
@@ -338,7 +347,10 @@ def _parse_json_field(value) -> Any:
     if isinstance(value, (dict, list)):
         return value
     if isinstance(value, str):
-        return json.loads(value)
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
     return value
 
 

@@ -23,8 +23,12 @@ def safe_id(raw: str) -> str:
 def sanitize_filename(filename: str) -> str:
     """Remove path traversal characters and non-printable chars from a filename."""
     safe = filename.replace('/', '_').replace('\\', '_').replace('..', '_')
-    safe = re.sub(r'[^\w\s.-]', '', safe)
-    return safe.strip('. ')
+    safe = re.sub(r'[^\w\s.-]', '', safe).strip('. ')
+    if not safe:
+        # Degenerate input like "...." or "   " — UUID fallback
+        import uuid as _uuid
+        return _uuid.uuid4().hex[:12]
+    return safe
 
 
 def slugify(text: str) -> str:

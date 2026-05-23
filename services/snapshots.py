@@ -39,12 +39,23 @@ def import_jsonc(teacher_id: int, raw_text: str, title_override: str | None = No
     slug = _unique_slug(teacher_id, slugify(title))
 
     with db.get_conn() as conn:
-        row = conn.execute(Q.INSERT_SNAPSHOT, {
-            'teacher_id': teacher_id,
-            'title': title,
-            'slug': slug,
-            'content': json.dumps(content),
-        }).fetchone()
+        try:
+            row = conn.execute(Q.INSERT_SNAPSHOT, {
+                'teacher_id': teacher_id,
+                'title': title,
+                'slug': slug,
+                'content': json.dumps(content),
+            }).fetchone()
+        except Exception as e:
+            # UniqueViolation on slug — another request raced with the same title.
+            # Retry once with the next available slug.
+            slug = _unique_slug(teacher_id, slugify(title), start_from=slug)
+            row = conn.execute(Q.INSERT_SNAPSHOT, {
+                'teacher_id': teacher_id,
+                'title': title,
+                'slug': slug,
+                'content': json.dumps(content),
+            }).fetchone()
         conn.commit()
 
     return {'id': row[0], 'title': title, 'slug': slug,
@@ -186,9 +197,9 @@ def _validate_questions(questions: list[Any]) -> None:
             raise BadRequest(description=f"Question {q.get('id')} is missing 'options' array.")
 
 
-def _unique_slug(teacher_id: int, base_slug: str) -> str:
+def _unique_slug(teacher_id: int, base_slug: str, start_from: str | None = None) -> str:
     """Ensure the slug is unique for this teacher by appending a counter if needed."""
-    candidate = base_slug
+    candidate = start_from or base_slug
     counter = 1
     with db.get_conn() as conn:
         while True:

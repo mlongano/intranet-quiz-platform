@@ -12,6 +12,10 @@ def _secret() -> str:
         s = os.environ.get('JWT_SECRET', '')
         if not s:
             raise EnvironmentError("JWT_SECRET environment variable is not set.")
+        if len(s) < 32:
+            raise EnvironmentError(
+                f"JWT_SECRET is only {len(s)} characters; it must be at least 32."
+            )
         _SECRET = s
     return _SECRET
 

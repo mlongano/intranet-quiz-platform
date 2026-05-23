@@ -49,12 +49,16 @@ COPY . .
 COPY --from=frontend-builder /build/dist ./frontend/dist
 
 # Create mount-point directories so Docker volumes attach cleanly
-RUN mkdir -p images backups/db backups/images
+RUN mkdir -p images backups/db backups/images && \
+    useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app/images /app/backups
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
 EXPOSE 5001
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+USER appuser
 
 ENTRYPOINT ["docker-entrypoint.sh"]

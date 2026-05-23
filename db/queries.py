@@ -122,7 +122,7 @@ UPSERT_CLASS = """
     VALUES (%(name)s, %(academic_year)s, %(google_group_id)s)
     ON CONFLICT (name, academic_year) DO UPDATE
         SET google_group_id = EXCLUDED.google_group_id
-    RETURNING id
+    RETURNING id, (xmax = 0) AS inserted
 """
 
 INSERT_CLASS_TEACHER = """

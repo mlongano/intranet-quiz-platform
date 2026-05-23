@@ -180,9 +180,8 @@ def run_sync(triggered_by: int | None = None) -> dict:
                      'google_group_id': group.get('id', '')},
                 ).fetchone()
                 class_id = row[0]
-                # Track as added if this was a new insert (no simple way without checking xmax,
-                # so we just count classes we process — safe for idempotency)
-                result['classes_added'] += 1
+                if row[1]:  # xmax = 0 means new row was inserted
+                    result['classes_added'] += 1
 
                 members = _list_group_members(svc, email_addr)
                 for member_email in members:

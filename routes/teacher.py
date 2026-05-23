@@ -262,7 +262,10 @@ def list_sessions():
 @require_teacher
 def create_session():
     data = request.get_json(silent=True) or {}
-    snapshot_id = data.get('snapshot_id')
+    try:
+        snapshot_id = int(data.get('snapshot_id') or '')
+    except (TypeError, ValueError):
+        return jsonify({'error': 'INVALID_SNAPSHOT_ID'}), 400
     class_ids = data.get('class_ids', [])
     title = data.get('title')
     opens_at = data.get('opens_at')
@@ -270,6 +273,8 @@ def create_session():
 
     if not snapshot_id:
         return jsonify({'error': 'MISSING_SNAPSHOT_ID'}), 400
+    if not isinstance(class_ids, list):
+        return jsonify({'error': 'INVALID_CLASS_IDS'}), 400
     if not class_ids:
         return jsonify({'error': 'MISSING_CLASS_IDS'}), 400
 
@@ -283,16 +288,6 @@ def create_session():
         ).fetchone()
     if not snap_row:
         return jsonify({'error': 'SNAPSHOT_NOT_FOUND'}), 404
-
-    # Verify teacher owns every class
-    with db.get_conn() as conn:
-        for cid in class_ids:
-            owns = conn.execute(
-                "SELECT 1 FROM class_teachers WHERE class_id = %s AND teacher_id = %s",
-                (cid, teacher_id),
-            ).fetchone()
-            if not owns:
-                return jsonify({'error': f'Class {cid} not found or not yours.'}), 403
 
     session_title = title or snap_row[0]
     result = qs_service.create_session(
@@ -374,8 +369,8 @@ def review_scores(session_id: int):
     overrides_by_id: dict[int, dict[str, float]] = {}
     for o in overrides:
         sid = o.get('score_id')
-        if sid:
-            overrides_by_id[sid] = {str(k): float(v) for k, v in o.get('per_question', {}).items()}
+        if sid is not None:
+            overrides_by_id[int(sid)] = {str(k): float(v) for k, v in o.get('per_question', {}).items()}
 
     def _review_fn(score_id: int, answers: list[dict], _qbank_map: dict) -> list[dict] | None:
         per_q = overrides_by_id.get(score_id)
