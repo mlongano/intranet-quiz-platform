@@ -25,6 +25,7 @@ services:
       - ./llm_evaluator.py:/app/llm_evaluator.py:ro
       - ./server.py:/app/server.py:ro
       - ./utils.py:/app/utils.py:ro
+      - ./tests:/app/tests:ro
     command: ["--debug"]
 
   # ── New: Vite frontend with HMR ───────────────────────────────────────────

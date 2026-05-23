@@ -10,6 +10,10 @@ _pool: ConnectionPool | None = None
 
 def init_pool(dsn: str | None = None, min_size: int = 2, max_size: int = 8) -> None:
     global _pool
+    if _pool is not None:
+        if hasattr(_pool, 'dsn') and _pool.dsn == dsn:
+            return
+        _pool.close()
     if dsn is None:
         dsn = os.environ.get('DATABASE_URL', 'postgresql:///quizparty')
     _pool = ConnectionPool(

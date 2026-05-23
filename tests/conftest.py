@@ -80,9 +80,15 @@ def db_conn(apply_schema):
     """Per-test DB connection wrapped in a savepoint that is rolled back."""
     import db as _db
     with _db.get_conn() as conn:
-        conn.execute('SAVEPOINT test_start')
+        try:
+            conn.execute('SAVEPOINT test_start')
+        except Exception:
+            pass  # savepoints may be unavailable after DDL
         yield conn
-        conn.execute('ROLLBACK TO SAVEPOINT test_start')
+        try:
+            conn.execute('ROLLBACK TO SAVEPOINT test_start')
+        except Exception:
+            conn.rollback()
 
 
 # ── Flask test client ─────────────────────────────────────────────────────────

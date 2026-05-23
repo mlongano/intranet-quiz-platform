@@ -160,7 +160,7 @@ def student_join():
 def me():
     user = g.current_user
     return jsonify({
-        'teacher_id': user['sub'],
+        'teacher_id': int(user['sub']),
         'role': user['role'],
         'email': user.get('email'),
     }), 200
