@@ -3,6 +3,9 @@ Grading logic. Pure functions — no DB or Flask dependencies.
 Moved from utils.py; signatures are unchanged so existing callers keep working.
 """
 
+# ── imports ───────────────────────────────────────────────────────────────────
+
+import copy as _copy
 import os
 import re
 import unicodedata
@@ -226,8 +229,11 @@ def format_detailed_answers(
             else:
                 formatted_correct_answer = "[Invalid Question Type]"
 
+        question_snapshot = _copy.deepcopy(question_detail) if question_detail else None
+
         detailed_answers.append({
             "question_id": q_id,
+            "question_snapshot": question_snapshot,
             "question_text": question_text,
             "question_image": question_image_path,
             "student_answer": formatted_student_answer,
