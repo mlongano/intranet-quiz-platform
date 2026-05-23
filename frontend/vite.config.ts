@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -9,6 +10,11 @@ const backendUrl = process.env.VITE_BACKEND_URL || "http://localhost:5001";
 
 // https://vite.dev/config/
 export default defineConfig({
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
+  },
   plugins: [react(), tailwindcss(),
   // Bundle visualizer: generates dist/bundle-report.html after build
   visualizer({ filename: 'dist/bundle-report.html', title: 'Bundle report' })
