@@ -20,6 +20,7 @@ wheels/
 *.bak
 
 frontend/pnpm-workspace.yaml
+frontend/.pnpm-store/
 .DS_Store
 
 # Banks directory - synced separately with Git

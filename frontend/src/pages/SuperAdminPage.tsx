@@ -170,7 +170,7 @@ function SuperAdminPage() {
   const [tab, setTab] = useState<'teachers' | 'sync'>('teachers');
 
   return (
-    <TeacherLayout pageTitle="Super Admin">
+    <TeacherLayout pageTitle="Amministrazione">
       <div className="flex gap-2 mb-6 border-b border-outline-variant/30">
         {(['teachers', 'sync'] as const).map(t => (
           <button

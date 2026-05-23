@@ -105,7 +105,7 @@ function SnapshotImagesPage() {
           onClick={() => navigate(`/teacher/snapshots/${snapshotId}`)}
           className="flex items-center gap-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors"
         >
-          <ArrowLeft size={14} /> Editor Quiz
+          <ArrowLeft size={14} /> Modifica Quiz
         </button>
       </div>
 

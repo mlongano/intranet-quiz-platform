@@ -66,7 +66,7 @@ function SnapshotEditorPage() {
 
   if (isLoading) {
     return (
-      <TeacherLayout pageTitle="Editor Quiz">
+      <TeacherLayout pageTitle="Modifica Quiz">
         <p className="text-on-surface-variant">Caricamento...</p>
       </TeacherLayout>
     );
@@ -75,7 +75,7 @@ function SnapshotEditorPage() {
   return (
     <>
     <TeacherLayout
-      pageTitle={title || 'Editor Quiz'}
+      pageTitle={title || 'Modifica Quiz'}
       headerActions={
         <div className="flex items-center gap-2">
           <a
@@ -116,7 +116,7 @@ function SnapshotEditorPage() {
           onClick={() => navigate('/teacher/snapshots')}
           className="flex items-center gap-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors"
         >
-          <ArrowLeft size={14} /> Quiz
+          <ArrowLeft size={14} /> Banca Domande
         </button>
       </div>
 

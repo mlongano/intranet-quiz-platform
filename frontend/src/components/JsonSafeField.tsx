@@ -250,7 +250,7 @@ export default function JsonSafeField() {
           <button
             className="px-4 py-2 bg-primary text-on-primary font-semibold rounded-lg hover:bg-primary/80 transition-colors text-sm"
             onClick={() => copy(jsonInput, "JSON")}
-            title="Copy JSON value"
+            title="Copia valore JSON"
           >
             📋 Copy JSON
           </button>

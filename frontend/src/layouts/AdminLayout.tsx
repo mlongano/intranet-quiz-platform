@@ -17,17 +17,17 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard",  Icon: LayoutDashboard, path: "/admin/dashboard" },
-  { label: "Questions",  Icon: FileText,         path: "/admin/questions" },
-  { label: "Scores",     Icon: BarChart3,        path: "/admin/scores" },
-  { label: "Students",   Icon: Users,            path: "/admin/students" },
+  { label: "Domande",  Icon: FileText,         path: "/admin/questions" },
+  { label: "Punteggi",     Icon: BarChart3,        path: "/admin/scores" },
+  { label: "Studenti",   Icon: Users,            path: "/admin/students" },
   {
-    label: "Archives",
+    label: "Archivi",
     Icon: Archive,
     path: "/admin/questions-bank",
     children: [
-      { label: "Question Banks", path: "/admin/questions-bank" },
-      { label: "Scores Bank",    path: "/admin/scores-bank" },
-      { label: "Students Bank",  path: "/admin/students-bank" },
+      { label: "Banca Domande", path: "/admin/questions-bank" },
+      { label: "Archivio Punteggi",    path: "/admin/scores-bank" },
+      { label: "Archivio Studenti",  path: "/admin/students-bank" },
     ],
   },
 ];
@@ -149,7 +149,7 @@ export default function AdminLayout({ activePath, adminPassword, children, pageT
             title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
           >
             <Menu size={18} />
-            {sidebarOpen && <span className="text-xs font-body text-on-surface-variant">Collapse</span>}
+            {sidebarOpen && <span className="text-xs font-body text-on-surface-variant">Riduci</span>}
           </button>
         </div>
       </aside>
