@@ -196,3 +196,47 @@ Added per-type counts.
 5. **Admin password**: required in `.env` — app won't start without it
 6. **Student identity**: email address (lowercased) used as login + filename key
 7. **Frontend build**: run `pnpm build` before production; output goes to `frontend/dist/`
+
+---
+
+## Test-Driven Development
+
+Follow **vertical tracer bullet TDD**: one test at a time, minimal code to pass, then the next.
+
+### Core rules
+- **RED -> GREEN -> REFACTOR.** Write the test first, then minimal code, then refactor
+- **One test at a time.** Never write all tests before implementing (horizontal-slice anti-pattern)
+- **Test through public interfaces**, not internal implementation details
+- **Never refactor while RED.** Get to GREEN first
+
+### Backend (pytest)
+
+```bash
+# Inside Docker (install pytest once):
+docker compose exec app .venv/bin/pip install pytest -q
+
+# Run one test:
+docker compose exec \
+  -e DATABASE_URL='postgresql://quizparty:quizparty_dev_2026@db:5432/quizparty_test' \
+  -e JWT_SECRET='test-secret-not-for-production' \
+  app .venv/bin/pytest tests/ -v -k "test_name" --ignore=tests/test_migration.py
+```
+
+### Frontend (vitest)
+
+```bash
+# Run once:
+docker compose exec frontend sh -c "cd /app && npx vitest run"
+
+# Watch mode (TDD loop):
+docker compose exec frontend sh -c "cd /app && npx vitest"
+```
+
+### Per-cycle checklist
+```
+[ ] Test describes behavior, not implementation
+[ ] Test uses public interface only
+[ ] Test would survive internal refactor
+[ ] Code is minimal for this test
+[ ] No speculative features added
+```
