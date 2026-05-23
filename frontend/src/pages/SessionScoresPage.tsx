@@ -8,6 +8,7 @@ import {
   getSessionScores, recalculateScores, archiveSessionScores, sendAllResultEmails,
   listSessions, ScoreEntry,
 } from '../api';
+import { useConfirmModal } from '../lib/useConfirmModal';
 
 function ScoreRow({ score, onClick }: { score: ScoreEntry; onClick: () => void }) {
   const pct = score.percent;
@@ -37,6 +38,7 @@ function SessionScoresPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const id = Number(sessionId);
+  const { ask: askConfirm, modal: confirmModal } = useConfirmModal();
   const [reviewScore, setReviewScore] = useState<ScoreEntry | null>(null);
 
   const { data: scores, isLoading } = useQuery({
@@ -89,9 +91,7 @@ function SessionScoresPage() {
             Invia Email
           </button>
           <button
-            onClick={() => {
-              if (confirm('Archiviare i punteggi di questa sessione?')) archiveMutation.mutate();
-            }}
+                          onClick={() => askConfirm('Archiviare i punteggi di questa sessione?', () => archiveMutation.mutate())}
             disabled={archiveMutation.isPending}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-primary text-on-primary rounded-lg hover:bg-primary/90 disabled:opacity-40 transition-colors"
           >
@@ -141,6 +141,7 @@ function SessionScoresPage() {
           <p className="text-center py-12 text-on-surface-variant">Nessun punteggio ancora registrato.</p>
         )}
       </div>
+      {confirmModal}
     </TeacherLayout>
 
     {reviewScore && (

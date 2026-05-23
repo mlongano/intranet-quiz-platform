@@ -10,10 +10,6 @@ def _extract_token() -> str | None:
     header = request.headers.get('Authorization', '')
     if header.startswith('Bearer '):
         return header[7:]
-    # Fallback: accept token in query string (needed for browser <a href> downloads)
-    token = request.args.get('token')
-    if token:
-        return token
     return None
 
 

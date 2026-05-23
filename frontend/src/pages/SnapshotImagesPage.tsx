@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Upload, Trash2, Copy, CheckCheck, Trash } from 'lucide-react';
 import TeacherLayout from '../layouts/TeacherLayout';
 import { listSnapshotImages, uploadSnapshotImage, deleteSnapshotImage, clearSnapshotImages, listSnapshots } from '../api';
+import { useConfirmModal } from '../lib/useConfirmModal';
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -26,6 +27,7 @@ function SnapshotImagesPage() {
   const snapshotId = Number(id);
   const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const { ask: askConfirm, modal: confirmModal } = useConfirmModal();
 
   const { data: snapshots } = useQuery({ queryKey: ['snapshots'], queryFn: listSnapshots });
   const snapshot = snapshots?.find(s => s.id === snapshotId);
@@ -87,9 +89,7 @@ function SnapshotImagesPage() {
           </button>
           {images && images.length > 0 && (
             <button
-              onClick={() => {
-                if (confirm(`Eliminare tutte le ${images.length} immagini?`)) clearMutation.mutate();
-              }}
+                            onClick={() => askConfirm(`Eliminare tutte le ${images.length} immagini?`, () => clearMutation.mutate())}
               disabled={clearMutation.isPending}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-error/40 text-error rounded-lg hover:bg-error/10 disabled:opacity-40 transition-colors"
             >
@@ -140,9 +140,7 @@ function SnapshotImagesPage() {
                 <div className="flex items-center justify-between mt-1">
                   <CopyButton text={`/images/${snapshotId}/${img.filename}`} />
                   <button
-                    onClick={() => {
-                      if (confirm(`Eliminare ${img.filename}?`)) deleteMutation.mutate(img.filename);
-                    }}
+                                          onClick={() => askConfirm(`Eliminare ${img.filename}?`, () => deleteMutation.mutate(img.filename))}
                     disabled={deleteMutation.isPending}
                     className="p-1 text-on-surface-variant hover:text-error transition-colors disabled:opacity-40"
                     title="Elimina"
@@ -162,6 +160,7 @@ function SnapshotImagesPage() {
           </div>
         )
       )}
+      {confirmModal}
     </TeacherLayout>
   );
 }

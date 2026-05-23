@@ -7,6 +7,7 @@ import {
   listSessions, listSnapshots, listClasses, createSession, activateSession,
   closeSession, regenJoinCode, deleteSession, SessionMeta, CreateSessionPayload,
 } from '../api';
+import { useConfirmModal } from '../lib/useConfirmModal';
 
 function JoinCodeBadge({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
@@ -155,6 +156,7 @@ function SessionsPage() {
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const { ask: askConfirm, modal: confirmModal } = useConfirmModal();
 
   const { data: sessions, isLoading } = useQuery({
     queryKey: ['sessions'],
@@ -301,9 +303,7 @@ function SessionsPage() {
                       Avvia
                     </button>
                     <button
-                      onClick={() => {
-                        if (confirm(`Eliminare "${s.title}"?`)) deleteMutation.mutate(s.id);
-                      }}
+                                            onClick={() => askConfirm(`Eliminare "${s.title}"?`, () => deleteMutation.mutate(s.id))}
                       disabled={isPending}
                       className="p-1.5 text-on-surface-variant hover:text-error transition-colors disabled:opacity-40"
                       title="Elimina"
@@ -351,6 +351,7 @@ function SessionsPage() {
           </div>
         )}
       </div>
+      {confirmModal}
     </TeacherLayout>
   );
 }

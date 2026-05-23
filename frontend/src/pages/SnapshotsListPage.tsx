@@ -6,8 +6,9 @@ import TeacherLayout from '../layouts/TeacherLayout';
 import QuestionDisplay from '../components/QuestionDisplay';
 import {
   listSnapshots, getSnapshot, createSnapshot, deleteSnapshot,
-  getSnapshotExportUrl, type Question, type SnapshotMeta,
+  getSnapshotExportUrl, downloadExport, type Question, type SnapshotMeta,
 } from '../api';
+import { useConfirmModal } from '../lib/useConfirmModal';
 
 function getHighlightIndices(q: Question): number[] {
   const question = q as Question & { correct?: number | number[] };
@@ -40,6 +41,7 @@ function SnapshotsListPage() {
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [previewingId, setPreviewingId] = useState<number | null>(null);
+  const { ask: askConfirm, modal: confirmModal } = useConfirmModal();
 
   const { data: snapshots, isLoading } = useQuery({
     queryKey: ['snapshots'],
@@ -137,14 +139,13 @@ function SnapshotsListPage() {
                   >
                     {previewingId === s.id ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
-                  <a
-                    href={getSnapshotExportUrl(s.id)}
-                    download
-                    className="p-2 text-on-surface-variant hover:text-primary transition-colors"
-                    title="Esporta JSONC"
-                  >
-                    <Download size={16} />
-                  </a>
+                    <button
+                      onClick={() => downloadExport(getSnapshotExportUrl(s.id), `${s.slug}.jsonc`)}
+                      className="p-2 text-on-surface-variant hover:text-primary transition-colors"
+                      title="Esporta JSONC"
+                    >
+                      <Download size={16} />
+                    </button>
                   <button
                     onClick={() => navigate(`/teacher/snapshots/${s.id}/images`)}
                     className="p-2 text-on-surface-variant hover:text-primary transition-colors"
@@ -159,9 +160,7 @@ function SnapshotsListPage() {
                     Modifica <ArrowRight size={12} />
                   </button>
                   <button
-                    onClick={() => {
-                      if (confirm(`Eliminare "${s.title}"?`)) deleteMutation.mutate(s.id);
-                    }}
+                    onClick={() => askConfirm(`Eliminare "${s.title}"?`, () => deleteMutation.mutate(s.id))}
                     disabled={deleteMutation.isPending}
                     className="p-2 text-on-surface-variant hover:text-error transition-colors disabled:opacity-40"
                     title="Elimina"
@@ -210,6 +209,7 @@ function SnapshotsListPage() {
           </div>
         )}
       </div>
+      {confirmModal}
     </TeacherLayout>
   );
 }

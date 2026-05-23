@@ -348,8 +348,7 @@ export async function deleteSnapshot(id: number): Promise<{ ok: boolean }> {
 }
 
 export function getSnapshotExportUrl(id: number): string {
-  const token = getTeacherToken();
-  return `${API_BASE}/teacher/snapshots/${id}/export?token=${encodeURIComponent(token ?? '')}`;
+  return `${API_BASE}/teacher/snapshots/${id}/export`;
 }
 
 export async function renameSnapshot(id: number, title: string): Promise<{ slug: string }> {
@@ -357,6 +356,30 @@ export async function renameSnapshot(id: number, title: string): Promise<{ slug:
     method: 'POST',
     body: JSON.stringify({ title }),
   });
+}
+
+/**
+ * Download a file using fetch with the proper Authorization header,
+ * then trigger a browser download via a temp blob: URL.
+ * Avoids exposing JWTs in query strings.
+ */
+export async function downloadExport(url: string, filename?: string): Promise<void> {
+  const token = getTeacherToken();
+  const response = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!response.ok) {
+    throw new Error(`Download fallito: ${response.status}`);
+  }
+  const blob = await response.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = filename || 'export.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(blobUrl);
 }
 
 // ── teacher — images ──────────────────────────────────────────────────────────
@@ -505,8 +528,7 @@ export async function renameArchive(archiveId: number, title: string): Promise<{
 }
 
 export function getArchiveExportUrl(archiveId: number): string {
-  const token = getTeacherToken();
-  return `${API_BASE}/teacher/archives/${archiveId}/export?token=${encodeURIComponent(token ?? '')}`;
+  return `${API_BASE}/teacher/archives/${archiveId}/export`;
 }
 
 // ── teacher — student list snapshots ─────────────────────────────────────────
@@ -541,8 +563,7 @@ export async function renameStudentSnapshot(id: number, title: string): Promise<
 }
 
 export function getStudentSnapshotExportUrl(id: number): string {
-  const token = getTeacherToken();
-  return `${API_BASE}/teacher/student-snapshots/${id}/export?token=${encodeURIComponent(token ?? '')}`;
+  return `${API_BASE}/teacher/student-snapshots/${id}/export`;
 }
 
 // ── teacher — email ───────────────────────────────────────────────────────────

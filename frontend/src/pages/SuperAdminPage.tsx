@@ -6,9 +6,11 @@ import {
   listTeachers, createTeacher, updateTeacher, resetTeacherPassword,
   triggerSync, getSyncStatus, SyncStatus,
 } from '../api';
+import { useConfirmModal } from '../lib/useConfirmModal';
 
 function TeachersTab() {
   const queryClient = useQueryClient();
+  const { ask: askConfirm, modal: confirmModal } = useConfirmModal();
   const { data: teachers, isLoading } = useQuery({ queryKey: ['sa-teachers'], queryFn: listTeachers });
 
   const [showCreate, setShowCreate] = useState(false);
@@ -87,9 +89,7 @@ function TeachersTab() {
                 {t.status === 'active' ? <ToggleRight size={18} className="text-primary" /> : <ToggleLeft size={18} />}
               </button>
               <button
-                onClick={() => {
-                  if (confirm(`Resettare la password di ${t.display_name}?`)) resetPw.mutate(t.id);
-                }}
+                                  onClick={() => askConfirm(`Resettare la password di ${t.display_name}?`, () => resetPw.mutate(t.id))}
                 disabled={resetPw.isPending}
                 className="p-1.5 text-on-surface-variant hover:text-secondary transition-colors"
                 title="Reset password"
@@ -186,6 +186,7 @@ function SuperAdminPage() {
       </div>
       {tab === 'teachers' && <TeachersTab />}
       {tab === 'sync' && <SyncTab />}
+      {confirmModal}
     </TeacherLayout>
   );
 }

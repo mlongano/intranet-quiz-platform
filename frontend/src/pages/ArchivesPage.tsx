@@ -34,14 +34,13 @@ function ArchivesPage() {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <a
-                href={getArchiveExportUrl(a.id)}
-                download
+              <button
+                onClick={() => downloadExport(getArchiveExportUrl(a.id), `${a.id}.json`)}
                 className="p-2 text-on-surface-variant hover:text-primary transition-colors"
                 title="Scarica"
               >
                 <Download size={16} />
-              </a>
+              </button>
               <button
                 onClick={() => navigate(`/teacher/archives/${a.id}`)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-outline-variant/40 text-on-surface rounded-lg hover:bg-surface-container-high transition-colors"
@@ -67,6 +66,7 @@ function ArchivesPage() {
           </div>
         )}
       </div>
+      {confirmModal}
     </TeacherLayout>
   );
 }
