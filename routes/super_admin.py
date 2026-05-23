@@ -268,8 +268,27 @@ def global_scores():
     with db.get_conn() as conn:
         if session_id:
             rows = conn.execute(Q.LIST_SCORES_FOR_SESSION, (session_id,)).fetchall()
+            return jsonify([
+                {
+                    'id': r[0], 'raw_points': float(r[1]), 'max_points': float(r[2]),
+                    'percent': float(r[3]),
+                    'submitted_at': r[5].isoformat() if r[5] else None,
+                    'student_email': r[6], 'student_name': r[7],
+                }
+                for r in rows
+            ]), 200
         elif teacher_id:
             rows = conn.execute(Q.LIST_SCORES_FOR_TEACHER, (teacher_id,)).fetchall()
+            return jsonify([
+                {
+                    'id': r[0], 'session_id': r[1],
+                    'raw_points': float(r[2]), 'max_points': float(r[3]),
+                    'percent': float(r[4]),
+                    'submitted_at': r[6].isoformat() if r[6] else None,
+                    'student_email': r[7], 'student_name': r[8],
+                }
+                for r in rows
+            ]), 200
         else:
             rows = conn.execute(
                 """SELECT se.id, se.raw_points, se.max_points, se.percent,
@@ -280,13 +299,12 @@ def global_scores():
                    JOIN quiz_sessions qs ON qs.id = se.session_id
                    ORDER BY se.submitted_at DESC LIMIT 200"""
             ).fetchall()
-
-    return jsonify([
-        {
-            'id': r[0], 'raw_points': float(r[1]), 'max_points': float(r[2]),
-            'percent': float(r[3]),
-            'submitted_at': r[5].isoformat() if r[5] else None,
-            'student_email': r[6], 'student_name': r[7],
-        }
-        for r in rows
-    ]), 200
+            return jsonify([
+                {
+                    'id': r[0], 'raw_points': float(r[1]), 'max_points': float(r[2]),
+                    'percent': float(r[3]),
+                    'submitted_at': r[5].isoformat() if r[5] else None,
+                    'student_email': r[6], 'student_name': r[7],
+                }
+                for r in rows
+            ]), 200
