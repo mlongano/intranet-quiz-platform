@@ -104,8 +104,8 @@ def resume(quiz_id: str):
     return jsonify({
         'is_complete': False,
         'current_index': current_index,
-        'total': total,
-        'question': {
+        'total_questions': total,
+        'current_question': {
             'id': q['id'],
             'type': q.get('type'),
             'text': q.get('text'),

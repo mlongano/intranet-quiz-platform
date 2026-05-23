@@ -359,8 +359,8 @@ def _build_question_response(
     qbank_map = load_qbank_for_session(conn, session_id)
     q = qbank_map.get(q_id)
     if not q:
-        return {'is_complete': False, 'current_index': current_index, 'total': total,
-                'question': None}
+        return {'is_complete': False, 'current_index': current_index, 'total_questions': total,
+                'current_question': None}
 
     option_order = step.get('option_order', list(range(len(q.get('options', [])))))
     options = q.get('options', [])
@@ -369,8 +369,8 @@ def _build_question_response(
     return {
         'is_complete': False,
         'current_index': current_index,
-        'total': total,
-        'question': {
+        'total_questions': total,
+        'current_question': {
             'id': q['id'],
             'type': q.get('type'),
             'text': q.get('text'),
