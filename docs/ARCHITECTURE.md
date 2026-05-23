@@ -28,45 +28,45 @@ JSONC as import/export authoring format only (never persists on the server).
 ## 1. System Boundaries
 
 ```
-                         ┌─────────────────────────┐
-                         │  Browser (Student)       │
-                         │  / → /quiz/:id → /finish │
+                         ┌───────────────────────────┐
+                         │  Browser (Student)        │
+                         │  / → /quiz/:id → /finish  │
                          │  JWT (student, short TTL) │
-                         └───────────┬─────────────┘
+                         └───────────┬───────────────┘
                                      │ HTTP (:5001)
-                         ┌───────────▼─────────────┐
+                         ┌───────────▼──────────────┐
                          │  Browser (Teacher)       │
                          │  /teacher/*              │
-                         │  JWT (teacher, 12h TTL) │
-                         ├─────────────────────────┤
+                         │  JWT (teacher, 12h TTL)  │
+                         ├──────────────────────────┤
                          │  Browser (Super-admin)   │
                          │  /super-admin/*          │
                          │  JWT (teacher role)      │
-                         └───────────┬─────────────┘
+                         └───────────┬──────────────┘
                                      │
                                      ▼
   ┌─────────────────────────────────────────────────────────────────┐
   │  Flask App (Waitress :5001 / Werkzeug debug :5001)              │
-  │  Threads: 8                                                      │
-  │                                                                  │
-  │  ┌──────────────┐ ┌─────────────┐ ┌────────────┐ ┌───────────┐ │
-  │  │  auth_bp     │ │ quiz_bp      │ │ teacher_bp │ │super_admin│ │
-  │  │  /api/auth   │ │ /api/quiz    │ │/api/teacher│ │ /api/super│ │
-  │  └──────┬───────┘ └──────┬──────┘ └──────┬─────┘ └─────┬─────┘ │
-  │         │                │               │              │        │
-  │         └────────┬───────┴───────────────┴──────────────┘        │
-  │                  ▼                                               │
-  │  ┌─────────────────────────────────────────────────────────┐     │
-  │  │  Services layer                                        │     │
-  │  │  auth/ → jwt_utils, decorators, google_sync             │     │
-  │  │  services/ → grading, score_transforms, quiz_session,    │     │
-  │  │               snapshots, images                          │     │
-  │  │  db/ → ConnectionPool, queries.py, migration            │     │
-  │  │  utils.py (pure helpers)                                 │     │
-  │  └─────────────────────────────────────────────────────────┘     │
-  │                                                                  │
-  │  PostgreSQL (local, named volume)                                │
-  │  Filesystem: images/{teacher}/{snapshot}/  ·  backups/           │
+  │  Threads: 8                                                     │
+  │                                                                 │
+  │  ┌──────────────┐ ┌─────────────┐ ┌────────────┐ ┌───────────┐  │
+  │  │  auth_bp     │ │ quiz_bp     │ │ teacher_bp │ │super_admin│  │
+  │  │  /api/auth   │ │ /api/quiz   │ │/api/teacher│ │ /api/super│  │
+  │  └──────┬───────┘ └──────┬──────┘ └──────┬─────┘ └─────┬─────┘  │
+  │         │                │               │             │        │
+  │         └────────────────┴────────┬──────┴─────────────┘        │
+  │                                   ▼                             │
+  │  ┌─────────────────────────────────────────────────────────┐    │
+  │  │  Services layer                                         │    │
+  │  │  auth/ → jwt_utils, decorators, google_sync             │    │
+  │  │  services/ → grading, score_transforms, quiz_session,   │    │
+  │  │               snapshots, images                         │    │
+  │  │  db/ → ConnectionPool, queries.py, migration            │    │
+  │  │  utils.py (pure helpers)                                │    │
+  │  └─────────────────────────────────────────────────────────┘    │
+  │                                                                 │
+  │  PostgreSQL (local, named volume)                               │
+  │  Filesystem: images/{teacher}/{snapshot}/  ·  backups/          │
   └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -354,17 +354,17 @@ POST/:id/reset-password
 ## 8. Quiz Lifecycle
 
 ```
-                    ┌─────────────────┐
-                    │  Session: draft │
+                    ┌───────────────────┐
+                    │  Session: draft   │
                     │  (teacher creates,│
                     │   assigns classes)│
-                    └────────┬────────┘
-                             │ activate → generates join_code
-                             ▼
-                    ┌─────────────────┐
+                    └──────────┬────────┘
+                               │ activate → generates join_code
+                               ▼
+                    ┌──────────────────┐
                     │  Session: active │
                     │  (students join) │
-                    └────────┬────────┘
+                    └────────┬─────────┘
                              │
        ┌─────────────────────┼─────────────────────┐
        │ POST /auth/         │                     │
@@ -382,24 +382,24 @@ POST/:id/reset-password
                           │                  │
                           ▼                  ▼
                     ┌──────────────────────────┐
-                    │  save-answer (×N)         │
-                    │  FOR UPDATE + ownership   │
-                    │  verify → advance index   │
-                    └──────────┬───────────────┘
-                               │ is_complete?
-                               ▼
+                    │  save-answer (×N)        │
+                    │  FOR UPDATE + ownership  │
+                    │  verify → advance index  │
+                    └─────────────┬────────────┘
+                                  │ is_complete?
+                                  ▼
                     ┌──────────────────────────┐
                     │  submit                  │
                     │  FOR UPDATE → grade()    │
                     │  → insert score_entry    │
                     │  → delete plan           │
                     └──────────────────────────┘
-                               │
-                               ▼
-                    ┌─────────────────┐
-                    │  Session: close  │
-                    │  (teacher ends)  │
-                    └─────────────────┘
+                                  │
+                                  ▼
+                         ┌─────────────────┐
+                         │  Session: close │
+                         │  (teacher ends) │
+                         └─────────────────┘
 ```
 
 ## 9. Score Mutation: review, recalculate, regrade
