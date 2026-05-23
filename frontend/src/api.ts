@@ -363,7 +363,7 @@ export async function renameSnapshot(id: number, title: string): Promise<{ slug:
 
 export async function uploadSnapshotImage(snapshotId: number, file: File): Promise<ImageMeta> {
   const formData = new FormData();
-  formData.append('image', file);
+  formData.append('file', file);
   return apiFetch<ImageMeta>(`/teacher/snapshots/${snapshotId}/images`, {
     method: 'POST',
     body: formData,
