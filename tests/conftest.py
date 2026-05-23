@@ -73,22 +73,18 @@ def apply_schema():
             END $$;
         """)
         conn.commit()
+    # Close and reopen pool so next session gets fresh connections
+    db.get_pool().close()
+    db.init_pool(dsn=os.environ['DATABASE_URL'], min_size=1, max_size=4)
 
 
 @pytest.fixture()
 def db_conn(apply_schema):
-    """Per-test DB connection wrapped in a savepoint that is rolled back."""
+    """Per-test DB connection. Data helpers commit, so isolation relies on
+    TRUNCATE in the session teardown + fresh pool after apply_schema."""
     import db as _db
     with _db.get_conn() as conn:
-        try:
-            conn.execute('SAVEPOINT test_start')
-        except Exception:
-            pass  # savepoints may be unavailable after DDL
         yield conn
-        try:
-            conn.execute('ROLLBACK TO SAVEPOINT test_start')
-        except Exception:
-            conn.rollback()
 
 
 # ── Flask test client ─────────────────────────────────────────────────────────

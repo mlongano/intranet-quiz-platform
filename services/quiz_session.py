@@ -196,7 +196,7 @@ def save_answer(quiz_id: str, answer: Any, student_id: int) -> dict:
         ).fetchone()
         if not row:
             raise NotFound(description="Quiz plan not found.")
-        if row[2] != student_id:
+        if str(row[2]) != student_id:
             raise Forbidden(description="Not your plan.")
 
         plan_data = _parse_json_field(row[3])
@@ -251,7 +251,7 @@ def submit_plan(quiz_id: str, student_id: int) -> dict:
         ).fetchone()
         if not row:
             raise NotFound(description="Quiz plan not found.")
-        if row[2] != student_id:
+        if str(row[2]) != student_id:
             raise Forbidden(description="Not your plan.")
 
         session_id = row[1]

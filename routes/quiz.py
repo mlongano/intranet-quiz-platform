@@ -66,7 +66,7 @@ def resume(quiz_id: str):
     if not plan_data:
         return jsonify({'error': 'NOT_FOUND'}), 404
 
-    if plan_data['student_id'] != student_id:
+    if str(plan_data['student_id']) != student_id:
         return jsonify({'error': 'FORBIDDEN'}), 403
 
     progression = plan_data['progression']
