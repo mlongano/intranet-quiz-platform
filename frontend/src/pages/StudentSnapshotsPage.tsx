@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight, Download, Trash2, Pencil } from 'lucide-reac
 import TeacherLayout from '../layouts/TeacherLayout';
 import {
   listStudentSnapshots, getStudentSnapshot, deleteStudentSnapshot,
-  renameStudentSnapshot, getStudentSnapshotExportUrl, StudentListSnapshotDetail,
+  renameStudentSnapshot, getStudentSnapshotExportUrl, downloadExport, StudentListSnapshotDetail,
 } from '../api';
 
 function SnapshotCard({ snap }: { snap: { id: number; title: string; created_at: string } }) {
@@ -82,14 +82,13 @@ function SnapshotCard({ snap }: { snap: { id: number; title: string; created_at:
           >
             <Pencil size={14} />
           </button>
-          <a
-            href={getStudentSnapshotExportUrl(snap.id)}
-            download
+          <button
+            onClick={() => downloadExport(getStudentSnapshotExportUrl(snap.id), `${snap.title}.json`)}
             className="p-1.5 text-on-surface-variant hover:text-primary transition-colors"
             title="Esporta"
           >
             <Download size={14} />
-          </a>
+          </button>
           <button
             onClick={() => setDeleteConfirm(true)}
             disabled={deleteMutation.isPending}

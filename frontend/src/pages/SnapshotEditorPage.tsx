@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Save, Image, Download, Eye, EyeOff } from 'lucide-react';
 import TeacherLayout from '../layouts/TeacherLayout';
 import ImagePicker from '../components/ImagePicker';
-import { getSnapshot, updateSnapshot, getSnapshotExportUrl } from '../api';
+import { getSnapshot, updateSnapshot, getSnapshotExportUrl, downloadExport } from '../api';
 
 function SnapshotEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -78,9 +78,8 @@ function SnapshotEditorPage() {
       pageTitle={title || 'Modifica Quiz'}
       headerActions={
         <div className="flex items-center gap-2">
-          <a
-            href={getSnapshotExportUrl(snapshotId)}
-            download
+          <button
+            onClick={() => downloadExport(getSnapshotExportUrl(snapshotId), `${snapshot?.slug || snapshotId}.jsonc`)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-outline-variant/40 text-on-surface rounded-lg hover:bg-surface-container-high transition-colors"
           >
             <Download size={14} />

@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Download } from 'lucide-react';
 import TeacherLayout from '../layouts/TeacherLayout';
-import { getArchive, getArchiveExportUrl, ScoreEntry } from '../api';
+import { getArchive, getArchiveExportUrl, downloadExport, ScoreEntry } from '../api';
 
 function ScoreRow({ score }: { score: ScoreEntry }) {
   const pct = score.percent;
@@ -56,9 +56,8 @@ function ArchiveDetailPage() {
           <ArrowLeft size={14} /> Archivi
         </button>
         {archive && (
-          <a
-            href={getArchiveExportUrl(id)}
-            download
+          <button
+            onClick={() => downloadExport(getArchiveExportUrl(id), `${id}.json`)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-outline-variant/40 text-on-surface rounded-lg hover:bg-surface-container-high transition-colors"
           >
             <Download size={14} />
