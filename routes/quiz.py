@@ -81,7 +81,7 @@ def resume(quiz_id: str):
     total = len(plan_steps)
 
     if plan_data.get('completed_at') or current_index >= total:
-        return jsonify({'is_complete': True, 'current_index': current_index, 'total': total}), 200
+        return jsonify({'is_complete': True, 'current_index': current_index, 'total_questions': total}), 200
 
     with db.get_conn() as conn:
         session_id = plan_data['session_id']

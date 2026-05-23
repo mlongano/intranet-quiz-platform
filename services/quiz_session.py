@@ -351,7 +351,7 @@ def _build_question_response(
     """Build the next-question response or is_complete flag."""
     total = len(plan_steps)
     if current_index >= total:
-        return {'is_complete': True, 'total': total, 'current_index': current_index}
+        return {'is_complete': True, 'total_questions': total, 'current_index': current_index}
 
     step = plan_steps[current_index]
     q_id = str(step.get('id'))
