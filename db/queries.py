@@ -394,6 +394,94 @@ UPDATE_SCORE_ANSWERS = """
     )
 """
 
+# ── LLM grading jobs ─────────────────────────────────────────────────────────
+
+INSERT_LLM_GRADING_JOB = """
+    INSERT INTO llm_grading_jobs
+        (teacher_id, session_id, score_entry_id, job_type, total_items)
+    VALUES
+        (%(teacher_id)s, %(session_id)s, %(score_entry_id)s, %(job_type)s, %(total_items)s)
+    RETURNING id, teacher_id, session_id, score_entry_id, status, job_type,
+              total_items, processed_items, error, created_at, started_at, finished_at
+"""
+
+CLAIM_LLM_GRADING_JOB = """
+    SELECT id, teacher_id, session_id, score_entry_id, status, job_type,
+           total_items, processed_items, error, created_at, started_at, finished_at
+    FROM llm_grading_jobs
+    WHERE status = 'pending'
+    ORDER BY created_at
+    FOR UPDATE SKIP LOCKED
+    LIMIT 1
+"""
+
+MARK_LLM_GRADING_JOB_RUNNING = """
+    UPDATE llm_grading_jobs
+    SET status = 'running', started_at = now(), error = NULL
+    WHERE id = %s
+"""
+
+UPDATE_LLM_GRADING_JOB_PROGRESS = """
+    UPDATE llm_grading_jobs
+    SET processed_items = %s
+    WHERE id = %s
+"""
+
+FINISH_LLM_GRADING_JOB = """
+    UPDATE llm_grading_jobs
+    SET status = %(status)s,
+        processed_items = %(processed_items)s,
+        error = %(error)s,
+        finished_at = now()
+    WHERE id = %(id)s
+"""
+
+REQUEUE_RUNNING_LLM_GRADING_JOBS = """
+    UPDATE llm_grading_jobs
+    SET status = 'pending',
+        started_at = NULL,
+        error = NULL
+    WHERE status = 'running'
+"""
+
+GET_LLM_GRADING_JOB_FOR_TEACHER = """
+    SELECT id, teacher_id, session_id, score_entry_id, status, job_type,
+           total_items, processed_items, error, created_at, started_at, finished_at
+    FROM llm_grading_jobs
+    WHERE id = %s AND teacher_id = %s
+"""
+
+GET_LATEST_LLM_GRADING_JOB_FOR_SESSION = """
+    SELECT id, teacher_id, session_id, score_entry_id, status, job_type,
+           total_items, processed_items, error, created_at, started_at, finished_at
+    FROM llm_grading_jobs
+    WHERE session_id = %s AND teacher_id = %s
+    ORDER BY created_at DESC
+    LIMIT 1
+"""
+
+GET_SCORE_ENTRY_FOR_LLM_JOB = """
+    SELECT id, session_id, student_id, teacher_id, raw_points, max_points,
+           percent, answers
+    FROM score_entries
+    WHERE id = %s AND teacher_id = %s AND session_id = %s
+"""
+
+LIST_SCORE_ENTRIES_FOR_LLM_SESSION = """
+    SELECT id, session_id, student_id, teacher_id, raw_points, max_points,
+           percent, answers
+    FROM score_entries
+    WHERE session_id = %s AND teacher_id = %s
+    ORDER BY submitted_at DESC
+"""
+
+LIST_SCORE_ENTRY_IDS_FOR_LLM_SESSION = """
+    SELECT id
+    FROM score_entries
+    WHERE session_id = %s AND teacher_id = %s
+    ORDER BY submitted_at DESC
+"""
+
 # ── score archives ────────────────────────────────────────────────────────────
 
 INSERT_ARCHIVE = """
