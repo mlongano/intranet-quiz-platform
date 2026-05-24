@@ -271,6 +271,9 @@ def send_result_to_student(
     percent: float,
     answers: list[dict],
     teacher_email: str = "",
+    custom_subject: Optional[str] = None,
+    include_details: bool = True,
+    show_admin_feedback: bool = False,
 ) -> tuple[bool, str]:
     """
     Send quiz result to one student.
@@ -288,7 +291,7 @@ def send_result_to_student(
         "answers": answers,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-    subject = f"{quiz_title} — Punteggio: {percent}%"
+    subject = custom_subject or f"{quiz_title} — Punteggio: {percent}%"
 
     if not EMAIL_SENDER or not EMAIL_PASSWORD:
         return False, "Email service not configured."
@@ -304,7 +307,12 @@ def send_result_to_student(
         msg["Reply-To"] = sender
         msg["Subject"] = subject
 
-        html_content = format_quiz_results_html(submission, subject=subject)
+        html_content = format_quiz_results_html(
+            submission,
+            include_details=include_details,
+            subject=subject,
+            show_admin_feedback=show_admin_feedback,
+        )
         msg.attach(MIMEText(html_content, "html"))
 
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
