@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, RefreshCw, Archive, Mail, ChevronRight, Download } from 'lucide-react';
 import TeacherLayout from '../layouts/TeacherLayout';
 import SubmissionDetailView from '../components/SubmissionDetailView';
+import MarkdownContent from '../components/MarkdownContent';
 import {
   getSessionScores, recalculateScores, archiveSessionScores, sendAllResultEmails,
   listSessions, type DetailedAnswer, ScoreEntry, ScoreOverride, reviewScores,
@@ -197,6 +198,10 @@ function SessionScoresPage() {
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
   const [questionOverrides, setQuestionOverrides] = useState<Record<string, number>>({});
   const [savingStudent, setSavingStudent] = useState<string | null>(null);
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailIncludeDetails, setEmailIncludeDetails] = useState(true);
+  const [emailIncludeFeedback, setEmailIncludeFeedback] = useState(false);
 
   const { data: scores, isLoading } = useQuery({
     queryKey: ['session-scores', id],
@@ -211,6 +216,7 @@ function SessionScoresPage() {
     queryKey: ['llm-info'],
     queryFn: getLlmInfo,
   });
+  const llmEnabled = llmInfo?.enabled ?? llmInfo?.use_llm ?? false;
 
   const recalcMutation = useMutation({
     mutationFn: () => recalculateScores(id),
@@ -223,7 +229,12 @@ function SessionScoresPage() {
   });
 
   const emailMutation = useMutation({
-    mutationFn: () => sendAllResultEmails(id),
+    mutationFn: () => sendAllResultEmails(id, {
+      subject: emailSubject.trim() || undefined,
+      include_details: emailIncludeDetails,
+      include_feedback: emailIncludeFeedback,
+    }),
+    onSuccess: () => setEmailDialogOpen(false),
   });
 
   const regradeMutation = useMutation({
@@ -308,6 +319,13 @@ function SessionScoresPage() {
     setQuestionOverrides(prev => { const next = { ...prev }; delete next[studentEmail]; return next; });
   };
 
+  const openEmailDialog = () => {
+    setEmailSubject(session?.title ? `${session.title} - risultati` : 'Risultati del quiz');
+    setEmailIncludeDetails(true);
+    setEmailIncludeFeedback(false);
+    setEmailDialogOpen(true);
+  };
+
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <>
@@ -332,8 +350,8 @@ function SessionScoresPage() {
             Ricalcola
           </button>
           <button
-            onClick={() => emailMutation.mutate()}
-            disabled={emailMutation.isPending}
+            onClick={openEmailDialog}
+            disabled={emailMutation.isPending || !scores?.length}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-outline-variant/40 text-on-surface rounded-lg hover:bg-surface-container-high disabled:opacity-40 transition-colors"
           >
             <Mail size={14} />
@@ -379,7 +397,7 @@ function SessionScoresPage() {
                   {llmInfo?.model ?? '...'}
                 </span>
                 <span className="text-xs text-on-surface-variant">
-                  ({llmInfo?.enabled ? 'abilitato' : 'disabilitato'})
+                  ({llmEnabled ? 'abilitato' : 'disabilitato'})
                 </span>
               </>
             )}
@@ -428,6 +446,18 @@ function SessionScoresPage() {
         </div>
       )}
 
+      {regradeMutation.isError && (
+        <div className="mb-4 p-3 bg-error/10 border border-error/30 text-error rounded-lg text-sm">
+          Rivalutazione non riuscita: {String((regradeMutation.error as Error).message)}
+        </div>
+      )}
+
+      {regradeMutation.isPending && (
+        <div className="mb-4 p-3 bg-secondary/10 border border-secondary/30 text-secondary rounded-lg text-sm">
+          Rivalutazione in corso. Le chiamate LLM possono richiedere alcuni secondi per ogni risposta aperta.
+        </div>
+      )}
+
       {isLoading && <p className="text-on-surface-variant">Caricamento...</p>}
 
       {viewBy === 'student' ? (
@@ -456,8 +486,11 @@ function SessionScoresPage() {
                 >
                   <div className="flex justify-between items-start">
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium mb-1 text-on-surface line-clamp-2">
-                        Q{q.questionId}: {q.questionText}
+                      <div className="mb-1 text-on-surface">
+                        <div className="text-sm font-semibold text-on-surface-variant">Q{q.questionId}</div>
+                        <MarkdownContent className="text-sm font-medium text-on-surface" compact>
+                          {q.questionText}
+                        </MarkdownContent>
                       </div>
                       <div className="text-sm text-on-surface-variant">
                         Media: {q.avgPoints.toFixed(1)}/{q.weight} · Corrette: {q.correctCount}/{q.totalAnswers} · Tipo: {q.type}
@@ -576,6 +609,92 @@ function SessionScoresPage() {
       )}
       {confirmModal}
     </TeacherLayout>
+
+    {emailDialogOpen && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/70 p-4">
+        <div className="w-full max-w-lg rounded-xl border border-outline-variant/30 bg-surface-container p-6 shadow-xl">
+          <h2 className="text-xl font-bold text-on-surface">Inviare i risultati via email?</h2>
+          <p className="mt-2 text-sm text-on-surface-variant">
+            Verrà inviata una email a {scores?.length ?? 0} studenti con i risultati di questa sessione.
+          </p>
+
+          <label className="mt-5 block text-sm font-medium text-on-surface">
+            Oggetto email
+            <input
+              type="text"
+              value={emailSubject}
+              onChange={e => setEmailSubject(e.target.value)}
+              className="mt-2 w-full rounded-lg border border-outline-variant/40 bg-surface px-3 py-2 text-sm text-on-surface focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </label>
+
+          <div className="mt-5 space-y-3">
+            <label className="flex items-start gap-3 text-sm text-on-surface">
+              <input
+                type="checkbox"
+                checked={emailIncludeDetails}
+                onChange={e => setEmailIncludeDetails(e.target.checked)}
+                className="mt-1"
+              />
+              <span>
+                <span className="block font-medium">Includi dettaglio domande</span>
+                <span className="block text-on-surface-variant">Mostra risposte date, risposte corrette e punteggio per domanda.</span>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-3 text-sm text-on-surface">
+              <input
+                type="checkbox"
+                checked={emailIncludeFeedback}
+                onChange={e => setEmailIncludeFeedback(e.target.checked)}
+                disabled={!emailIncludeDetails}
+                className="mt-1"
+              />
+              <span>
+                <span className="block font-medium">Includi feedback dettagliato LLM</span>
+                <span className="block text-on-surface-variant">Aggiunge verdetto e feedback automatico per le risposte aperte.</span>
+              </span>
+            </label>
+          </div>
+
+          {emailMutation.isError && (
+            <p className="mt-4 rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error">
+              Invio email non riuscito: {String((emailMutation.error as Error).message)}
+            </p>
+          )}
+
+          {emailMutation.data?.errors?.length ? (
+            <div className="mt-4 rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error">
+              <p className="font-semibold">Alcune email non sono state inviate.</p>
+              <ul className="mt-2 list-disc pl-5">
+                {emailMutation.data.errors.map(item => (
+                  <li key={`${item.email}-${item.error}`}>{item.email}: {item.error}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <div className="mt-6 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setEmailDialogOpen(false)}
+              disabled={emailMutation.isPending}
+              className="rounded-lg border border-outline-variant/40 px-4 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container-high disabled:opacity-50"
+            >
+              Annulla
+            </button>
+            <button
+              type="button"
+              onClick={() => emailMutation.mutate()}
+              disabled={emailMutation.isPending || !emailSubject.trim()}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-on-primary hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {emailMutation.isPending ? 'Invio...' : 'Conferma invio'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
 
     {reviewScore && (
       <SubmissionDetailView
