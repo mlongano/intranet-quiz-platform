@@ -107,15 +107,17 @@ function SubmissionDetailView({ score, sessionId, onClose }: Props) {
   const saveMutation = useMutation({
     mutationFn: () => {
       if (studentId == null) throw new Error('student_id mancante nel punteggio');
+      if (score.id == null) throw new Error('id punteggio mancante');
       const payload: ScoreOverride[] = answers
         .filter(a => {
           const ov = overrides[String(a.question_id)];
           return ov !== undefined && ov !== a.points_awarded;
         })
         .map(a => ({
-          student_id: studentId,
-          question_id: a.question_id,
-          points: overrides[String(a.question_id)],
+          score_id: score.id!,
+          per_question: {
+            [String(a.question_id)]: overrides[String(a.question_id)],
+          },
         }));
       return reviewScores(sessionId, payload);
     },
@@ -160,7 +162,7 @@ function SubmissionDetailView({ score, sessionId, onClose }: Props) {
           )}
           {answers.map((a, i) => (
             <AnswerRow
-              key={String(a.question_id) ?? i}
+              key={a.question_id == null ? i : String(a.question_id)}
               answer={a}
               override={overrides[String(a.question_id)]}
               onChange={pts => setOverrides(prev => ({
