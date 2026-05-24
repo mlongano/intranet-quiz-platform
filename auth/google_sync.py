@@ -14,6 +14,7 @@ Environment variables required during sync:
 from __future__ import annotations
 
 import os
+import json
 import secrets
 import string
 from datetime import datetime, timezone
@@ -43,6 +44,47 @@ def _build_service():
         sa_key_path, scopes=SCOPES
     ).with_subject(delegated_subject)
     return build('admin', 'directory_v1', credentials=creds)
+
+
+def _config_errors() -> list[str]:
+    errors = []
+    required = {
+        'GOOGLE_DELEGATED_SUBJECT': 'email amministratore delegato mancante.',
+        'GOOGLE_DOMAIN': 'dominio Google Workspace mancante.',
+        'GOOGLE_TEACHER_GROUP': 'gruppo docenti Google mancante.',
+    }
+    for key, message in required.items():
+        if not os.environ.get(key):
+            errors.append(message)
+
+    sa_key_path = os.environ.get('GOOGLE_SA_KEY_PATH')
+    if not sa_key_path:
+        errors.append('Percorso del file JSON della service account mancante.')
+    elif not os.path.isfile(sa_key_path):
+        errors.append(f"File service account non trovato: {sa_key_path}")
+    else:
+        try:
+            with open(sa_key_path, 'r', encoding='utf-8') as f:
+                info = json.load(f)
+            if 'installed' in info or 'web' in info:
+                errors.append(
+                    'Il file Google configurato e un client OAuth, non una service account. '
+                    'Scarica una chiave JSON da IAM > Service accounts.'
+                )
+            missing = [
+                key for key in ('type', 'client_email', 'private_key', 'token_uri')
+                if not info.get(key)
+            ]
+            if missing:
+                errors.append(
+                    f"File service account non valido: campi mancanti {', '.join(missing)}."
+                )
+            elif info.get('type') != 'service_account':
+                errors.append('File service account non valido: type deve essere "service_account".')
+        except (OSError, ValueError) as e:
+            errors.append(f"Impossibile leggere il file service account: {e}")
+
+    return errors
 
 
 def _random_temp_password(length: int = 12) -> str:
@@ -112,11 +154,6 @@ def run_sync(triggered_by: int | None = None) -> dict:
     Returns a result dict: {teachers_added, teachers_updated, students_added, students_updated,
                             classes_added, new_teacher_credentials: [{email, temp_password}], errors: []}.
     """
-    domain = os.environ['GOOGLE_DOMAIN']
-    teacher_group = os.environ['GOOGLE_TEACHER_GROUP']
-    class_prefix = os.environ.get('GOOGLE_CLASS_GROUP_PREFIX', 'class-')
-    academic_year = os.environ.get('ACADEMIC_YEAR', _current_academic_year())
-
     result = {
         'teachers_added': 0,
         'teachers_updated': 0,
@@ -126,6 +163,16 @@ def run_sync(triggered_by: int | None = None) -> dict:
         'new_teacher_credentials': [],
         'errors': [],
     }
+
+    config_errors = _config_errors()
+    if config_errors:
+        result['errors'].extend(config_errors)
+        return result
+
+    domain = os.environ['GOOGLE_DOMAIN']
+    teacher_group = os.environ['GOOGLE_TEACHER_GROUP']
+    class_prefix = os.environ.get('GOOGLE_CLASS_GROUP_PREFIX', 'class-')
+    academic_year = os.environ.get('ACADEMIC_YEAR', _current_academic_year())
 
     svc = _build_service()
     sync_start = datetime.now(timezone.utc)
