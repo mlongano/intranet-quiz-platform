@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Save, RotateCcw } from 'lucide-react';
 import { ScoreEntry, DetailedAnswer, ScoreOverride, reviewScores } from '../api';
+import MarkdownContent from './MarkdownContent';
 
 interface Props {
   score: ScoreEntry;
@@ -20,11 +21,50 @@ function AnswerRow({
 }) {
   const current = override !== undefined ? override : answer.points_awarded;
   const isDirty = override !== undefined && override !== answer.points_awarded;
+  const isCorrect = current >= answer.weight;
+  const isPartial = current > 0 && !isCorrect;
+  const statusLabel = isCorrect ? 'Corretta' : isPartial ? 'Parzialmente corretta' : 'Errata';
+  const statusClass = isCorrect
+    ? 'border-tertiary/50 bg-tertiary/10 text-tertiary'
+    : isPartial
+      ? 'border-secondary/50 bg-secondary/10 text-secondary'
+      : 'border-error/50 bg-error/10 text-error';
+  const studentAnswerClass = isCorrect
+    ? 'border-tertiary/40 bg-tertiary/5'
+    : isPartial
+      ? 'border-secondary/40 bg-secondary/5'
+      : 'border-error/40 bg-error/5';
+  const questionType = answer.type ?? answer.question_snapshot?.type;
+  const typeLabel = questionType === 'single'
+    ? 'Scelta singola'
+    : questionType === 'multiple'
+      ? 'Scelta multipla'
+      : questionType === 'open'
+        ? 'Risposta aperta'
+        : 'Tipo non indicato';
+  const llmStatusLabel = answer.llm_status === 'pending'
+    ? 'In attesa LLM'
+    : answer.llm_status === 'graded'
+      ? 'Valutato'
+      : answer.llm_status === 'fallback'
+        ? 'Fallback parole chiave'
+        : answer.llm_status === 'error'
+          ? 'Errore LLM'
+          : null;
 
   return (
     <div className={`rounded-lg border p-4 ${isDirty ? 'border-secondary/50 bg-secondary/5' : 'border-outline-variant/30 bg-surface-container'}`}>
       <div className="flex items-start justify-between gap-4 mb-3">
-        <p className="text-sm text-on-surface flex-1">{answer.question_text}</p>
+        <div className="flex-1 min-w-0">
+          <div className="mb-2">
+            <span className="inline-flex rounded-full border border-primary/40 bg-primary/10 px-2 py-1 text-xs font-bold text-primary">
+              {typeLabel}
+            </span>
+          </div>
+          <MarkdownContent className="text-sm text-on-surface" compact>
+            {answer.question_text}
+          </MarkdownContent>
+        </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <input
             type="number"
@@ -36,6 +76,11 @@ function AnswerRow({
             className="w-20 px-2 py-1 text-sm text-center bg-surface border border-outline-variant/50 rounded-lg text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
           />
           <span className="text-sm text-on-surface-variant">/ {answer.weight}</span>
+          {answer.manual_override && answer.original_points_awarded != null && (
+            <span className="rounded border border-secondary/40 bg-secondary/10 px-2 py-1 text-xs font-semibold text-secondary">
+              Punteggio iniziale: {answer.original_points_awarded}
+            </span>
+          )}
           {isDirty && (
             <button
               onClick={() => onChange(answer.points_awarded)}
@@ -48,20 +93,39 @@ function AnswerRow({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="mb-3">
+        <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-bold ${statusClass}`}>
+          {statusLabel}
+        </span>
+        {isDirty && (
+          <span className="ml-2 inline-flex rounded-full border border-secondary/50 bg-secondary/10 px-2 py-1 text-xs font-bold text-secondary">
+            Modifica manuale non salvata
+          </span>
+        )}
+        {llmStatusLabel && (
+          <span className="ml-2 inline-flex rounded-full border border-secondary/50 bg-secondary/10 px-2 py-1 text-xs font-bold text-secondary">
+            {llmStatusLabel}
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div>
           <p className="text-xs font-medium text-on-surface-variant mb-1">Risposta studente</p>
-          <p className="text-xs text-on-surface bg-surface rounded px-2 py-1.5 min-h-[2rem]">
-            {formatAnswer(answer.student_answer)}
+          <p className={`min-h-[2rem] rounded border px-2 py-1.5 text-xs text-on-surface ${studentAnswerClass}`}>
+            <FormattedAnswer value={answer.student_answer} />
           </p>
           {answer.llm_feedback && (
             <p className="text-xs text-secondary mt-1 italic">{answer.llm_feedback}</p>
           )}
+          {answer.llm_error && (
+            <p className="text-xs text-error mt-1 italic">{answer.llm_error}</p>
+          )}
         </div>
         <div>
           <p className="text-xs font-medium text-on-surface-variant mb-1">Risposta corretta</p>
-          <p className="text-xs text-on-surface bg-surface rounded px-2 py-1.5 min-h-[2rem]">
-            {formatAnswer(answer.correct_answer)}
+          <p className="min-h-[2rem] rounded border border-tertiary/60 bg-tertiary/10 px-2 py-1.5 text-xs text-on-surface">
+            <FormattedAnswer value={answer.correct_answer} />
           </p>
         </div>
       </div>
@@ -78,11 +142,21 @@ function AnswerRow({
   );
 }
 
-function formatAnswer(value: any): string {
-  if (value == null) return '—';
-  if (typeof value === 'string') return value || '—';
-  if (Array.isArray(value)) return value.join(', ') || '—';
-  return String(value);
+function FormattedAnswer({ value }: { value: any }) {
+  if (value == null || value === '') return <span>—</span>;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <span>—</span>;
+    return (
+      <ul className="space-y-1">
+        {value.map((item, index) => (
+          <li key={`${String(item)}-${index}`} className="rounded border border-outline-variant/20 bg-surface/60 px-2 py-1">
+            <MarkdownContent compact>{String(item)}</MarkdownContent>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  return <MarkdownContent compact>{String(value)}</MarkdownContent>;
 }
 
 function SubmissionDetailView({ score, sessionId, onClose }: Props) {
