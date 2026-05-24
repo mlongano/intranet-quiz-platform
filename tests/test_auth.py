@@ -62,6 +62,61 @@ class TestTeacherLogin:
         assert resp.status_code in (400, 422)
 
 
+class TestTeacherGoogleLogin:
+    def test_google_login_happy_path(self, client, db_conn, monkeypatch):
+        make_teacher(db_conn, email='teacher.google@test.it', display_name='Teacher Google')
+        monkeypatch.setenv('GOOGLE_OAUTH_CLIENT_ID', 'client-id.apps.googleusercontent.com')
+        monkeypatch.setattr(
+            'routes.auth.google_id_token.verify_oauth2_token',
+            lambda credential, req, audience: {
+                'email': 'teacher.google@test.it',
+                'email_verified': True,
+                'hd': 'test.it',
+            },
+        )
+
+        resp = post_json(client, '/api/auth/teacher-google-login', {'credential': 'id-token'})
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['token']
+        assert data['email'] == 'teacher.google@test.it'
+        assert data['display_name'] == 'Teacher Google'
+
+    def test_google_login_requires_provisioned_teacher(self, client, monkeypatch):
+        monkeypatch.setenv('GOOGLE_OAUTH_CLIENT_ID', 'client-id.apps.googleusercontent.com')
+        monkeypatch.setattr(
+            'routes.auth.google_id_token.verify_oauth2_token',
+            lambda credential, req, audience: {
+                'email': 'unknown@test.it',
+                'email_verified': True,
+            },
+        )
+
+        resp = post_json(client, '/api/auth/teacher-google-login', {'credential': 'id-token'})
+
+        assert resp.status_code == 401
+        assert resp.get_json()['error'] == 'TEACHER_NOT_PROVISIONED'
+
+    def test_google_login_rejects_wrong_hosted_domain(self, client, db_conn, monkeypatch):
+        make_teacher(db_conn, email='teacher.google@test.it')
+        monkeypatch.setenv('GOOGLE_OAUTH_CLIENT_ID', 'client-id.apps.googleusercontent.com')
+        monkeypatch.setenv('GOOGLE_OAUTH_HOSTED_DOMAIN', 'test.it')
+        monkeypatch.setattr(
+            'routes.auth.google_id_token.verify_oauth2_token',
+            lambda credential, req, audience: {
+                'email': 'teacher.google@test.it',
+                'email_verified': True,
+                'hd': 'other.it',
+            },
+        )
+
+        resp = post_json(client, '/api/auth/teacher-google-login', {'credential': 'id-token'})
+
+        assert resp.status_code == 401
+        assert resp.get_json()['error'] == 'INVALID_GOOGLE_DOMAIN'
+
+
 # ── /api/auth/me ─────────────────────────────────────────────────────────────
 
 class TestGetMe:

@@ -80,10 +80,25 @@ def apply_schema():
 
 @pytest.fixture()
 def db_conn(apply_schema):
-    """Per-test DB connection. Data helpers commit, so isolation relies on
-    TRUNCATE in the session teardown + fresh pool after apply_schema."""
+    """Per-test DB connection with clean data.
+
+    Data helpers commit so routes can see their setup rows through the pool.
+    Keep isolation by truncating application tables before each test function.
+    """
     import db as _db
     with _db.get_conn() as conn:
+        conn.execute("""
+            DO $$ DECLARE r RECORD;
+            BEGIN
+              FOR r IN (
+                SELECT tablename FROM pg_tables
+                WHERE schemaname = 'public' AND tablename != 'schema_migrations'
+              ) LOOP
+                EXECUTE 'TRUNCATE TABLE ' || quote_ident(r.tablename) || ' CASCADE';
+              END LOOP;
+            END $$;
+        """)
+        conn.commit()
         yield conn
 
 
