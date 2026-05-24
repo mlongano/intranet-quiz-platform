@@ -51,6 +51,31 @@ Production frontend build:
 docker compose exec frontend sh -c "cd /app && pnpm build"
 ```
 
+## LLM Open-Question Grading Prompts
+
+Open-question LLM grading uses Markdown prompt files:
+
+- `prompts/open-question-system.md`
+- `prompts/open-question-user.md`
+
+Override them with:
+
+```env
+LLM_OPEN_QUESTION_SYSTEM_PROMPT_PATH=prompts/open-question-system.md
+LLM_OPEN_QUESTION_USER_PROMPT_PATH=prompts/open-question-user.md
+```
+
+The user prompt supports `{{QUESTION}}`, `{{ACCEPTABLE_ANSWER}}`, and
+`{{STUDENT_ANSWER}}`.
+
+LLM calls are guarded by a per-answer timeout. Tune it with:
+
+```env
+LLM_TIMEOUT_SECONDS=25
+LLM_RETRIES=0
+LLM_BACKOFF_FACTOR=0.5
+```
+
 ## First Super-Admin
 
 For a fresh database:
