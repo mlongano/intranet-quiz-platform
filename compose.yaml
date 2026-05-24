@@ -19,7 +19,10 @@ services:
 
   # ── QuizParty application ───────────────────────────────────────────────────
   app:
-    build: .
+    build:
+      context: .
+      args:
+        VITE_GOOGLE_OAUTH_CLIENT_ID: ${VITE_GOOGLE_OAUTH_CLIENT_ID:-}
     restart: unless-stopped
     depends_on:
       db:

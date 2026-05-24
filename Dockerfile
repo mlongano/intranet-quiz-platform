@@ -3,6 +3,9 @@ FROM node:22-alpine AS frontend-builder
 
 WORKDIR /build
 
+ARG VITE_GOOGLE_OAUTH_CLIENT_ID=
+ENV VITE_GOOGLE_OAUTH_CLIENT_ID=$VITE_GOOGLE_OAUTH_CLIENT_ID
+
 # Install pnpm via corepack (built into Node 22)
 RUN corepack enable && corepack prepare pnpm@10 --activate
 

@@ -209,13 +209,48 @@ After setup, each teacher's outgoing emails carry their own name and address in 
 
 ## Google Workspace sync (optional)
 
-Fill in the Google section of `.env` (service account JSON path, domain, teacher group, class group prefix — see `.env.example` for details), then trigger sync from **Super-Admin → Sync** in the UI, or via:
+Put the service-account JSON key where Docker can mount it:
 
 ```bash
-docker compose exec app python -m auth.google_sync run
+mkdir -p secrets
+cp /path/to/google-service-account.json secrets/google-service-account.json
 ```
 
-Sync requires internet. Quiz sessions work fully offline once sync has run.
+Fill in the Google section of `.env` (domain, delegated admin, teacher group,
+student OU paths — see `.env.example` for details). In Docker, the key path
+should usually be:
+
+```bash
+GOOGLE_SA_KEY_PATH=/app/secrets/google-service-account.json
+```
+
+Then trigger sync from **Super-Admin → Sync** in the UI, or via:
+
+```bash
+docker compose exec app python -m auth.google_sync
+```
+
+Super-admin sync provisions accounts. Teachers then open **Classi** and use
+**Google Classroom → Carica corsi → Sincronizza selezionati** to import class
+rosters from their Classroom courses.
+
+Sync requires internet. Quiz sessions work fully offline once account and roster
+sync have run.
+
+### Google login for teachers
+
+Password login remains available and works offline. To add **Accedi con Google**
+for Teachers, create a **Web application** OAuth client in Google Cloud Console
+and set both backend and frontend client IDs:
+
+```bash
+GOOGLE_OAUTH_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
+GOOGLE_OAUTH_HOSTED_DOMAIN=yourschool.it
+VITE_GOOGLE_OAUTH_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
+```
+
+Google login only works for Teachers already provisioned in QuizParty. It does
+not create accounts automatically.
 
 ---
 

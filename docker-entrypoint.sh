@@ -26,6 +26,11 @@ PYEOF
 echo "[entrypoint] Running migrations..."
 python -m db.migrate up
 
+if [ "${INSTALL_DEV_DEPS:-0}" = "1" ]; then
+  echo "[entrypoint] Installing development Python dependencies..."
+  uv sync --frozen --extra dev --no-install-project
+fi
+
 # ── Start server ──────────────────────────────────────────────────────────────
 echo "[entrypoint] Starting QuizParty..."
 exec python server.py "$@"
