@@ -38,6 +38,25 @@ services:
       - app_images:/app/images        # quiz images (persistent across deployments)
       - app_backups:/app/backups      # pg_dump + tar archives
 
+  # ── Background LLM grading worker ──────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      args:
+        VITE_GOOGLE_OAUTH_CLIENT_ID: ${VITE_GOOGLE_OAUTH_CLIENT_ID:-}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://quizparty:${POSTGRES_PASSWORD}@db:5432/quizparty
+      IMAGES_BASE: /app/images
+    volumes:
+      - app_images:/app/images
+      - app_backups:/app/backups
+    command: ["python", "-m", "services.llm_jobs", "worker"]
+
 volumes:
   postgres_data:   # PostgreSQL data directory
   app_images:      # uploaded quiz images

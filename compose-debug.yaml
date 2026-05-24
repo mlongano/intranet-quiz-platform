@@ -23,6 +23,7 @@ services:
       - ./db:/app/db:ro
       - ./routes:/app/routes:ro
       - ./services:/app/services:ro
+      - ./prompts:/app/prompts:ro
       - ./scripts:/app/scripts:ro
       - ./email_service.py:/app/email_service.py:ro
       - ./llm_evaluator.py:/app/llm_evaluator.py:ro
@@ -30,6 +31,26 @@ services:
       - ./utils.py:/app/utils.py:ro
       - ./tests:/app/tests:ro
     command: ["--debug"]
+
+  worker:
+    user: root
+    environment:
+      INSTALL_DEV_DEPS: "1"
+    volumes:
+      - app_images:/app/images
+      - app_backups:/app/backups
+      - ./auth:/app/auth:ro
+      - ./db:/app/db:ro
+      - ./routes:/app/routes:ro
+      - ./services:/app/services:ro
+      - ./prompts:/app/prompts:ro
+      - ./scripts:/app/scripts:ro
+      - ./email_service.py:/app/email_service.py:ro
+      - ./llm_evaluator.py:/app/llm_evaluator.py:ro
+      - ./server.py:/app/server.py:ro
+      - ./utils.py:/app/utils.py:ro
+      - ./tests:/app/tests:ro
+    command: ["python", "-m", "services.llm_jobs", "worker"]
 
   # ── New: Vite frontend with HMR ───────────────────────────────────────────
   frontend:

@@ -31,6 +31,11 @@ if [ "${INSTALL_DEV_DEPS:-0}" = "1" ]; then
   uv sync --frozen --extra dev --no-install-project
 fi
 
-# ── Start server ──────────────────────────────────────────────────────────────
+# ── Start server or explicit command ──────────────────────────────────────────
+if [ "$#" -gt 0 ] && [ "${1#-}" = "$1" ]; then
+  echo "[entrypoint] Running command: $*"
+  exec "$@"
+fi
+
 echo "[entrypoint] Starting QuizParty..."
 exec python server.py "$@"
