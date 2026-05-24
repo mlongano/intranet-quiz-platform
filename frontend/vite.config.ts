@@ -50,6 +50,7 @@ export default defineConfig({
   },
   server: {
     host: true, // Allow access from other devices on the network
+    allowedHosts: ['localhost', '127.0.0.1', 'host.docker.internal'],
     port: 5173, // Default Vite port
     proxy: {
       // Proxy /api requests to your Flask backend

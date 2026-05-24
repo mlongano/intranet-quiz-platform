@@ -30,10 +30,11 @@ function ImagePicker({ snapshotId, onSelect, onClose }: Props) {
     onError: (err: any) => setUploadError(err.message ?? 'Errore nel caricamento'),
   });
 
-  const imageUrl = (filename: string) => `/images/${snapshotId}/${filename}`;
+  const imageUrl = (img: { filename: string; url?: string }) => img.url ?? `/images/${snapshotId}/${img.filename}`;
 
   const handleConfirm = () => {
-    if (selected) onSelect(imageUrl(selected));
+    const img = images?.find(item => item.filename === selected);
+    if (img) onSelect(imageUrl(img));
   };
 
   return (
@@ -106,7 +107,7 @@ function ImagePicker({ snapshotId, onSelect, onClose }: Props) {
                     title={img.filename}
                   >
                     <img
-                      src={imageUrl(img.filename)}
+                      src={imageUrl(img)}
                       alt={img.filename}
                       className="w-full h-full object-cover"
                     />
@@ -127,7 +128,7 @@ function ImagePicker({ snapshotId, onSelect, onClose }: Props) {
         {selected && (
           <div className="px-4 pb-2">
             <p className="text-xs text-on-surface-variant truncate">
-              Percorso: <code className="text-on-surface">{imageUrl(selected)}</code>
+              Percorso: <code className="text-on-surface">{imageUrl(images?.find(item => item.filename === selected) ?? { filename: selected })}</code>
             </p>
           </div>
         )}

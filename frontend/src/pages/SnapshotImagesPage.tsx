@@ -64,7 +64,7 @@ function SnapshotImagesPage() {
     if (fileRef.current) fileRef.current.value = '';
   };
 
-  const imageUrl = (filename: string) => `/images/${snapshotId}/${filename}`;
+  const imageUrl = (img: { filename: string; url?: string }) => img.url ?? `/images/${snapshotId}/${img.filename}`;
 
   return (
     <TeacherLayout
@@ -117,7 +117,7 @@ function SnapshotImagesPage() {
       )}
 
       <p className="text-xs text-on-surface-variant mb-4">
-        Le immagini vengono servite come <code className="bg-surface-container px-1 rounded">/images/{snapshotId}/{'<filename>'}</code>. Usa questo percorso nel campo <code className="bg-surface-container px-1 rounded">question_image</code> o nelle opzioni del JSONC.
+        Le immagini vengono servite come <code className="bg-surface-container px-1 rounded">/images/{'<docente>'}/{snapshotId}/{'<filename>'}</code>. Usa il percorso copiato nel campo <code className="bg-surface-container px-1 rounded">question_image</code> o nelle opzioni del JSONC.
       </p>
 
       {isLoading && <p className="text-on-surface-variant">Caricamento...</p>}
@@ -128,7 +128,7 @@ function SnapshotImagesPage() {
             <div key={img.filename} className="bg-surface-container rounded-xl border border-outline-variant/30 overflow-hidden group">
               <div className="aspect-square bg-surface flex items-center justify-center overflow-hidden">
                 <img
-                  src={imageUrl(img.filename)}
+                  src={imageUrl(img)}
                   alt={img.filename}
                   className="w-full h-full object-cover"
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
@@ -138,7 +138,7 @@ function SnapshotImagesPage() {
                 <p className="text-xs text-on-surface truncate" title={img.filename}>{img.filename}</p>
                 <p className="text-xs text-on-surface-variant">{(img.size / 1024).toFixed(1)} KB</p>
                 <div className="flex items-center justify-between mt-1">
-                  <CopyButton text={`/images/${snapshotId}/${img.filename}`} />
+                  <CopyButton text={imageUrl(img)} />
                   <button
                                           onClick={() => askConfirm(`Eliminare ${img.filename}?`, () => deleteMutation.mutate(img.filename))}
                     disabled={deleteMutation.isPending}
