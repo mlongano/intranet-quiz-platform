@@ -138,7 +138,7 @@ function SyncTab() {
   });
 
   useEffect(() => {
-    if (syncStatus && syncStatus.status !== 'running') setPollInterval(0);
+    if (syncStatus?.status && syncStatus.status !== 'running') setPollInterval(0);
   }, [syncStatus?.status]);
 
   return (
