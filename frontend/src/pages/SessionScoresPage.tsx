@@ -446,7 +446,7 @@ function SessionScoresPage() {
           {questionSummary.map(q => {
             const isExpanded = expandedQuestionId === q.questionId;
             return (
-              <div key={q.questionId} className="bg-surface-container border border-outline-variant/20 rounded-xl overflow-hidden">
+              <div key={q.questionId} className="bg-surface-container border border-outline-variant/20 rounded-xl overflow-hidden max-w-full">
                 <div
                   className="p-4 cursor-pointer hover:bg-surface-container-high transition-colors"
                   onClick={() => {
@@ -456,7 +456,7 @@ function SessionScoresPage() {
                 >
                   <div className="flex justify-between items-start">
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium mb-1 text-on-surface truncate">
+                      <div className="font-medium mb-1 text-on-surface line-clamp-2">
                         Q{q.questionId}: {q.questionText}
                       </div>
                       <div className="text-sm text-on-surface-variant">
@@ -474,7 +474,7 @@ function SessionScoresPage() {
                     <div className="text-sm font-medium mb-3 text-on-surface">
                       Modifica punteggi ({q.totalAnswers} studenti):
                     </div>
-                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                    <div className="space-y-2 max-h-[60vh] overflow-y-auto">
                       {q.studentAnswers.map(({ student, email, answer }) => {
                         const currentPoints = answer?.points_awarded ?? 0;
                         const maxPoints = answer?.weight ?? q.weight;
@@ -484,79 +484,32 @@ function SessionScoresPage() {
                         const isCorrect = currentPoints === maxPoints;
                         const isPartial = currentPoints > 0 && !isCorrect;
 
+                        const answerStr = JSON.stringify(answer?.student_answer ?? 'N/D');
+                        const correctStr = JSON.stringify(answer?.correct_answer ?? 'N/D');
+
                         return (
                           <div key={email ?? student} className="bg-surface-container border border-outline-variant/20 rounded-lg p-3">
-                            <div className="flex flex-col md:flex-row md:items-center gap-3">
-                              <div className="flex-1 min-w-0">
-                                <div className="font-medium text-sm text-on-surface truncate">{student}</div>
-                                {answer && (
-                                  <>
-                                    <div className="text-xs text-on-surface-variant mt-1">
-                                      <span className="font-medium">Risposta: </span>
-                                      <span className="font-mono bg-surface-container-low px-1 rounded">
-                                        {JSON.stringify(answer.student_answer ?? 'N/D')}
-                                      </span>
-                                    </div>
-                                    <div className={`text-xs mt-1 p-2 rounded border ${
-                                      isCorrect
-                                        ? 'bg-tertiary/10 border-tertiary/30 text-tertiary'
-                                        : isPartial
-                                          ? 'bg-secondary/10 border-secondary/30 text-secondary'
-                                          : 'bg-error/10 border-error/30 text-error'
-                                    }`}>
-                                      <span className="font-medium">Corretta: </span>
-                                      <span className="font-mono">
-                                        {JSON.stringify(answer.correct_answer ?? 'N/D')}
-                                      </span>
-                                    </div>
-                                    {q.type === 'open' && (answer.llm_verdict || answer.llm_feedback) && (
-                                      <div className="mt-2 p-2 bg-secondary/5 rounded border border-secondary/20 text-xs">
-                                        <div className="font-semibold text-secondary mb-1">Valutazione LLM</div>
-                                        {answer.llm_verdict && (
-                                          <div className="mb-1">
-                                            <span className="font-medium">Verdetto:</span>{' '}
-                                            <span className="bg-secondary/10 border border-secondary/30 text-secondary text-xs px-2 py-0.5 rounded uppercase font-bold tracking-wider">
-                                              {answer.llm_verdict}
-                                            </span>
-                                          </div>
-                                        )}
-                                        {answer.llm_feedback && (
-                                          <div>
-                                            <span className="font-medium text-secondary">Feedback:</span>{' '}
-                                            <span className="text-secondary italic">{answer.llm_feedback}</span>
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-                                  </>
-                                )}
-                              </div>
-
+                            {/* Top row: student name + score controls */}
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                              <span className="font-medium text-sm text-on-surface truncate">{student}</span>
                               <div className="flex items-center gap-2 flex-shrink-0">
-                                <div className="flex flex-col gap-1">
-                                  <div className="flex items-center gap-1">
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      max={maxPoints}
-                                      step={0.5}
-                                      value={displayPoints}
-                                      onChange={e => handleOverrideChange(email ?? student, e.target.value, maxPoints)}
-                                      className="bg-surface-container-low border border-outline-variant/30 text-on-surface focus:border-primary/50 focus:outline-none rounded w-16 text-center text-sm"
-                                    />
-                                    <span className="text-sm text-on-surface-variant">/ {maxPoints}</span>
-                                  </div>
-                                  {answer?.manual_override && (
-                                    <div className="text-[11px] text-secondary leading-tight">
-                                      Override manuale
-                                    </div>
-                                  )}
-                                </div>
-
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={maxPoints}
+                                  step={0.5}
+                                  value={displayPoints}
+                                  onChange={e => handleOverrideChange(email ?? student, e.target.value, maxPoints)}
+                                  className="bg-surface-container-low border border-outline-variant/30 text-on-surface focus:border-primary/50 focus:outline-none rounded w-16 text-center text-sm"
+                                />
+                                <span className="text-sm text-on-surface-variant">/ {maxPoints}</span>
+                                {answer?.manual_override && (
+                                  <span className="text-[11px] text-secondary">(override)</span>
+                                )}
                                 <button
                                   onClick={() => handleSaveOverride(email ?? student, q.questionId)}
                                   disabled={!hasOverride || isSaving}
-                                  className={`px-3 py-1 text-sm rounded transition-colors ${
+                                  className={`px-2.5 py-1 text-xs rounded transition-colors ${
                                     hasOverride && !isSaving
                                       ? 'bg-primary text-on-primary font-bold'
                                       : 'bg-surface-container-high text-on-surface-variant cursor-not-allowed'
@@ -564,14 +517,49 @@ function SessionScoresPage() {
                                 >
                                   {isSaving ? '...' : 'Salva'}
                                 </button>
-
-                                <span className={`text-lg flex-shrink-0 ${
+                                <span className={`text-sm flex-shrink-0 ${
                                   isCorrect ? 'text-tertiary' : isPartial ? 'text-secondary' : 'text-error'
                                 }`}>
                                   {isCorrect ? '✓' : isPartial ? '⚠' : '✗'}
                                 </span>
                               </div>
                             </div>
+
+                            {/* Answer details */}
+                            {answer && (
+                              <div className="space-y-1.5">
+                                <div className="text-xs text-on-surface-variant">
+                                  <span className="font-medium">Risposta: </span>
+                                  <span className="font-mono bg-surface-container-low px-1 rounded break-all">
+                                    {answerStr.length > 120 ? answerStr.slice(0, 120) + '…' : answerStr}
+                                  </span>
+                                </div>
+                                <div className={`text-xs p-1.5 rounded border ${
+                                  isCorrect
+                                    ? 'bg-tertiary/10 border-tertiary/30 text-tertiary'
+                                    : isPartial
+                                      ? 'bg-secondary/10 border-secondary/30 text-secondary'
+                                      : 'bg-error/10 border-error/30 text-error'
+                                }`}>
+                                  <span className="font-medium">Corretta: </span>
+                                  <span className="font-mono break-all">
+                                    {correctStr.length > 120 ? correctStr.slice(0, 120) + '…' : correctStr}
+                                  </span>
+                                </div>
+                                {q.type === 'open' && (answer.llm_verdict || answer.llm_feedback) && (
+                                  <div className="p-1.5 bg-secondary/5 rounded border border-secondary/20 text-xs">
+                                    {answer.llm_verdict && (
+                                      <span className="bg-secondary/10 border border-secondary/30 text-secondary text-xs px-1.5 py-0.5 rounded uppercase font-bold tracking-wider mr-2">
+                                        {answer.llm_verdict}
+                                      </span>
+                                    )}
+                                    {answer.llm_feedback && (
+                                      <span className="text-secondary italic">{answer.llm_feedback}</span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
