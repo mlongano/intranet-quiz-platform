@@ -41,6 +41,10 @@ export interface DetailedAnswer {
   raw_correct_answer: any;
   llm_feedback?: string | null;
   llm_verdict?: string | null;
+  question_snapshot?: Record<string, any> | null;
+  manual_override?: boolean;
+  original_points_awarded?: number | null;
+  option_order?: number[];
 }
 
 export interface ScoreEntry {
@@ -477,12 +481,11 @@ export async function recalculateScores(sessionId: number): Promise<{ updated: n
 }
 
 export interface ScoreOverride {
-  student_id: number;
-  question_id: string | number;
-  points: number;
+  score_id: number;
+  per_question: Record<string, number>;
 }
 
-export async function reviewScores(sessionId: number, overrides: ScoreOverride[]): Promise<{ ok: boolean }> {
+export async function reviewScores(sessionId: number, overrides: ScoreOverride[]): Promise<{ ok: boolean; updated: number }> {
   return apiFetch<{ ok: boolean }>(`/teacher/sessions/${sessionId}/scores/review`, {
     method: 'POST',
     body: JSON.stringify({ overrides }),
