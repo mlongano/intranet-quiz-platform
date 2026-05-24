@@ -17,6 +17,8 @@ Snapshots:
 Classes:
     GET    /api/teacher/classes
     GET    /api/teacher/classes/<id>/students
+    GET    /api/teacher/classroom/courses
+    POST   /api/teacher/classroom/sync
 
 Sessions:
     GET    /api/teacher/sessions
@@ -66,6 +68,7 @@ from auth.decorators import require_teacher
 from services import images as img_service
 from services import quiz_session as qs_service
 from services import snapshots as snap_service
+from services.classroom_sync import list_courses_for_teacher, sync_courses_for_teacher
 from services.grading import format_detailed_answers, grade, score_open
 from services import score_transforms
 
@@ -232,6 +235,28 @@ def list_class_students(class_id: int):
         {'id': r[0], 'email': r[1], 'display_name': r[2], 'status': r[3]}
         for r in rows
     ]), 200
+
+
+@teacher_bp.get('/classroom/courses')
+@require_teacher
+def list_classroom_courses():
+    courses = list_courses_for_teacher(g.current_user.get('email') or '')
+    return jsonify(courses), 200
+
+
+@teacher_bp.post('/classroom/sync')
+@require_teacher
+def sync_classroom_courses():
+    data = request.get_json(silent=True) or {}
+    course_ids = data.get('course_ids')
+    if course_ids is not None and not isinstance(course_ids, list):
+        return jsonify({'error': 'INVALID_COURSE_IDS'}), 400
+    result = sync_courses_for_teacher(
+        _teacher_id(),
+        g.current_user.get('email') or '',
+        course_ids=[str(course_id) for course_id in course_ids] if course_ids else None,
+    )
+    return jsonify(result), 200
 
 
 # ── sessions ──────────────────────────────────────────────────────────────────

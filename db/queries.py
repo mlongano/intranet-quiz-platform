@@ -125,6 +125,28 @@ UPSERT_CLASS = """
     RETURNING id, (xmax = 0) AS inserted
 """
 
+UPSERT_CLASSROOM_CLASS = """
+    INSERT INTO classes (
+        name,
+        academic_year,
+        google_classroom_course_id,
+        classroom_owner_teacher_id
+    )
+    VALUES (
+        %(name)s,
+        %(academic_year)s,
+        %(google_classroom_course_id)s,
+        %(classroom_owner_teacher_id)s
+    )
+    ON CONFLICT (google_classroom_course_id)
+        WHERE google_classroom_course_id IS NOT NULL
+    DO UPDATE
+        SET name = EXCLUDED.name,
+            academic_year = EXCLUDED.academic_year,
+            classroom_owner_teacher_id = EXCLUDED.classroom_owner_teacher_id
+    RETURNING id, (xmax = 0) AS inserted
+"""
+
 INSERT_CLASS_TEACHER = """
     INSERT INTO class_teachers (class_id, teacher_id)
     VALUES (%s, %s)
