@@ -28,6 +28,7 @@ export interface QuizData {
 
 export interface DetailedAnswer {
   question_id: string | number;
+  type?: 'single' | 'multiple' | 'open';
   question_text: string;
   question_image?: string;
   student_answer: any;
@@ -41,6 +42,9 @@ export interface DetailedAnswer {
   raw_correct_answer: any;
   llm_feedback?: string | null;
   llm_verdict?: string | null;
+  llm_status?: 'not_applicable' | 'pending' | 'graded' | 'fallback' | 'error' | null;
+  llm_error?: string | null;
+  llm_updated_at?: string | null;
   question_snapshot?: Record<string, any> | null;
   manual_override?: boolean;
   original_points_awarded?: number | null;
@@ -139,6 +143,7 @@ export interface ImageMeta {
   size: number;
   mime: string;
   uploaded_at: string;
+  url?: string;
 }
 
 export interface TeacherMeta {
@@ -152,8 +157,24 @@ export interface TeacherMeta {
 }
 
 export interface LlmInfoResponse {
-  model: string;
-  enabled: boolean;
+  model: string | null;
+  enabled?: boolean;
+  use_llm?: boolean;
+}
+
+export interface LlmJobStatus {
+  id: number;
+  teacher_id: number;
+  session_id: number;
+  score_entry_id: number | null;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  job_type: 'submission' | 'regrade_score' | 'regrade_session';
+  total_items: number;
+  processed_items: number;
+  error: string | null;
+  created_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
 }
 
 // ── core fetch helper ─────────────────────────────────────────────────────────
@@ -336,6 +357,8 @@ export interface SubmitResponse {
   raw_points: number;
   max_points: number;
   percent: number;
+  status: 'provisional' | 'final';
+  llm_pending: boolean;
 }
 
 export async function submitQuiz(quiz_id: string): Promise<SubmitResponse> {
@@ -525,8 +548,8 @@ export async function reviewScores(sessionId: number, overrides: ScoreOverride[]
   });
 }
 
-export async function regradeOpenScores(sessionId: number): Promise<{ updated: number }> {
-  return apiFetch<{ updated: number }>(`/teacher/sessions/${sessionId}/scores/regrade-open`, {
+export async function regradeOpenScores(sessionId: number): Promise<LlmJobStatus> {
+  return apiFetch<LlmJobStatus>(`/teacher/sessions/${sessionId}/scores/regrade-open`, {
     method: 'POST',
   });
 }
@@ -604,16 +627,26 @@ export function getStudentSnapshotExportUrl(id: number): string {
 
 // ── teacher — email ───────────────────────────────────────────────────────────
 
-export async function sendResultEmail(scoreId: number): Promise<{ ok: boolean }> {
+export interface ResultEmailOptions {
+  subject?: string;
+  include_details: boolean;
+  include_feedback: boolean;
+}
+
+export async function sendResultEmail(scoreId: number, options?: ResultEmailOptions): Promise<{ ok: boolean }> {
   return apiFetch<{ ok: boolean }>('/teacher/email/send-result', {
     method: 'POST',
-    body: JSON.stringify({ score_id: scoreId }),
+    body: JSON.stringify({ score_id: scoreId, ...options }),
   });
 }
 
-export async function sendAllResultEmails(sessionId: number): Promise<{ sent: number }> {
-  return apiFetch<{ sent: number }>(`/teacher/sessions/${sessionId}/email/send-all`, {
+export async function sendAllResultEmails(
+  sessionId: number,
+  options: ResultEmailOptions,
+): Promise<{ sent: number; errors: Array<{ email: string; error: string }> }> {
+  return apiFetch<{ sent: number; errors: Array<{ email: string; error: string }> }>(`/teacher/sessions/${sessionId}/email/send-all`, {
     method: 'POST',
+    body: JSON.stringify(options),
   });
 }
 
@@ -621,6 +654,16 @@ export async function sendAllResultEmails(sessionId: number): Promise<{ sent: nu
 
 export async function getLlmInfo(): Promise<LlmInfoResponse> {
   return apiFetch<LlmInfoResponse>('/teacher/llm-info');
+}
+
+export async function getLlmJob(jobId: number): Promise<LlmJobStatus> {
+  return apiFetch<LlmJobStatus>(`/teacher/llm-jobs/${jobId}`);
+}
+
+export async function getLatestSessionLlmJob(sessionId: number): Promise<LlmJobStatus | null> {
+  const result = await apiFetch<LlmJobStatus | { job: null }>(`/teacher/sessions/${sessionId}/llm-jobs/latest`);
+  if ('job' in result && result.job === null) return null;
+  return result as LlmJobStatus;
 }
 
 // ── super-admin ───────────────────────────────────────────────────────────────
