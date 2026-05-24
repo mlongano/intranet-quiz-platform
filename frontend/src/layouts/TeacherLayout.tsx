@@ -88,16 +88,6 @@ export default function TeacherLayout({ children, pageTitle, titleClassName, hea
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const session = getTeacherSession();
-  const superAdmin = isSuperAdmin();
-  const accent = resolveAccent(pathname);
-
-  // Defense-in-depth: redirect if no session (router guard should catch this first)
-  if (!session) {
-    navigate('/teacher/login', { replace: true });
-    return null;
-  }
-
   const [openSections, setOpenSections] = useState<Set<string>>(() => {
     const initial = new Set<string>();
     for (const item of NAV_ITEMS) {
@@ -107,6 +97,15 @@ export default function TeacherLayout({ children, pageTitle, titleClassName, hea
     }
     return initial;
   });
+  const session = getTeacherSession();
+  const superAdmin = isSuperAdmin();
+  const accent = resolveAccent(pathname);
+
+  // Defense-in-depth: redirect if no session (router guard should catch this first)
+  if (!session) {
+    navigate('/teacher/login', { replace: true });
+    return null;
+  }
 
   const toggleSection = (label: string) => {
     setOpenSections((prev) => {
