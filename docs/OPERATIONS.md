@@ -1,0 +1,192 @@
+# QuizParty Operations
+
+This document records the supported deployment, backup, restore, and test
+commands for the multi-teacher QuizParty platform.
+
+## Supported Build Path
+
+Docker Compose is the canonical production build path.
+
+```bash
+docker compose up -d --build
+```
+
+For development with Flask reload and Vite HMR:
+
+```bash
+docker compose -f compose.yaml -f compose-debug.yaml up -d --build
+```
+
+The debug override installs the `dev` Python extra into the app container, so
+`pytest` is available there. The production image still installs runtime
+dependencies only.
+
+The host `pnpm build` path may fail if Rollup native optional dependencies are
+stale on the host. The Docker frontend build is the supported gate:
+
+```bash
+docker compose exec frontend sh -c "cd /app && pnpm build"
+```
+
+## Tests
+
+Backend:
+
+```bash
+docker compose exec \
+  -e DATABASE_URL='postgresql://quizparty:quizparty_dev_2026@db:5432/quizparty_test' \
+  -e JWT_SECRET='test-secret-not-for-production-32' \
+  app .venv/bin/pytest tests/ -v --ignore=tests/test_migration.py
+```
+
+Frontend:
+
+```bash
+docker compose exec frontend sh -c "cd /app && npx vitest run"
+```
+
+Production frontend build:
+
+```bash
+docker compose exec frontend sh -c "cd /app && pnpm build"
+```
+
+## First Super-Admin
+
+For a fresh database:
+
+```bash
+docker compose exec app python -m db.bootstrap_admin
+```
+
+The command aborts if any Teacher already exists. After the first Super-admin
+exists, create and reset Teacher accounts from the Super-admin UI.
+
+## Backups
+
+Back up both PostgreSQL and uploaded images. PostgreSQL is the source of truth
+for app data; the image volume stores files referenced by Snapshots.
+
+Database backup:
+
+```bash
+docker compose exec -T db pg_dump \
+  -U quizparty \
+  -d quizparty \
+  --format=custom \
+  > quizparty-$(date +%F).dump
+```
+
+Image backup:
+
+```bash
+docker run --rm \
+  -v intranet-quiz-platform_app_images:/images:ro \
+  -v "$PWD":/backup \
+  alpine tar czf /backup/quizparty-images-$(date +%F).tar.gz -C /images .
+```
+
+## Restore
+
+Stop the app before restore:
+
+```bash
+docker compose stop app
+```
+
+Restore PostgreSQL into an empty or intentionally replaced database:
+
+```bash
+cat quizparty-YYYY-MM-DD.dump | docker compose exec -T db pg_restore \
+  -U quizparty \
+  -d quizparty \
+  --clean \
+  --if-exists
+```
+
+Restore images:
+
+```bash
+docker run --rm \
+  -v intranet-quiz-platform_app_images:/images \
+  -v "$PWD":/backup \
+  alpine sh -c "rm -rf /images/* && tar xzf /backup/quizparty-images-YYYY-MM-DD.tar.gz -C /images"
+```
+
+Start the app again:
+
+```bash
+docker compose up -d app
+```
+
+## Offline Operation
+
+Google Workspace Sync requires internet only during the sync window. After
+Teachers, Students, Classes, and memberships are stored locally, Quiz sessions
+can run offline on the school intranet. JWT validation, Quiz plans, Score
+entries, Snapshots, and images are local.
+
+Email delivery and LLM evaluation still require whatever external services are
+configured in `.env`.
+
+## Google Workspace Sync
+
+The sync needs a Google service-account JSON key with domain-wide delegation.
+In Docker, place the key on the host under `./secrets/`; `compose.yaml` mounts
+that directory read-only at `/app/secrets`.
+
+Recommended `.env` value:
+
+```bash
+GOOGLE_SA_KEY_PATH=/app/secrets/google-service-account.json
+```
+
+Required settings:
+
+```bash
+GOOGLE_DELEGATED_SUBJECT=admin@yourschool.it
+GOOGLE_DOMAIN=yourschool.it
+GOOGLE_TEACHER_GROUP=docenti@yourschool.it
+GOOGLE_STUDENT_OU_PATHS=/Studenti,/Studenti/Triennio
+GOOGLE_CLASS_GROUP_PREFIX=
+```
+
+Manual sync check:
+
+```bash
+docker compose exec app python -m auth.google_sync
+```
+
+If configuration is incomplete, the Super-admin Sync page now records a Sync
+run with `status: error` and shows the missing setting instead of returning a
+generic HTTP 500.
+
+Super-admin sync provisions Teacher and Student accounts. Class membership
+should come from Google Classroom when the school does not maintain class
+Google Groups:
+
+1. The Teacher opens **Classi**.
+2. The Teacher clicks **Carica corsi**.
+3. The Teacher selects one or more Classroom courses.
+4. The Teacher clicks **Sincronizza selezionati**.
+
+The app imports each Classroom course as a local Class and refreshes its Student
+roster from Classroom.
+
+## Google OAuth Teacher Login
+
+Teacher password login remains the offline fallback. Google OAuth login is
+optional and requires a Google Cloud **Web application** OAuth client.
+
+Set these values in `.env`:
+
+```bash
+GOOGLE_OAUTH_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
+GOOGLE_OAUTH_HOSTED_DOMAIN=yourschool.it
+VITE_GOOGLE_OAUTH_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
+```
+
+The frontend receives a Google Identity Services ID token and sends it to
+`POST /api/auth/teacher-google-login`. The backend verifies the token audience
+against `GOOGLE_OAUTH_CLIENT_ID`, checks the hosted domain when configured, and
+logs in only active Teachers already present in the local database.
