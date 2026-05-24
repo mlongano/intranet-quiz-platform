@@ -28,13 +28,14 @@ DSN = os.environ.get("DATABASE_URL", "postgresql://localhost/quizparty")
 
 # Bank files are copied into /tmp/ for Docker container access
 BANK_DIR = "/tmp"
-TEACHER_EMAIL = "mauro@oruam.org"  # super_admin
+TEACHER_EMAIL = "mauro.longano@marconirovereto.it"  # super_admin
 
 # Snapshot mapping: (db snapshot_id, filename suffix match, display name)
 SCORE_FILES: list[tuple[int, str, str]] = [
     (38, "2026-03-24_17-32_4CI-TPSIT-risultati_architettura-del-web-e-astro-fondamenti-di-rendering-e-asyncawait", "Architettura del Web"),
     (1,  "2026-05-14_16-27_risultati_5CI-SER-RECUPERO-E-PRECEDENTI-NEW-ospf-nat-acl-e-fondamenti-di-vpn", "OSPF/NAT/ACL"),
     (51, "2026-05-20_10-22_risultati_3AI-INFO-2q-esercizi-fatti-e-oop-in-java", "3AI OOP"),
+    (34, "2026-05-11_09-16_5CI-RECUPERO-TPSIT-risultati_rest-api-docker-e-hono-verifica-concetti-e-codice", "5CI REST/Docker/Hono"),
 ]
 
 SCORES_JSONC = "/Users/mauro/Develop/_TeacherTools/local-quizzies/scores.jsonc"  # root level, same 17 entries for OSPF
