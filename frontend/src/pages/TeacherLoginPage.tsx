@@ -1,37 +1,94 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { LayoutDashboard, Mail, Lock } from 'lucide-react';
-import { teacherLogin } from '../api';
+import { teacherGoogleLogin, teacherLogin, type TeacherLoginResponse } from '../api';
 import { saveTeacherSession } from '../lib/session';
 import ThemeToggle from '../components/ThemeToggle';
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID;
 
 function TeacherLoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [googleReady, setGoogleReady] = useState(false);
+  const googleButtonRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
+
+  const handleLoginSuccess = (data: TeacherLoginResponse) => {
+    if (data.must_change_password) {
+      navigate('/teacher/change-password', { state: { change_token: data.change_token } });
+      return;
+    }
+    saveTeacherSession({
+      token: data.token,
+      teacher_id: data.teacher_id,
+      role: data.role,
+      email: data.email,
+      display_name: data.display_name,
+    });
+    navigate('/teacher');
+  };
 
   const loginMutation = useMutation({
     mutationFn: () => teacherLogin(email.trim().toLowerCase(), password),
-    onSuccess: (data) => {
-      if (data.must_change_password) {
-        navigate('/teacher/change-password', { state: { change_token: data.change_token } });
-        return;
-      }
-      saveTeacherSession({
-        token: data.token,
-        teacher_id: data.teacher_id,
-        role: data.role,
-        email: data.email,
-        display_name: data.display_name,
-      });
-      navigate('/teacher');
-    },
+    onSuccess: handleLoginSuccess,
     onError: (err: any) => {
       setError(err.message ?? 'Credenziali non valide.');
     },
   });
+
+  const googleLoginMutation = useMutation({
+    mutationFn: (credential: string) => teacherGoogleLogin(credential),
+    onSuccess: handleLoginSuccess,
+    onError: (err: any) => {
+      setError(err.message ?? 'Accesso Google non riuscito.');
+    },
+  });
+
+  const handleGoogleCredential = useCallback((credential: string) => {
+    googleLoginMutation.mutate(credential);
+  }, [googleLoginMutation]);
+
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID) return;
+    if (window.google) {
+      setGoogleReady(true);
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      if (window.google) {
+        setGoogleReady(true);
+        window.clearInterval(timer);
+      }
+    }, 100);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID || !googleReady || !googleButtonRef.current || !window.google) return;
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: (response) => {
+        setError(null);
+        if (!response.credential) {
+          setError('Accesso Google non riuscito.');
+          return;
+        }
+        handleGoogleCredential(response.credential);
+      },
+    });
+    googleButtonRef.current.innerHTML = '';
+    window.google.accounts.id.renderButton(googleButtonRef.current, {
+      theme: 'outline',
+      size: 'large',
+      width: 320,
+      text: 'signin_with',
+    });
+  }, [googleReady, handleGoogleCredential]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,6 +170,20 @@ function TeacherLoginPage() {
             >
               {loginMutation.isPending ? 'Accesso...' : 'Accedi'}
             </button>
+
+            {GOOGLE_CLIENT_ID && googleReady && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-px flex-1 bg-outline-variant/40" />
+                  <span className="text-xs text-on-surface-variant">oppure</span>
+                  <div className="h-px flex-1 bg-outline-variant/40" />
+                </div>
+                <div className="flex justify-center" ref={googleButtonRef} />
+                {googleLoginMutation.isPending && (
+                  <p className="text-xs text-on-surface-variant text-center">Verifica account Google...</p>
+                )}
+              </div>
+            )}
           </form>
         </div>
       </div>

@@ -100,6 +100,21 @@ export interface ClassMeta {
   student_count: number;
 }
 
+export interface ClassroomCourse {
+  id: string;
+  name: string;
+  section: string;
+  title: string;
+  course_state: string;
+}
+
+export interface ClassroomSyncResult {
+  courses_synced: number;
+  classes_added: number;
+  students_synced: number;
+  errors: string[];
+}
+
 export interface StudentMeta {
   id: number;
   email: string;
@@ -231,6 +246,13 @@ export async function teacherLogin(email: string, password: string): Promise<Tea
   return apiFetch<TeacherLoginResponse>('/auth/teacher-login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
+  }, 'none');
+}
+
+export async function teacherGoogleLogin(credential: string): Promise<TeacherLoginResponse> {
+  return apiFetch<TeacherLoginResponse>('/auth/teacher-google-login', {
+    method: 'POST',
+    body: JSON.stringify({ credential }),
   }, 'none');
 }
 
@@ -424,6 +446,17 @@ export async function getClassStudents(classId: number): Promise<StudentMeta[]> 
   return apiFetch<StudentMeta[]>(`/teacher/classes/${classId}/students`);
 }
 
+export async function listClassroomCourses(): Promise<ClassroomCourse[]> {
+  return apiFetch<ClassroomCourse[]>('/teacher/classroom/courses');
+}
+
+export async function syncClassroomCourses(course_ids?: string[]): Promise<ClassroomSyncResult> {
+  return apiFetch<ClassroomSyncResult>('/teacher/classroom/sync', {
+    method: 'POST',
+    body: JSON.stringify({ course_ids }),
+  });
+}
+
 // ── teacher — sessions ────────────────────────────────────────────────────────
 
 export async function listSessions(status?: string): Promise<SessionMeta[]> {
@@ -486,7 +519,7 @@ export interface ScoreOverride {
 }
 
 export async function reviewScores(sessionId: number, overrides: ScoreOverride[]): Promise<{ ok: boolean; updated: number }> {
-  return apiFetch<{ ok: boolean }>(`/teacher/sessions/${sessionId}/scores/review`, {
+  return apiFetch<{ ok: boolean; updated: number }>(`/teacher/sessions/${sessionId}/scores/review`, {
     method: 'POST',
     body: JSON.stringify({ overrides }),
   });

@@ -2,13 +2,18 @@
 Authentication endpoints — no ADMIN_PW; everything uses bcrypt + JWT.
 
 POST /api/auth/teacher-login
+POST /api/auth/teacher-google-login
 POST /api/auth/teacher-change-password
 POST /api/auth/student-join
 GET  /api/auth/me
 """
 
+import os
+
 import bcrypt
 from flask import Blueprint, g, jsonify, request
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 from werkzeug.exceptions import BadRequest
 
 import db
@@ -21,6 +26,22 @@ from auth.jwt_utils import (
 )
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
+
+
+def _teacher_login_response(
+    teacher_id: int,
+    email: str,
+    role: str,
+    display_name: str,
+) -> dict:
+    token = encode_teacher_token(teacher_id, role, email)
+    return {
+        'token': token,
+        'teacher_id': teacher_id,
+        'role': role,
+        'email': email,
+        'display_name': display_name,
+    }
 
 
 @auth_bp.post('/teacher-login')
@@ -59,13 +80,52 @@ def teacher_login():
             'display_name': display_name,
         }), 200
 
-    token = encode_teacher_token(teacher_id, role, email)
-    return jsonify({
-        'token': token,
-        'teacher_id': teacher_id,
-        'role': role,
-        'display_name': display_name,
-    }), 200
+    return jsonify(_teacher_login_response(teacher_id, email, role, display_name)), 200
+
+
+@auth_bp.post('/teacher-google-login')
+def teacher_google_login():
+    data = request.get_json(silent=True) or {}
+    credential = data.get('credential') or ''
+    client_id = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '')
+    hosted_domain = os.environ.get('GOOGLE_OAUTH_HOSTED_DOMAIN', '')
+
+    if not client_id:
+        return jsonify({'error': 'GOOGLE_LOGIN_NOT_CONFIGURED'}), 503
+    if not credential:
+        return jsonify({'error': 'MISSING_CREDENTIAL'}), 400
+
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            credential,
+            google_requests.Request(),
+            client_id,
+        )
+    except ValueError:
+        return jsonify({'error': 'INVALID_GOOGLE_TOKEN'}), 401
+
+    email = (idinfo.get('email') or '').strip().lower()
+    email_verified = bool(idinfo.get('email_verified'))
+    if not email or not email_verified:
+        return jsonify({'error': 'GOOGLE_EMAIL_NOT_VERIFIED'}), 401
+    if hosted_domain and idinfo.get('hd') != hosted_domain:
+        return jsonify({'error': 'INVALID_GOOGLE_DOMAIN'}), 401
+
+    with db.get_conn() as conn:
+        row = conn.execute(Q.GET_TEACHER_BY_EMAIL, (email,)).fetchone()
+
+    if not row:
+        return jsonify({'error': 'TEACHER_NOT_PROVISIONED'}), 401
+
+    teacher_id, _, _pw_hash, role, status, _must_change, display_name, _ = row
+    if status != 'active':
+        return jsonify({'error': 'ACCOUNT_DISABLED'}), 401
+
+    with db.get_conn() as conn:
+        conn.execute(Q.UPDATE_TEACHER_LAST_LOGIN, (teacher_id,))
+        conn.commit()
+
+    return jsonify(_teacher_login_response(teacher_id, email, role, display_name)), 200
 
 
 @auth_bp.post('/teacher-change-password')
@@ -106,13 +166,7 @@ def teacher_change_password():
         return jsonify({'error': 'NOT_FOUND'}), 404
 
     teacher_id, email, role, status, display_name, _ = row
-    token = encode_teacher_token(teacher_id, role, email)
-    return jsonify({
-        'token': token,
-        'teacher_id': teacher_id,
-        'role': role,
-        'display_name': display_name,
-    }), 200
+    return jsonify(_teacher_login_response(teacher_id, email, role, display_name)), 200
 
 
 @auth_bp.post('/student-join')
