@@ -35,7 +35,41 @@ def score_open(user_ans: str, q: dict) -> float:
     return 0.0
 
 
-def grade(answers: list, plan: dict, qbank: dict) -> dict:
+def grade_open_answer(user_ans: str, q: dict) -> dict:
+    """Grade one open answer using the same LLM/keyword policy as full grading."""
+    w = q.get('weight', 1)
+    use_llm = os.getenv('USE_LLM_EVAL', '0') == '1'
+    llm_feedback = None
+    llm_verdict = None
+
+    if use_llm:
+        try:
+            from llm_evaluator import evaluate_open_question  # type: ignore[import]
+            correct_answers = q.get('acceptable') or q.get('correct') or q.get('keywords') or []
+            llm_result = evaluate_open_question(q.get('text', ''), user_ans or '', correct_answers)
+            open_score_fraction = float(llm_result.get('score', 0))
+            open_score_fraction = max(0.0, min(1.0, open_score_fraction))
+            llm_feedback = llm_result.get('llm_feedback')
+            llm_verdict = llm_result.get('verdict')
+        except Exception as e:
+            print(f"LLM evaluation failed: {e}. Falling back to keyword scoring.")
+            open_score_fraction = score_open(user_ans or '', q)
+            llm_feedback = (
+                "Valutazione LLM non disponibile: uso della valutazione "
+                "di fallback basata su parole chiave."
+            )
+            llm_verdict = 'fallback'
+    else:
+        open_score_fraction = score_open(user_ans or '', q)
+
+    return {
+        'points': w * open_score_fraction,
+        'llm_feedback': llm_feedback,
+        'llm_verdict': llm_verdict,
+    }
+
+
+def grade(answers: list, plan: dict, qbank: dict, *, defer_open: bool = False) -> dict:
     """
     Calculates score based on answers, the student's shuffled plan, and the question bank.
 
@@ -49,11 +83,11 @@ def grade(answers: list, plan: dict, qbank: dict) -> dict:
     per_question_scores: list[float] = []
     per_question_feedbacks: list = []
     per_question_verdicts: list = []
+    per_question_statuses: list[str] = []
+    per_question_errors: list = []
 
     questions_list = qbank.get('questions', qbank) if isinstance(qbank, dict) else qbank
     qbank_map = {str(q['id']): q for q in questions_list}
-
-    use_llm = os.getenv('USE_LLM_EVAL', '0') == '1'
 
     for i, step in enumerate(plan.get('plan', [])):
         q_id = str(step.get('id'))
@@ -64,6 +98,8 @@ def grade(answers: list, plan: dict, qbank: dict) -> dict:
             per_question_scores.append(0.0)
             per_question_feedbacks.append(None)
             per_question_verdicts.append(None)
+            per_question_statuses.append('error')
+            per_question_errors.append('Question not found in snapshot.')
             continue
 
         q = qbank_map[q_id]
@@ -74,22 +110,20 @@ def grade(answers: list, plan: dict, qbank: dict) -> dict:
         q_type = q.get('type')
         llm_feedback = None
         llm_verdict = None
+        llm_status = 'not_applicable'
+        llm_error = None
 
         if q_type == 'open':
-            if use_llm:
-                try:
-                    from llm_evaluator import evaluate_open_question  # type: ignore[import]
-                    correct_answers = q.get('acceptable') or q.get('keywords') or []
-                    llm_result = evaluate_open_question(q.get('text', ''), user_ans or '', correct_answers)
-                    open_score_fraction = float(llm_result.get('score', 0))
-                    question_score = w * open_score_fraction
-                    llm_feedback = llm_result.get('llm_feedback')
-                    llm_verdict = llm_result.get('verdict')
-                except Exception as e:
-                    print(f"LLM evaluation failed: {e}. Falling back to keyword scoring.")
-                    question_score = w * score_open(user_ans or '', q)
+            if defer_open:
+                question_score = 0.0
+                llm_status = 'pending'
             else:
-                question_score = w * score_open(user_ans or '', q)
+                open_result = grade_open_answer(user_ans or '', q)
+                question_score = open_result['points']
+                llm_feedback = open_result.get('llm_feedback')
+                llm_verdict = open_result.get('llm_verdict')
+                if os.getenv('USE_LLM_EVAL', '0') == '1':
+                    llm_status = 'fallback' if llm_verdict == 'fallback' else 'graded'
 
         elif q_type == 'single':
             original_correct_index = q.get('correct')
@@ -128,6 +162,8 @@ def grade(answers: list, plan: dict, qbank: dict) -> dict:
         per_question_scores.append(round(question_score, 2))
         per_question_feedbacks.append(llm_feedback)
         per_question_verdicts.append(llm_verdict)
+        per_question_statuses.append(llm_status)
+        per_question_errors.append(llm_error)
 
     return {
         'raw_points': round(total, 2),
@@ -136,6 +172,8 @@ def grade(answers: list, plan: dict, qbank: dict) -> dict:
         'scores_per_question': per_question_scores,
         'feedbacks_per_question': per_question_feedbacks,
         'verdicts_per_question': per_question_verdicts,
+        'statuses_per_question': per_question_statuses,
+        'errors_per_question': per_question_errors,
     }
 
 
@@ -146,6 +184,8 @@ def format_detailed_answers(
     scores_list: list,
     feedbacks_list: list | None = None,
     verdicts_list: list | None = None,
+    statuses_list: list | None = None,
+    errors_list: list | None = None,
 ) -> list:
     """Formats per-question answer detail for storage in score_entries.answers."""
     detailed_answers = []
@@ -164,9 +204,12 @@ def format_detailed_answers(
         points = scores_list[i] if i < len(scores_list) else 0
         llm_feedback = feedbacks_list[i] if feedbacks_list and i < len(feedbacks_list) else None
         llm_verdict = verdicts_list[i] if verdicts_list and i < len(verdicts_list) else None
+        llm_status = statuses_list[i] if statuses_list and i < len(statuses_list) else None
+        llm_error = errors_list[i] if errors_list and i < len(errors_list) else None
         question_weight = 0
         correct_answer_raw = None
         shuffled_option_order: list = []
+        q_type = None
 
         if question_detail:
             question_text = question_detail.get('text', '[Text missing]')
@@ -233,6 +276,7 @@ def format_detailed_answers(
 
         detailed_answers.append({
             "question_id": q_id,
+            "type": q_type,
             "question_snapshot": question_snapshot,
             "question_text": question_text,
             "question_image": question_image_path,
@@ -243,8 +287,11 @@ def format_detailed_answers(
             "weight": question_weight,
             "points_awarded": points,
             "raw_points": points,
+            "llm_status": llm_status or ('not_applicable' if q_type != 'open' else 'pending'),
             "llm_feedback": llm_feedback,
             "llm_verdict": llm_verdict,
+            "llm_error": llm_error,
+            "llm_updated_at": None,
             "raw_student_answer": student_answer_raw,
             "raw_correct_answer": correct_answer_raw if question_detail else None,
             "option_order": shuffled_option_order,
