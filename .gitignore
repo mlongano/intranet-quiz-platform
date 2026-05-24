@@ -23,7 +23,7 @@ secrets/
 frontend/pnpm-workspace.yaml
 frontend/.pnpm-store/
 .DS_Store
-
+.playwright-mcp
 # Banks directory - synced separately with Git
 banks/
 .vscode/
