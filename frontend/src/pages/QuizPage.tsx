@@ -135,9 +135,9 @@ function QuizPage() {
       if (!quizId) throw new Error('Quiz ID mancante.');
       return submitQuiz(quizId);
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['quiz', quizId] });
-      navigate('/finish');
+      navigate('/finish', { state: { submitResult: result } });
     },
     onError: (err: any) => {
       if (err instanceof ApiError && err.code === 'TOKEN_EXPIRED') {
@@ -179,7 +179,6 @@ function QuizPage() {
     return (
       <div className="min-h-screen bg-surface flex items-center justify-center p-4">
         <div className="bg-surface-container rounded-lg border border-outline-variant/30 p-8 max-w-md w-full text-center">
-          <div className="text-5xl mb-4">⚠️</div>
           <h2 className="text-xl font-bold text-on-surface mb-2">Errore</h2>
           <p className="text-on-surface-variant text-sm mb-6">{(queryError as any)?.message ?? 'Impossibile caricare il quiz.'}</p>
           <button onClick={() => navigate('/')} className="px-6 py-2 bg-primary text-on-primary rounded-lg font-medium">
@@ -205,7 +204,6 @@ function QuizPage() {
           {isComplete ? (
             <div className="min-h-screen flex items-center justify-center">
               <div className="bg-surface-container rounded-lg border border-outline-variant/30 p-8 max-w-md w-full text-center">
-                <div className="text-6xl mb-4">✅</div>
                 <h2 className="text-2xl font-bold text-on-surface mb-4">Quiz Completato!</h2>
                 <p className="text-on-surface-variant mb-6">Hai risposto a tutte le domande. Clicca per consegnare.</p>
                 {localError && <p className="text-error text-sm mb-4">{localError}</p>}

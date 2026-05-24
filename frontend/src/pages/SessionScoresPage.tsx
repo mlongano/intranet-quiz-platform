@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, RefreshCw, Archive, Mail, ChevronRight, Download } from 'lucide-react';
@@ -8,7 +8,7 @@ import MarkdownContent from '../components/MarkdownContent';
 import {
   getSessionScores, recalculateScores, archiveSessionScores, sendAllResultEmails,
   listSessions, type DetailedAnswer, ScoreEntry, ScoreOverride, reviewScores,
-  regradeOpenScores, getLlmInfo,
+  regradeOpenScores, getLlmInfo, getLatestSessionLlmJob,
 } from '../api';
 import { useConfirmModal } from '../lib/useConfirmModal';
 import { computeStats, type ScoreStats } from '../lib/scoreStats';
@@ -18,6 +18,7 @@ import { computeStats, type ScoreStats } from '../lib/scoreStats';
 function ScoreRow({ score, onClick }: { score: ScoreEntry; onClick: () => void }) {
   const pct = score.percent;
   const color = pct >= 60 ? 'text-primary' : pct >= 40 ? 'text-secondary' : 'text-error';
+  const hasPending = score.answers?.some(a => a.type === 'open' && a.llm_status === 'pending') ?? false;
   return (
     <button
       onClick={onClick}
@@ -31,6 +32,7 @@ function ScoreRow({ score, onClick }: { score: ScoreEntry; onClick: () => void }
         <div className="text-right">
           <p className={`text-lg font-bold ${color}`}>{pct.toFixed(1)}%</p>
           <p className="text-xs text-on-surface-variant">{score.raw_points.toFixed(1)} / {score.max_points.toFixed(1)}</p>
+          {hasPending && <p className="text-[11px] font-semibold text-secondary">provvisorio</p>}
         </div>
         <ChevronRight size={16} className="text-on-surface-variant" />
       </div>
@@ -185,6 +187,26 @@ function buildQuestionSummary(scores: ScoreEntry[]): QuestionSummary[] {
   });
 }
 
+function FormattedSummary({ value }: { value: any }) {
+  if (value == null || value === '') return <span>—</span>;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <span>—</span>;
+    return (
+      <ul className="space-y-1">
+        {value.map((item, index) => (
+          <li key={`${String(item)}-${index}`}>
+            <MarkdownContent compact>{String(item)}</MarkdownContent>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  if (typeof value === 'object') {
+    return <MarkdownContent compact>{JSON.stringify(value)}</MarkdownContent>;
+  }
+  return <MarkdownContent compact>{String(value)}</MarkdownContent>;
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 function SessionScoresPage() {
@@ -218,6 +240,17 @@ function SessionScoresPage() {
   });
   const llmEnabled = llmInfo?.enabled ?? llmInfo?.use_llm ?? false;
 
+  const { data: latestLlmJob } = useQuery({
+    queryKey: ['llm-job-latest', id],
+    queryFn: () => getLatestSessionLlmJob(id),
+    enabled: !!id,
+    refetchInterval: query => {
+      const status = query.state.data?.status;
+      return status === 'pending' || status === 'running' ? 2000 : false;
+    },
+  });
+  const llmJobRunning = latestLlmJob?.status === 'pending' || latestLlmJob?.status === 'running';
+
   const recalcMutation = useMutation({
     mutationFn: () => recalculateScores(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session-scores', id] }),
@@ -239,8 +272,17 @@ function SessionScoresPage() {
 
   const regradeMutation = useMutation({
     mutationFn: () => regradeOpenScores(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session-scores', id] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['llm-job-latest', id] });
+      queryClient.invalidateQueries({ queryKey: ['session-scores', id] });
+    },
   });
+
+  useEffect(() => {
+    if (latestLlmJob?.status === 'completed' || latestLlmJob?.status === 'failed') {
+      queryClient.invalidateQueries({ queryKey: ['session-scores', id] });
+    }
+  }, [id, latestLlmJob?.status, queryClient]);
 
   const saveOverrideMutation = useMutation({
     mutationFn: (overrides: ScoreOverride[]) => reviewScores(id, overrides),
@@ -403,14 +445,14 @@ function SessionScoresPage() {
             )}
             <button
               onClick={() => regradeMutation.mutate()}
-              disabled={regradeMutation.isPending}
+              disabled={regradeMutation.isPending || llmJobRunning}
               className={`px-4 py-2 rounded-md text-sm font-bold transition-colors ${
-                regradeMutation.isPending
+                regradeMutation.isPending || llmJobRunning
                   ? 'bg-surface-container-high text-on-surface-variant cursor-not-allowed'
                   : 'bg-surface-container-high border border-secondary/30 text-secondary hover:bg-secondary/10'
               }`}
             >
-              {regradeMutation.isPending ? 'Ricalcolo...' : 'Rivaluta risposte aperte'}
+              {regradeMutation.isPending || llmJobRunning ? 'Rivalutazione...' : 'Rivaluta risposte aperte'}
             </button>
           </div>
           <div className="flex gap-1 bg-surface-container-low border border-outline-variant/20 rounded-lg p-1 self-start">
@@ -442,19 +484,28 @@ function SessionScoresPage() {
 
       {regradeMutation.isSuccess && (
         <div className="mb-4 p-3 bg-secondary/10 border border-secondary/30 text-secondary rounded-lg text-sm">
-          Rivalutazione completata. Aggiornati: {(regradeMutation.data as any)?.updated ?? 0} punteggi.
+          Rivalutazione messa in coda. Risposte aperte: {regradeMutation.data?.total_items ?? 0}.
+        </div>
+      )}
+
+      {latestLlmJob && (
+        <div className={`mb-4 p-3 rounded-lg text-sm border ${
+          latestLlmJob.status === 'failed'
+            ? 'bg-error/10 border-error/30 text-error'
+            : latestLlmJob.status === 'completed'
+              ? 'bg-tertiary/10 border-tertiary/30 text-tertiary'
+              : 'bg-secondary/10 border-secondary/30 text-secondary'
+        }`}>
+          {latestLlmJob.status === 'pending' && 'Rivalutazione in coda.'}
+          {latestLlmJob.status === 'running' && `Rivalutazione in corso: ${latestLlmJob.processed_items}/${latestLlmJob.total_items}.`}
+          {latestLlmJob.status === 'completed' && `Rivalutazione completata: ${latestLlmJob.processed_items}/${latestLlmJob.total_items}.`}
+          {latestLlmJob.status === 'failed' && `Rivalutazione non riuscita: ${latestLlmJob.error ?? 'errore sconosciuto'}`}
         </div>
       )}
 
       {regradeMutation.isError && (
         <div className="mb-4 p-3 bg-error/10 border border-error/30 text-error rounded-lg text-sm">
           Rivalutazione non riuscita: {String((regradeMutation.error as Error).message)}
-        </div>
-      )}
-
-      {regradeMutation.isPending && (
-        <div className="mb-4 p-3 bg-secondary/10 border border-secondary/30 text-secondary rounded-lg text-sm">
-          Rivalutazione in corso. Le chiamate LLM possono richiedere alcuni secondi per ogni risposta aperta.
         </div>
       )}
 
@@ -517,8 +568,17 @@ function SessionScoresPage() {
                         const isCorrect = currentPoints === maxPoints;
                         const isPartial = currentPoints > 0 && !isCorrect;
 
-                        const answerStr = JSON.stringify(answer?.student_answer ?? 'N/D');
-                        const correctStr = JSON.stringify(answer?.correct_answer ?? 'N/D');
+                        const answerStr = answer?.student_answer ?? 'N/D';
+                        const correctStr = answer?.correct_answer ?? 'N/D';
+                        const llmStatusLabel = answer?.llm_status === 'pending'
+                          ? 'In attesa LLM'
+                          : answer?.llm_status === 'graded'
+                            ? 'Valutato'
+                            : answer?.llm_status === 'fallback'
+                              ? 'Fallback parole chiave'
+                              : answer?.llm_status === 'error'
+                                ? 'Errore LLM'
+                                : null;
 
                         return (
                           <div key={email ?? student} className="bg-surface-container border border-outline-variant/20 rounded-lg p-3">
@@ -563,9 +623,9 @@ function SessionScoresPage() {
                               <div className="space-y-1.5">
                                 <div className="text-xs text-on-surface-variant">
                                   <span className="font-medium">Risposta: </span>
-                                  <span className="font-mono bg-surface-container-low px-1 rounded break-all">
-                                    {answerStr.length > 120 ? answerStr.slice(0, 120) + '…' : answerStr}
-                                  </span>
+                                  <div className="mt-1 rounded border border-outline-variant/20 bg-surface-container-low px-2 py-1">
+                                    <FormattedSummary value={answerStr} />
+                                  </div>
                                 </div>
                                 <div className={`text-xs p-1.5 rounded border ${
                                   isCorrect
@@ -575,12 +635,15 @@ function SessionScoresPage() {
                                       : 'bg-error/10 border-error/30 text-error'
                                 }`}>
                                   <span className="font-medium">Corretta: </span>
-                                  <span className="font-mono break-all">
-                                    {correctStr.length > 120 ? correctStr.slice(0, 120) + '…' : correctStr}
-                                  </span>
+                                  <FormattedSummary value={correctStr} />
                                 </div>
-                                {q.type === 'open' && (answer.llm_verdict || answer.llm_feedback) && (
+                                {q.type === 'open' && (llmStatusLabel || answer.llm_verdict || answer.llm_feedback || answer.llm_error) && (
                                   <div className="p-1.5 bg-secondary/5 rounded border border-secondary/20 text-xs">
+                                    {llmStatusLabel && (
+                                      <span className="bg-secondary/10 border border-secondary/30 text-secondary text-xs px-1.5 py-0.5 rounded uppercase font-bold tracking-wider mr-2">
+                                        {llmStatusLabel}
+                                      </span>
+                                    )}
                                     {answer.llm_verdict && (
                                       <span className="bg-secondary/10 border border-secondary/30 text-secondary text-xs px-1.5 py-0.5 rounded uppercase font-bold tracking-wider mr-2">
                                         {answer.llm_verdict}
@@ -588,6 +651,9 @@ function SessionScoresPage() {
                                     )}
                                     {answer.llm_feedback && (
                                       <span className="text-secondary italic">{answer.llm_feedback}</span>
+                                    )}
+                                    {answer.llm_error && (
+                                      <span className="text-error italic">{answer.llm_error}</span>
                                     )}
                                   </div>
                                 )}
