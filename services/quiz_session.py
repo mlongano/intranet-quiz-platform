@@ -6,6 +6,7 @@ All writes happen inside a single DB transaction per operation.
 from __future__ import annotations
 
 import json
+import os
 import random
 import secrets
 import string
@@ -289,7 +290,8 @@ def submit_plan(quiz_id: str, student_id: int) -> dict:
 
         grading_plan = {'plan': plan_steps}
         grading_qbank = {'questions': questions_list}
-        grade_result = grade(answers_list, grading_plan, grading_qbank)
+        use_llm = os.getenv('USE_LLM_EVAL', '0') == '1'
+        grade_result = grade(answers_list, grading_plan, grading_qbank, defer_open=use_llm)
 
         detailed = format_detailed_answers(
             grading_plan,
@@ -298,6 +300,8 @@ def submit_plan(quiz_id: str, student_id: int) -> dict:
             grade_result['scores_per_question'],
             grade_result['feedbacks_per_question'],
             grade_result['verdicts_per_question'],
+            grade_result['statuses_per_question'],
+            grade_result['errors_per_question'],
         )
 
         try:
@@ -318,6 +322,22 @@ def submit_plan(quiz_id: str, student_id: int) -> dict:
             conn.rollback()
             raise Conflict(description='ALREADY_SUBMITTED')
 
+        pending_open_count = sum(
+            1
+            for answer in detailed
+            if answer.get('type') == 'open' and answer.get('llm_status') == 'pending'
+        )
+        if pending_open_count:
+            from services.llm_jobs import create_llm_job
+            create_llm_job(
+                conn,
+                teacher_id=teacher_id,
+                session_id=session_id,
+                score_entry_id=score_row[0],
+                job_type='submission',
+                total_items=pending_open_count,
+            )
+
         conn.execute(Q.DELETE_PLAN, (quiz_id,))
         conn.commit()
 
@@ -325,6 +345,8 @@ def submit_plan(quiz_id: str, student_id: int) -> dict:
         'raw_points': grade_result['raw_points'],
         'max_points': grade_result['max_points'],
         'percent': grade_result['percent'],
+        'status': 'provisional' if pending_open_count else 'final',
+        'llm_pending': bool(pending_open_count),
     }
 
 

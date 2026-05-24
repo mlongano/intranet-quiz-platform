@@ -74,6 +74,15 @@ def serve_assets(filename):
 def serve_images(filename):
     if not IMAGES_FOLDER.exists():
         abort(404, description="Images directory not found.")
+    requested = IMAGES_FOLDER / filename
+    if not requested.exists():
+        parts = filename.split('/', 1)
+        if len(parts) == 2:
+            snapshot_id, image_filename = parts
+            for teacher_dir in sorted(p for p in IMAGES_FOLDER.iterdir() if p.is_dir()):
+                legacy_target = teacher_dir / snapshot_id / image_filename
+                if legacy_target.exists() and legacy_target.is_file():
+                    return send_from_directory(teacher_dir / snapshot_id, image_filename)
     return send_from_directory(IMAGES_FOLDER, filename)
 
 

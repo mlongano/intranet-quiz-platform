@@ -69,7 +69,8 @@ from services import images as img_service
 from services import quiz_session as qs_service
 from services import snapshots as snap_service
 from services.classroom_sync import list_courses_for_teacher, sync_courses_for_teacher
-from services.grading import format_detailed_answers, grade, score_open
+from services.grading import format_detailed_answers, grade
+from services.llm_jobs import enqueue_regrade_session, get_job_for_teacher, get_latest_job_for_session
 from services import score_transforms
 
 teacher_bp = Blueprint('teacher', __name__, url_prefix='/api/teacher')
@@ -404,7 +405,12 @@ def review_scores(session_id: int):
         for ans in answers:
             q_id = str(ans.get('question_id'))
             if q_id in per_q:
+                if not ans.get('manual_override') and ans.get('original_points_awarded') is None:
+                    ans['original_points_awarded'] = ans.get('points_awarded')
                 ans['points_awarded'] = ans['raw_points'] = per_q[q_id]
+                ans['manual_override'] = True
+                if ans.get('type') == 'open':
+                    ans['llm_status'] = 'graded'
         return answers
 
     updated = score_transforms.transform_scores(
@@ -434,6 +440,8 @@ def recalculate_scores(session_id: int):
             result['scores_per_question'],
             result['feedbacks_per_question'],
             result['verdicts_per_question'],
+            result['statuses_per_question'],
+            result['errors_per_question'],
         )
 
     updated = score_transforms.transform_scores(
@@ -483,30 +491,29 @@ def archive_session_scores(session_id: int):
 @teacher_bp.post('/sessions/<int:session_id>/scores/regrade-open')
 @require_teacher
 def regrade_open_questions(session_id: int):
-    """Re-grade open questions using the current LLM/keyword settings."""
-    teacher_id = _teacher_id()
+    """Queue open-question regrading without blocking on the LLM provider."""
+    job = enqueue_regrade_session(session_id, _teacher_id())
+    return jsonify(job), 202
 
-    def _regrade_open_fn(_score_id: int, answers: list[dict], qbank_map: dict) -> list[dict] | None:
-        changed = False
-        for ans in answers:
-            q = ans.get('question_snapshot')
-            if not isinstance(q, dict):
-                q = qbank_map.get(str(ans.get('question_id')))
-            if not isinstance(q, dict) or q.get('type') != 'open':
-                continue
-            raw_student = ans.get('raw_student_answer') or ''
-            new_fraction = score_open(raw_student, q)
-            new_pts = round(new_fraction * q.get('weight', 1), 2)
-            old_pts = ans.get('raw_points', 0)
-            if abs(new_pts - old_pts) > 0.001:
-                ans['points_awarded'] = ans['raw_points'] = new_pts
-                changed = True
-        return answers if changed else None
 
-    updated = score_transforms.transform_scores(
-        session_id, teacher_id, transform_fn=_regrade_open_fn,
-    )
-    return jsonify({'updated': updated}), 200
+@teacher_bp.get('/llm-jobs/<int:job_id>')
+@require_teacher
+def get_llm_job(job_id: int):
+    job = get_job_for_teacher(job_id, _teacher_id())
+    if not job:
+        return jsonify({'error': 'NOT_FOUND'}), 404
+    return jsonify(job), 200
+
+
+@teacher_bp.get('/sessions/<int:session_id>/llm-jobs/latest')
+@require_teacher
+def latest_llm_job(session_id: int):
+    with db.get_conn() as conn:
+        _assert_session_owner(conn, session_id, _teacher_id())
+    job = get_latest_job_for_session(session_id, _teacher_id())
+    if not job:
+        return jsonify({'job': None}), 200
+    return jsonify(job), 200
 
 
 # ── archives ──────────────────────────────────────────────────────────────────
@@ -684,7 +691,11 @@ def export_student_snapshot(snapshot_id: int):
 def llm_info():
     use_llm = os.getenv('USE_LLM_EVAL', '0') == '1'
     model = os.getenv('LLM_MODEL', '')
-    return jsonify({'use_llm': use_llm, 'model': model if use_llm else None}), 200
+    return jsonify({
+        'use_llm': use_llm,
+        'enabled': use_llm,
+        'model': model if use_llm else None,
+    }), 200
 
 
 @teacher_bp.post('/email/send-result')
@@ -694,6 +705,9 @@ def send_result_email():
     score_id = data.get('score_id')
     if not score_id:
         return jsonify({'error': 'MISSING_SCORE_ID'}), 400
+    custom_subject = (data.get('subject') or '').strip() or None
+    include_details = bool(data.get('include_details', True))
+    include_feedback = bool(data.get('include_feedback', False))
     teacher_id = _teacher_id()
 
     with db.get_conn() as conn:
@@ -722,6 +736,9 @@ def send_result_email():
             percent=float(row[2]),
             answers=answers,
             teacher_email=teacher_email,
+            custom_subject=custom_subject,
+            include_details=include_details,
+            show_admin_feedback=include_feedback,
         )
         if not ok:
             return jsonify({'error': msg}), 500
@@ -734,6 +751,10 @@ def send_result_email():
 @teacher_bp.post('/sessions/<int:session_id>/email/send-all')
 @require_teacher
 def send_all_emails(session_id: int):
+    data = request.get_json(silent=True) or {}
+    custom_subject = (data.get('subject') or '').strip() or None
+    include_details = bool(data.get('include_details', True))
+    include_feedback = bool(data.get('include_feedback', False))
     teacher_id = _teacher_id()
     teacher_email = g.current_user.get('email', '')
     sent = 0
@@ -760,6 +781,9 @@ def send_all_emails(session_id: int):
                 percent=float(r[3]),
                 answers=answers,
                 teacher_email=teacher_email,
+                custom_subject=custom_subject,
+                include_details=include_details,
+                show_admin_feedback=include_feedback,
             )
             if ok:
                 sent += 1
