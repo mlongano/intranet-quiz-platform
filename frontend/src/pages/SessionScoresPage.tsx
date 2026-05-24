@@ -6,7 +6,7 @@ import TeacherLayout from '../layouts/TeacherLayout';
 import SubmissionDetailView from '../components/SubmissionDetailView';
 import {
   getSessionScores, recalculateScores, archiveSessionScores, sendAllResultEmails,
-  listSessions, ScoreEntry, ScoreOverride, reviewScores,
+  listSessions, type DetailedAnswer, ScoreEntry, ScoreOverride, reviewScores,
   regradeOpenScores, getLlmInfo,
 } from '../api';
 import { useConfirmModal } from '../lib/useConfirmModal';
@@ -252,10 +252,6 @@ function SessionScoresPage() {
     return buildQuestionSummary(scores);
   }, [scores]);
 
-  const avg = scores?.length
-    ? scores.reduce((sum, s) => sum + s.percent, 0) / scores.length
-    : null;
-
   // ── CSV export ──────────────────────────────────────────────────────────────
   const handleExportCSV = () => {
     if (!scores?.length) return;
@@ -418,21 +414,6 @@ function SessionScoresPage() {
             </button>
           </div>
         </div>
-
-        {avg !== null && viewBy === 'student' && (
-          <div className="bg-surface-container rounded-xl border border-outline-variant/30 p-6 inline-flex gap-8 mb-6">
-            <div>
-              <p className="text-sm text-on-surface-variant">Partecipanti</p>
-              <p className="text-3xl font-bold text-on-surface">{scores?.length}</p>
-            </div>
-            <div>
-              <p className="text-sm text-on-surface-variant">Media</p>
-              <p className={`text-3xl font-bold ${avg >= 60 ? 'text-primary' : avg >= 40 ? 'text-secondary' : 'text-error'}`}>
-                {avg.toFixed(1)}%
-              </p>
-            </div>
-          </div>
-        )}
       </div>
 
       {recalcMutation.isSuccess && (
