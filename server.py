@@ -119,7 +119,7 @@ def _local_ips() -> list[str]:
 
 
 def run_prod() -> None:
-    port = 5001
+    port = int(os.environ.get('PORT', 5001))
     print("=" * 60)
     print("Starting QuizParty (multi-tenant edition)")
     print(f"Static: {STATIC_FOLDER}")
