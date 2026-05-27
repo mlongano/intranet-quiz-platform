@@ -18,7 +18,7 @@ docker compose -f compose.yaml -f compose-debug.yaml up --build
 Notes:
 - `.env` sets `APP_PORT=5002` for this platform because host port `5001` is used by the legacy single-tenant service.
 - Compose maps `${APP_PORT:-5002}:5001`; Flask still listens on container-internal port `5001`.
-- `compose.yaml` is the normal/production stack (`db`, `app`, `worker`). The React frontend is built into the `app` image and served from `frontend/dist`.
+- `compose.yaml` is the normal/production stack (`db`, `app`, `worker`, `backup`). The React frontend is built into the `app` image and served from `frontend/dist`; the `backup` service writes automatic PostgreSQL/image backups to `app_backups`.
 - `compose-debug.yaml` is the development override. It adds the separate `frontend` container for Vite hot reload on port `5173`.
 - `security_opt: apparmor:unconfined` helps runtime containers only; Dockerfile build steps require the `lxc-remote2` BuildKit builder.
 
@@ -49,7 +49,8 @@ DATABASE_URL=postgresql:///quizparty_test uv run pytest tests/
 
 Safety guard:
 - `tests/conftest.py` refuses to run if the effective database name does not contain `test`.
-- This prevents pytest fixtures from truncating the production database.
+- Migration `004_block_production_truncate.sql` blocks `TRUNCATE` in non-test databases unless a maintenance session explicitly sets `quizparty.allow_destructive_maintenance=on`.
+- This prevents pytest fixtures from truncating the production database even if a command is launched from the wrong container.
 
 ---
 

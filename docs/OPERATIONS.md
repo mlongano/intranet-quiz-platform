@@ -33,11 +33,10 @@ docker compose exec frontend sh -c "cd /app && pnpm build"
 Backend:
 
 ```bash
-docker compose exec \
-  -e DATABASE_URL='postgresql://quizparty:quizparty_dev_2026@db:5432/quizparty_test' \
-  -e JWT_SECRET='test-secret-not-for-production-32' \
-  app .venv/bin/pytest tests/ -v --ignore=tests/test_migration.py
+scripts/run_tests_safe.sh tests/ -v --ignore=tests/test_migration.py
 ```
+
+Never run pytest directly in the `app` container against the default `DATABASE_URL`. The test fixtures refuse non-test database names and the production schema also blocks accidental `TRUNCATE`, but the safe runner is the supported command.
 
 Frontend:
 
@@ -90,59 +89,75 @@ exists, create and reset Teacher accounts from the Super-admin UI.
 ## Backups
 
 Back up both PostgreSQL and uploaded images. PostgreSQL is the source of truth
-for app data; the image volume stores files referenced by Snapshots.
+for app data; the image volume stores files referenced by Quiz versions.
 
-Database backup:
+`compose.yaml` runs the `backup` service by default. It uses `scripts/backup_loop.sh` inside a `postgres:16-alpine` container and writes to the `app_backups` Docker volume:
 
-```bash
-docker compose exec -T db pg_dump \
-  -U quizparty \
-  -d quizparty \
-  --format=custom \
-  > quizparty-$(date +%F).dump
+```text
+/backups/db/quizparty-YYYYMMDDTHHMMSSZ.dump
+/backups/images/quizparty-images-YYYYMMDDTHHMMSSZ.tar.gz
+/backups/manifests/quizparty-YYYYMMDDTHHMMSSZ.json
 ```
 
-Image backup:
+Default policy:
 
 ```bash
-docker run --rm \
-  -v intranet-quiz-platform_app_images:/images:ro \
-  -v "$PWD":/backup \
-  alpine tar czf /backup/quizparty-images-$(date +%F).tar.gz -C /images .
+BACKUP_ON_START=1
+BACKUP_INTERVAL_SECONDS=21600   # 6 hours
+BACKUP_RETENTION_DAYS=30
 ```
+
+Run an immediate backup:
+
+```bash
+docker compose run --rm backup sh /usr/local/bin/quizparty-backup once
+```
+
+Check backup logs:
+
+```bash
+docker compose logs backup --tail=100
+```
+
+## Production data-loss guard
+
+Migration `004_block_production_truncate.sql` installs a `BEFORE TRUNCATE`
+trigger on application tables. In databases whose name does not contain `test`,
+TRUNCATE fails unless the current session explicitly sets:
+
+```sql
+SET quizparty.allow_destructive_maintenance = 'on';
+```
+
+This is a last-resort guard against test cleanup or ad-hoc maintenance commands
+hitting the real `quizparty` database. Use the override only for a deliberate,
+short-lived maintenance session.
 
 ## Restore
 
-Stop the app before restore:
+Use the restore script and do a dry-run first:
 
 ```bash
-docker compose stop app
+scripts/restore_backup.sh --dry-run --latest
 ```
 
-Restore PostgreSQL into an empty or intentionally replaced database:
+Restore the latest automatic backup:
 
 ```bash
-cat quizparty-YYYY-MM-DD.dump | docker compose exec -T db pg_restore \
-  -U quizparty \
-  -d quizparty \
-  --clean \
-  --if-exists
+scripts/restore_backup.sh --latest --confirm RESTORE_QUIZPARTY
 ```
 
-Restore images:
+Restore explicit files:
 
 ```bash
-docker run --rm \
-  -v intranet-quiz-platform_app_images:/images \
-  -v "$PWD":/backup \
-  alpine sh -c "rm -rf /images/* && tar xzf /backup/quizparty-images-YYYY-MM-DD.tar.gz -C /images"
+scripts/restore_backup.sh \
+  --db-dump /var/lib/docker/volumes/quizpartyplatform_app_backups/_data/db/quizparty-YYYYMMDDTHHMMSSZ.dump \
+  --images-tar /var/lib/docker/volumes/quizpartyplatform_app_backups/_data/images/quizparty-images-YYYYMMDDTHHMMSSZ.tar.gz \
+  --confirm RESTORE_QUIZPARTY
 ```
 
-Start the app again:
-
-```bash
-docker compose up -d app
-```
+The script stops `app` and `worker`, restores PostgreSQL with `pg_restore`,
+optionally replaces uploaded images from the tarball, and starts the stack again.
 
 ## Offline Operation
 
