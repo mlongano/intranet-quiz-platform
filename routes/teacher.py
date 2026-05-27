@@ -341,6 +341,13 @@ def close_session(session_id: int):
     return jsonify({'ok': True}), 200
 
 
+@teacher_bp.post('/sessions/<int:session_id>/reopen')
+@require_teacher
+def reopen_session(session_id: int):
+    join_code = qs_service.reopen_session(session_id, _teacher_id())
+    return jsonify({'join_code': join_code}), 200
+
+
 @teacher_bp.post('/sessions/<int:session_id>/regen-code')
 @require_teacher
 def regen_join_code(session_id: int):

@@ -274,6 +274,13 @@ CLOSE_SESSION = """
     RETURNING id
 """
 
+REOPEN_SESSION = """
+    UPDATE quiz_sessions
+    SET status = 'active', join_code = %s
+    WHERE id = %s AND teacher_id = %s AND status = 'closed'
+    RETURNING id
+"""
+
 UPDATE_JOIN_CODE = """
     UPDATE quiz_sessions
     SET join_code = %s

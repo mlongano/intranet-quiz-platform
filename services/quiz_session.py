@@ -82,6 +82,16 @@ def close_session(session_id: int, teacher_id: int) -> None:
         conn.commit()
 
 
+def reopen_session(session_id: int, teacher_id: int) -> str:
+    code = generate_join_code()
+    with db.get_conn() as conn:
+        row = conn.execute(Q.REOPEN_SESSION, (code, session_id, teacher_id)).fetchone()
+        if not row:
+            raise NotFound(description="Session not found or not in closed state.")
+        conn.commit()
+    return code
+
+
 def regenerate_join_code(session_id: int, teacher_id: int) -> str:
     code = generate_join_code()
     with db.get_conn() as conn:

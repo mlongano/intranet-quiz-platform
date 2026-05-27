@@ -93,6 +93,16 @@ class TestSessionIsolation:
         resp = auth_post(client, f'/api/teacher/sessions/{sess_b}/close', {}, tid_a, 'teacher_a@test.it')
         assert resp.status_code in (403, 404)
 
+    def test_cannot_reopen_other_session(self, client, two_teachers, db_conn):
+        sess_b = two_teachers['b']['sess']
+        tid_a = two_teachers['a']['id']
+        db_conn.execute("UPDATE quiz_sessions SET status = 'closed' WHERE id = %s", (sess_b,))
+        db_conn.commit()
+
+        resp = auth_post(client, f'/api/teacher/sessions/{sess_b}/reopen', {}, tid_a, 'teacher_a@test.it')
+
+        assert resp.status_code in (403, 404)
+
     def test_list_shows_only_own_sessions(self, client, two_teachers):
         tid_a = two_teachers['a']['id']
         resp = auth_get(client, '/api/teacher/sessions', tid_a, 'teacher_a@test.it')

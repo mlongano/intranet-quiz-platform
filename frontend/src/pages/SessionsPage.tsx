@@ -5,7 +5,7 @@ import { Plus, Play, Square, RefreshCw, Trash2, ArrowRight, Copy, CheckCheck } f
 import TeacherLayout from '../layouts/TeacherLayout';
 import {
   listSessions, listSnapshots, listClasses, createSession, activateSession,
-  closeSession, regenJoinCode, deleteSession, SessionMeta, CreateSessionPayload,
+  closeSession, reopenSession, regenJoinCode, deleteSession, SessionMeta, CreateSessionPayload,
 } from '../api';
 import { useConfirmModal } from '../lib/useConfirmModal';
 
@@ -175,6 +175,12 @@ function SessionsPage() {
     onError: (err: any) => setActionError(err.message),
   });
 
+  const reopenMutation = useMutation({
+    mutationFn: reopenSession,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sessions'] }),
+    onError: (err: any) => setActionError(err.message),
+  });
+
   const regenMutation = useMutation({
     mutationFn: regenJoinCode,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sessions'] }),
@@ -187,7 +193,7 @@ function SessionsPage() {
     onError: (err: any) => setActionError(err.message),
   });
 
-  const isPending = activateMutation.isPending || closeMutation.isPending || regenMutation.isPending || deleteMutation.isPending;
+  const isPending = activateMutation.isPending || closeMutation.isPending || reopenMutation.isPending || regenMutation.isPending || deleteMutation.isPending;
 
   const activeSessions = sessions?.filter(s => s.status === 'active') ?? [];
   const draftSessions = sessions?.filter(s => s.status === 'draft') ?? [];
@@ -332,12 +338,22 @@ function SessionsPage() {
                       <p className="text-xs text-on-surface-variant">{s.classes.map(c => c.name).join(', ')}</p>
                     )}
                   </div>
-                  <button
-                    onClick={() => navigate(`/teacher/sessions/${s.id}`)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-outline-variant/40 text-on-surface rounded-lg hover:bg-surface-container-high transition-colors"
-                  >
-                    Punteggi <ArrowRight size={12} />
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => navigate(`/teacher/sessions/${s.id}`)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-outline-variant/40 text-on-surface rounded-lg hover:bg-surface-container-high transition-colors"
+                    >
+                      Punteggi <ArrowRight size={12} />
+                    </button>
+                    <button
+                      onClick={() => reopenMutation.mutate(s.id)}
+                      disabled={isPending}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary text-on-primary rounded-lg hover:bg-primary/90 disabled:opacity-40 transition-colors"
+                    >
+                      <Play size={12} />
+                      Riapri
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

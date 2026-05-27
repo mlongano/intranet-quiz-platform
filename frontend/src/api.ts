@@ -514,6 +514,12 @@ export async function closeSession(sessionId: number): Promise<{ ok: boolean }> 
   });
 }
 
+export async function reopenSession(sessionId: number): Promise<{ join_code: string }> {
+  return apiFetch<{ join_code: string }>(`/teacher/sessions/${sessionId}/reopen`, {
+    method: 'POST',
+  });
+}
+
 export async function regenJoinCode(sessionId: number): Promise<{ join_code: string }> {
   return apiFetch<{ join_code: string }>(`/teacher/sessions/${sessionId}/regen-code`, {
     method: 'POST',
