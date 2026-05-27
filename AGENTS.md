@@ -39,8 +39,17 @@ pnpm lint
 
 ### Testing
 ```bash
-uv run pytest tests/          # pytest configured in pyproject.toml
+# Docker-safe test runner. Creates/uses quizparty_test and passes TEST_DATABASE_URL.
+# Never run `pytest` directly inside the app container: app DATABASE_URL is the real DB.
+scripts/run_tests_safe.sh tests/
+
+# Host-only alternative: allowed only if DATABASE_URL points to a DB whose name contains "test".
+DATABASE_URL=postgresql:///quizparty_test uv run pytest tests/
 ```
+
+Safety guard:
+- `tests/conftest.py` refuses to run if the effective database name does not contain `test`.
+- This prevents pytest fixtures from truncating the production database.
 
 ---
 

@@ -322,10 +322,25 @@ cd frontend && pnpm dev
 # Type check
 cd frontend && pnpm build
 
-# Tests — requires a quizparty_test database
+# Tests in Docker — safe runner creates/uses quizparty_test
+scripts/run_tests_safe.sh tests/
+
+# Host-only tests — DATABASE_URL must point to a DB whose name contains "test"
 sudo -u postgres createdb -O quizparty quizparty_test
 DATABASE_URL=postgresql:///quizparty_test pytest tests/
 ```
+
+### Test database safety
+
+Do **not** run `pytest` directly inside the `app` container. The app container's normal `DATABASE_URL` points at the real application database, while the pytest fixtures truncate application tables to isolate tests.
+
+Use:
+
+```bash
+scripts/run_tests_safe.sh tests/
+```
+
+The test configuration has a hard guard: `tests/conftest.py` refuses to run unless the effective database name contains `test`.
 
 ---
 

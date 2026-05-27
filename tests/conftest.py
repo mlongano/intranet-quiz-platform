@@ -24,7 +24,18 @@ if str(REPO_ROOT) not in sys.path:
 
 # ── env setup ─────────────────────────────────────────────────────────────────
 
-os.environ.setdefault('DATABASE_URL', 'postgresql:///quizparty_test')
+if os.environ.get('TEST_DATABASE_URL'):
+    os.environ['DATABASE_URL'] = os.environ['TEST_DATABASE_URL']
+else:
+    os.environ.setdefault('DATABASE_URL', 'postgresql:///quizparty_test')
+
+_database_url = os.environ['DATABASE_URL']
+if 'test' not in _database_url.rsplit('/', 1)[-1].lower():
+    raise RuntimeError(
+        "Refusing to run tests against a non-test database. "
+        "Set TEST_DATABASE_URL or DATABASE_URL to a database whose name contains 'test'."
+    )
+
 os.environ.setdefault('JWT_SECRET', 'test-secret-not-for-production')
 os.environ.setdefault('JWT_TEACHER_TTL_HOURS', '12')
 os.environ.setdefault('IMAGES_BASE', '/tmp/quizparty_test_images')
