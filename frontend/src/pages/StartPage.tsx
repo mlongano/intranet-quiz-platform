@@ -31,6 +31,8 @@ function StartPage() {
     onError: (err: any) => {
       if (err.isConflict && err.quizId) {
         navigate(`/quiz/${err.quizId}`);
+      } else if (err.isConflict) {
+        setError('Hai già consegnato questo quiz.');
       } else {
         setError(err.message ?? 'Errore durante il login.');
       }

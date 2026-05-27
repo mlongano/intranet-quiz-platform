@@ -197,7 +197,7 @@ def student_join():
 
         score_exists = conn.execute(Q.CHECK_SCORE_EXISTS, (session_id, student_id)).fetchone()
         if score_exists:
-            return jsonify({'error': 'ALREADY_SUBMITTED'}), 409
+            return jsonify({'error': 'Hai già consegnato questo quiz.', 'code': 'ALREADY_SUBMITTED'}), 409
 
     token = encode_student_token(student_id, session_id, closes_at)
 

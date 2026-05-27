@@ -25,7 +25,11 @@ function ReJoinModal({ onSuccess }: { onSuccess: () => void }) {
       updateStudentToken(data.token);
       onSuccess();
     } catch (err: any) {
-      setError(err.message ?? 'Codice non valido o sessione scaduta.');
+      if (err?.isConflict) {
+        setError('Hai già consegnato questo quiz.');
+      } else {
+        setError(err.message ?? 'Codice non valido o sessione scaduta.');
+      }
     } finally {
       setIsPending(false);
     }
@@ -142,8 +146,10 @@ function QuizPage() {
     onError: (err: any) => {
       if (err instanceof ApiError && err.code === 'TOKEN_EXPIRED') {
         setShowReJoin(true);
+      } else if (err instanceof ApiError && err.isConflict) {
+        setLocalError('Hai già consegnato questo quiz.');
       } else {
-        setLocalError(`Errore nella consegna: ${err.message}`);
+        setLocalError(`Errore nella consegna: ${err.message ?? 'errore sconosciuto'}`);
       }
     },
   });

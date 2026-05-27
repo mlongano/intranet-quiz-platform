@@ -126,7 +126,7 @@ def get_or_create_plan(session_id: int, student_id: int) -> dict:
             Q.CHECK_SCORE_EXISTS, (session_id, student_id)
         ).fetchone()
         if score_exists:
-            raise Conflict(description='ALREADY_SUBMITTED')
+            raise Conflict(description='Hai già consegnato questo quiz.')
 
         # Try existing plan
         existing = conn.execute(
@@ -274,7 +274,7 @@ def submit_plan(quiz_id: str, student_id: int) -> dict:
             Q.CHECK_SCORE_EXISTS, (session_id, student_id)
         ).fetchone()
         if score_exists:
-            raise Conflict(description='ALREADY_SUBMITTED')
+            raise Conflict(description='Hai già consegnato questo quiz.')
 
         plan_data = _parse_json_field(row[3])
         progression = _parse_json_field(row[4])
@@ -316,11 +316,11 @@ def submit_plan(quiz_id: str, student_id: int) -> dict:
             }).fetchone()
         except pg_errors.UniqueViolation:
             conn.rollback()
-            raise Conflict(description='ALREADY_SUBMITTED')
+            raise Conflict(description='Hai già consegnato questo quiz.')
 
         if not score_row:
             conn.rollback()
-            raise Conflict(description='ALREADY_SUBMITTED')
+            raise Conflict(description='Hai già consegnato questo quiz.')
 
         pending_open_count = sum(
             1
