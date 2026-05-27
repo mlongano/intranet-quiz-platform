@@ -54,6 +54,8 @@ services:
 
   # ── New: Vite frontend with HMR ───────────────────────────────────────────
   frontend:
+    security_opt:
+      - apparmor:unconfined
     image: node:22-alpine
     restart: unless-stopped
     working_dir: /app
