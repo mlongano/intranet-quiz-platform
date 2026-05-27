@@ -63,6 +63,32 @@ services:
       - app_backups:/app/backups
     command: ["python", "-m", "services.llm_jobs", "worker"]
 
+  # ── Automatic backups ──────────────────────────────────────────────────────
+  backup:
+    security_opt:
+      - apparmor:unconfined
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: quizparty
+      PGUSER: quizparty
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      BACKUP_DIR: /backups
+      IMAGES_DIR: /images
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-21600}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      BACKUP_ON_START: ${BACKUP_ON_START:-1}
+    volumes:
+      - app_backups:/backups
+      - app_images:/images:ro
+      - ./scripts/backup_loop.sh:/usr/local/bin/quizparty-backup:ro
+    command: ["sh", "/usr/local/bin/quizparty-backup", "loop"]
+
 volumes:
   postgres_data:   # PostgreSQL data directory
   app_images:      # uploaded quiz images

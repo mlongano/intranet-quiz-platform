@@ -190,15 +190,34 @@ sudo systemctl enable docker
 
 ### Backups
 
-The `app_backups` Docker volume stores `pg_dump` archives and image tarballs. Add a cron job on the host:
+`compose.yaml` includes an automatic `backup` service. It creates a backup on startup and then every 6 hours by default:
+
+- PostgreSQL custom dumps in the `app_backups` volume under `db/`
+- uploaded quiz image tarballs under `images/`
+- JSON manifests under `manifests/`
+
+Tune retention and interval in `.env`:
 
 ```bash
-# /etc/cron.d/quizparty-backup
-0 2 * * * root docker compose -f /opt/quizparty/compose.yaml exec -T app \
-  sh -c 'pg_dump --format=custom $DATABASE_URL > backups/db/quizparty-$(date +\%F).dump && \
-         tar czf backups/images/images-$(date +\%F).tar.gz images/ && \
-         find backups/ \( -name "*.dump" -o -name "*.tar.gz" \) | sort | head -n -30 | xargs rm -f'
+BACKUP_ON_START=1
+BACKUP_INTERVAL_SECONDS=21600
+BACKUP_RETENTION_DAYS=30
 ```
+
+Run an immediate backup manually:
+
+```bash
+docker compose run --rm backup sh /usr/local/bin/quizparty-backup once
+```
+
+Restore dry-run and restore command:
+
+```bash
+scripts/restore_backup.sh --dry-run --latest
+scripts/restore_backup.sh --latest --confirm RESTORE_QUIZPARTY
+```
+
+See `docs/OPERATIONS.md` for the full backup/restore procedure.
 
 ---
 
