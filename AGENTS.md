@@ -5,6 +5,23 @@ For architecture, data models, quiz flow, and project context see **CLAUDE.md**.
 
 ## Development Commands
 
+### Docker / Proxmox LXC
+```bash
+# Required on the school Proxmox LXC host before Docker builds.
+# The default Docker builder hits LXC/AppArmor failures during Dockerfile RUN steps.
+docker buildx use lxc-remote2
+
+# Debug stack with Flask + Vite hot reload.
+docker compose -f compose.yaml -f compose-debug.yaml up --build
+```
+
+Notes:
+- `.env` sets `APP_PORT=5002` for this platform because host port `5001` is used by the legacy single-tenant service.
+- Compose maps `${APP_PORT:-5002}:5001`; Flask still listens on container-internal port `5001`.
+- `compose.yaml` is the normal/production stack (`db`, `app`, `worker`). The React frontend is built into the `app` image and served from `frontend/dist`.
+- `compose-debug.yaml` is the development override. It adds the separate `frontend` container for Vite hot reload on port `5173`.
+- `security_opt: apparmor:unconfined` helps runtime containers only; Dockerfile build steps require the `lxc-remote2` BuildKit builder.
+
 ### Backend (Python)
 ```bash
 uv run server.py              # Dev server (http://localhost:5001)

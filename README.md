@@ -49,7 +49,31 @@ Everything else in `.env` is optional (email, LLM grading, Google Workspace sync
 docker compose up -d
 ```
 
-This builds the image (first run takes ~2 min), starts PostgreSQL, waits for it to be healthy, applies the database schema, and starts the app on **http://localhost:5001**.
+This builds the image (first run takes ~2 min), starts PostgreSQL, waits for it to be healthy, applies the database schema, and starts the app on the host port configured by `APP_PORT` (`5002` in the school deployment; container-internal Flask still listens on `5001`).
+
+#### Proxmox LXC / debug build note
+
+On the school server Docker runs inside a Proxmox LXC container. The default Docker BuildKit builder can fail during Dockerfile `RUN` steps with AppArmor errors such as:
+
+```text
+unable to apply apparmor profile
+apparmor_parser: Access denied
+```
+
+Use the preconfigured remote BuildKit builder before building the debug stack:
+
+```bash
+docker buildx use lxc-remote2
+docker compose -f compose.yaml -f compose-debug.yaml up --build
+```
+
+`lxc-remote2` points at a BuildKit daemon started with AppArmor disabled for build containers, avoiding the LXC/AppArmor limitation. The `security_opt: apparmor:unconfined` entries in Compose help runtime containers, but they do not apply to Dockerfile build steps.
+
+#### Production vs development Compose modes
+
+- `compose.yaml` is the normal/production stack: `db`, `app`, and `worker`. The React frontend is built during the Docker image build and copied into `frontend/dist`; Flask serves that static build from the `app` container.
+- `compose-debug.yaml` is a development override. It adds the separate `frontend` container, which runs Vite on port `5173` with hot reload and bind-mounted source files.
+- Therefore the `frontend` container is only used with `docker compose -f compose.yaml -f compose-debug.yaml ...`; it is not part of the normal production stack.
 
 Check that everything is running:
 
@@ -68,7 +92,7 @@ You will be prompted for an email and password. Use the email you set as `ADMIN_
 
 ### 5. Log in
 
-Open **http://localhost:5001/teacher/login**, enter your credentials, and change your password when prompted.
+Open the configured app URL, for example **http://localhost:5002/teacher/login** in the school deployment, enter your credentials, and change your password when prompted.
 
 ---
 
@@ -108,7 +132,7 @@ Pass `--discard-in-flight` to proceed even if `quizzes/` is non-empty.
 
 ## Production: putting it behind Nginx
 
-In production the Docker stack runs on `localhost:5001` and Nginx sits in front for TLS and to serve quiz images directly.
+In production the Docker stack runs on the host port configured by `APP_PORT` and Nginx sits in front for TLS and to serve quiz images directly. In the school deployment this platform uses `APP_PORT=5002` because port `5001` is reserved for the legacy single-tenant service.
 
 ### Generate a self-signed certificate
 
