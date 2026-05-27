@@ -40,7 +40,7 @@ services:
       - "${APP_PORT:-5002}:5001"
     volumes:
       - app_images:/app/images        # quiz images (persistent across deployments)
-      - app_backups:/app/backups      # pg_dump + tar archives
+      - ./backups:/app/backups        # host-visible pg_dump + image archives
 
   # ── Background LLM grading worker ──────────────────────────────────────────
   worker:
@@ -60,7 +60,7 @@ services:
       IMAGES_BASE: /app/images
     volumes:
       - app_images:/app/images
-      - app_backups:/app/backups
+      - ./backups:/app/backups
     command: ["python", "-m", "services.llm_jobs", "worker"]
 
   # ── Automatic backups ──────────────────────────────────────────────────────
@@ -84,7 +84,7 @@ services:
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
       BACKUP_ON_START: ${BACKUP_ON_START:-1}
     volumes:
-      - app_backups:/backups
+      - ./backups:/backups
       - app_images:/images:ro
       - ./scripts/backup_loop.sh:/usr/local/bin/quizparty-backup:ro
     command: ["sh", "/usr/local/bin/quizparty-backup", "loop"]
@@ -92,4 +92,3 @@ services:
 volumes:
   postgres_data:   # PostgreSQL data directory
   app_images:      # uploaded quiz images
-  app_backups:     # database and image backup archives

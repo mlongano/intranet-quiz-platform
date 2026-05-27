@@ -192,9 +192,9 @@ sudo systemctl enable docker
 
 `compose.yaml` includes an automatic `backup` service. It creates a backup on startup and then every 6 hours by default:
 
-- PostgreSQL custom dumps in the `app_backups` volume under `db/`
-- uploaded quiz image tarballs under `images/`
-- JSON manifests under `manifests/`
+- PostgreSQL custom dumps under `./backups/db/`
+- uploaded quiz image tarballs under `./backups/images/`
+- JSON manifests under `./backups/manifests/`
 
 Tune retention and interval in `.env`:
 

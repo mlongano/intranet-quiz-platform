@@ -2,7 +2,7 @@
 set -eu
 
 COMPOSE_FILE=${COMPOSE_FILE:-compose.yaml}
-BACKUP_VOLUME_PATH=${BACKUP_VOLUME_PATH:-/var/lib/docker/volumes/quizpartyplatform_app_backups/_data}
+BACKUP_VOLUME_PATH=${BACKUP_VOLUME_PATH:-$PWD/backups}
 DB_DUMP=${DB_DUMP:-}
 IMAGES_TAR=${IMAGES_TAR:-}
 DRY_RUN=0

@@ -91,12 +91,12 @@ exists, create and reset Teacher accounts from the Super-admin UI.
 Back up both PostgreSQL and uploaded images. PostgreSQL is the source of truth
 for app data; the image volume stores files referenced by Quiz versions.
 
-`compose.yaml` runs the `backup` service by default. It uses `scripts/backup_loop.sh` inside a `postgres:16-alpine` container and writes to the `app_backups` Docker volume:
+`compose.yaml` runs the `backup` service by default. It uses `scripts/backup_loop.sh` inside a `postgres:16-alpine` container and writes to the host-visible `./backups/` directory:
 
 ```text
-/backups/db/quizparty-YYYYMMDDTHHMMSSZ.dump
-/backups/images/quizparty-images-YYYYMMDDTHHMMSSZ.tar.gz
-/backups/manifests/quizparty-YYYYMMDDTHHMMSSZ.json
+./backups/db/quizparty-YYYYMMDDTHHMMSSZ.dump
+./backups/images/quizparty-images-YYYYMMDDTHHMMSSZ.tar.gz
+./backups/manifests/quizparty-YYYYMMDDTHHMMSSZ.json
 ```
 
 Default policy:
@@ -151,8 +151,8 @@ Restore explicit files:
 
 ```bash
 scripts/restore_backup.sh \
-  --db-dump /var/lib/docker/volumes/quizpartyplatform_app_backups/_data/db/quizparty-YYYYMMDDTHHMMSSZ.dump \
-  --images-tar /var/lib/docker/volumes/quizpartyplatform_app_backups/_data/images/quizparty-images-YYYYMMDDTHHMMSSZ.tar.gz \
+  --db-dump ./backups/db/quizparty-YYYYMMDDTHHMMSSZ.dump \
+  --images-tar ./backups/images/quizparty-images-YYYYMMDDTHHMMSSZ.tar.gz \
   --confirm RESTORE_QUIZPARTY
 ```
 

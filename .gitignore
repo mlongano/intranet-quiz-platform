@@ -12,6 +12,9 @@ wheels/
 .env
 secrets/
 
+# Local production backups; never commit database dumps or image archives.
+backups/
+
 # Legacy v2.6.0 single-tenant data files (now in PostgreSQL)
 /quizzes/
 /questions.jsonc*
