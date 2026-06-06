@@ -28,9 +28,15 @@ function FinishPage() {
             </p>
             <p className="text-sm text-on-surface-variant">{submitResult.percent.toFixed(1)}%</p>
             {isProvisional && (
-              <p className="mt-2 text-xs text-secondary">
-                Alcune risposte aperte sono in attesa di valutazione automatica.
-              </p>
+              <div className="mt-3 px-3 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-md">
+                <p className="text-xs text-yellow-700 dark:text-yellow-300 font-medium">
+                  {submitResult.pending_open_count} risposte aperte non ancora valutate
+                  ({submitResult.pending_open_weight} punti su {submitResult.max_points.toFixed(0)})
+                </p>
+                <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                  Il punteggio potrebbe cambiare dopo la valutazione.
+                </p>
+              </div>
             )}
           </div>
         )}

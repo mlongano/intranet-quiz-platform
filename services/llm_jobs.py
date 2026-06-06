@@ -42,6 +42,9 @@ def create_llm_job(
 
 def enqueue_regrade_session(session_id: int, teacher_id: int) -> dict:
     """Mark open answers pending and create a regrade job without calling the LLM."""
+    import os as _os
+    _cooldown = int(_os.getenv('LLM_REGRADE_COOLDOWN_SECONDS', '60'))
+
     total_items = 0
     with db.get_conn() as conn:
         owner = conn.execute(
@@ -52,6 +55,19 @@ def enqueue_regrade_session(session_id: int, teacher_id: int) -> dict:
             raise NotFound(description="Session not found.")
         if owner[0] != teacher_id:
             raise Forbidden(description="Not your session.")
+
+        # ── rate limit ───────────────────────────────────────────────────
+        row = conn.execute(
+            """SELECT EXTRACT(EPOCH FROM (now() - last_regrade_at))
+               FROM quiz_sessions WHERE id = %s""",
+            (session_id,),
+        ).fetchone()
+        if row and row[0] is not None and row[0] < _cooldown:
+            remaining = int(_cooldown - row[0])
+            from werkzeug.exceptions import TooManyRequests
+            raise TooManyRequests(
+                f"Attendi {remaining} secondi prima di una nuova rivalutazione."
+            )
 
         rows = conn.execute(Q.LIST_SCORES_FOR_SESSION, (session_id,)).fetchall()
         for row in rows:
@@ -100,6 +116,10 @@ def enqueue_regrade_session(session_id: int, teacher_id: int) -> dict:
                 'error': None,
             })
             job['status'] = 'completed'
+        conn.execute(
+            "UPDATE quiz_sessions SET last_regrade_at = now() WHERE id = %s",
+            (session_id,),
+        )
         conn.commit()
     return job
 
@@ -201,6 +221,8 @@ def _score_ids_for_job(job: dict) -> list[int]:
 
 
 def _process_next_answer_for_score(job: dict, score_id: int) -> bool:
+    from services.score_transforms import record_score_history
+
     with db.get_conn() as conn:
         row = conn.execute(
             Q.GET_SCORE_ENTRY_FOR_LLM_JOB,
@@ -210,6 +232,8 @@ def _process_next_answer_for_score(job: dict, score_id: int) -> bool:
             conn.commit()
             return False
         answers = ensure_list(row[7])
+        old_percent = float(row[6]) if row[6] is not None else None  # score_entries.percent
+        old_answers = ensure_list(row[7])
         changed = _process_one_pending_answer(answers)
         if not changed:
             conn.commit()
@@ -223,6 +247,16 @@ def _process_next_answer_for_score(job: dict, score_id: int) -> bool:
             'id': score_id,
             'teacher_id': job['teacher_id'],
         })
+        record_score_history(
+            conn,
+            score_entry_id=score_id,
+            old_answers=old_answers,
+            new_answers=answers,
+            old_percent=old_percent,
+            new_percent=percent,
+            reason='regrade_llm',
+            changed_by=job['teacher_id'],
+        )
         conn.commit()
     return True
 

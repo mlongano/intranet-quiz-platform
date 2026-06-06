@@ -17,7 +17,7 @@ services:
       INSTALL_DEV_DEPS: "1"
     volumes:
       - app_images:/app/images
-      - app_backups:/app/backups
+      - ./backups:/app/backups
       # Bind-mount Python source for live reload
       - ./auth:/app/auth:ro
       - ./db:/app/db:ro
@@ -38,7 +38,7 @@ services:
       INSTALL_DEV_DEPS: "1"
     volumes:
       - app_images:/app/images
-      - app_backups:/app/backups
+      - ./backups:/app/backups
       - ./auth:/app/auth:ro
       - ./db:/app/db:ro
       - ./routes:/app/routes:ro

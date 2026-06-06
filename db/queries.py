@@ -562,3 +562,17 @@ GET_SYNC_RUN = """
     FROM sync_runs
     WHERE id = %s
 """
+
+# ── score history ────────────────────────────────────────────────────────────
+
+INSERT_SCORE_HISTORY = """
+    INSERT INTO score_history
+        (score_entry_id, answer_index, old_points, new_points,
+         old_percent, new_percent, reason,
+         llm_provider, llm_model, changed_by)
+    VALUES (
+        %(score_entry_id)s, %(answer_index)s, %(old_points)s, %(new_points)s,
+        %(old_percent)s, %(new_percent)s, %(reason)s,
+        %(llm_provider)s, %(llm_model)s, %(changed_by)s
+    )
+"""

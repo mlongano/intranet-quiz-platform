@@ -36,7 +36,12 @@ def score_open(user_ans: str, q: dict) -> float:
 
 
 def grade_open_answer(user_ans: str, q: dict) -> dict:
-    """Grade one open answer using the same LLM/keyword policy as full grading."""
+    """Grade one open answer using LLM evaluation.
+
+    When USE_LLM_EVAL is enabled it calls the configured LLM.
+    If the LLM is unavailable the answer is left pending (0 points)
+    so the teacher can regrade later — no opaque keyword fallback.
+    """
     w = q.get('weight', 1)
     use_llm = os.getenv('USE_LLM_EVAL', '0') == '1'
     llm_feedback = None
@@ -51,21 +56,25 @@ def grade_open_answer(user_ans: str, q: dict) -> dict:
             open_score_fraction = max(0.0, min(1.0, open_score_fraction))
             llm_feedback = llm_result.get('llm_feedback')
             llm_verdict = llm_result.get('verdict')
+            return {
+                'points': w * open_score_fraction,
+                'llm_feedback': llm_feedback,
+                'llm_verdict': llm_verdict,
+            }
         except Exception as e:
-            print(f"LLM evaluation failed: {e}. Falling back to keyword scoring.")
-            open_score_fraction = score_open(user_ans or '', q)
-            llm_feedback = (
-                "Valutazione LLM non disponibile: uso della valutazione "
-                "di fallback basata su parole chiave."
-            )
-            llm_verdict = 'fallback'
-    else:
-        open_score_fraction = score_open(user_ans or '', q)
+            print(f"LLM evaluation failed: {e}. Leaving answer pending.")
+            return {
+                'points': 0.0,
+                'llm_feedback': f'LLM non disponibile durante la valutazione: {e}',
+                'llm_verdict': None,
+                'llm_pending': True,
+            }
 
     return {
-        'points': w * open_score_fraction,
-        'llm_feedback': llm_feedback,
-        'llm_verdict': llm_verdict,
+        'points': 0.0,
+        'llm_feedback': None,
+        'llm_verdict': None,
+        'llm_pending': True,
     }
 
 
@@ -122,8 +131,11 @@ def grade(answers: list, plan: dict, qbank: dict, *, defer_open: bool = False) -
                 question_score = open_result['points']
                 llm_feedback = open_result.get('llm_feedback')
                 llm_verdict = open_result.get('llm_verdict')
-                if os.getenv('USE_LLM_EVAL', '0') == '1':
-                    llm_status = 'fallback' if llm_verdict == 'fallback' else 'graded'
+                if open_result.get('llm_pending'):
+                    llm_status = 'pending'
+                    llm_error = open_result.get('llm_feedback')  # reason
+                elif os.getenv('USE_LLM_EVAL', '0') == '1':
+                    llm_status = 'graded'
 
         elif q_type == 'single':
             original_correct_index = q.get('correct')

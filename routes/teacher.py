@@ -424,6 +424,7 @@ def review_scores(session_id: int):
         session_id, teacher_id,
         entry_ids=list(overrides_by_id.keys()),
         transform_fn=_review_fn,
+        reason='manual_review',
     )
     return jsonify({'ok': True, 'updated': updated}), 200
 

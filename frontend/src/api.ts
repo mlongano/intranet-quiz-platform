@@ -359,6 +359,8 @@ export interface SubmitResponse {
   percent: number;
   status: 'provisional' | 'final';
   llm_pending: boolean;
+  pending_open_count: number;
+  pending_open_weight: number;
 }
 
 export async function submitQuiz(quiz_id: string): Promise<SubmitResponse> {

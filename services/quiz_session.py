@@ -337,6 +337,11 @@ def submit_plan(quiz_id: str, student_id: int) -> dict:
             for answer in detailed
             if answer.get('type') == 'open' and answer.get('llm_status') == 'pending'
         )
+        pending_open_weight = sum(
+            answer.get('weight', 0)
+            for answer in detailed
+            if answer.get('type') == 'open' and answer.get('llm_status') == 'pending'
+        )
         if pending_open_count:
             from services.llm_jobs import create_llm_job
             create_llm_job(
@@ -348,6 +353,19 @@ def submit_plan(quiz_id: str, student_id: int) -> dict:
                 total_items=pending_open_count,
             )
 
+        # Record score history for initial submission
+        from services.score_transforms import record_score_history
+        record_score_history(
+            conn,
+            score_entry_id=score_row[0],
+            old_answers=None,
+            new_answers=detailed,
+            old_percent=None,
+            new_percent=grade_result['percent'],
+            reason='submission',
+            changed_by=teacher_id,
+        )
+
         conn.execute(Q.DELETE_PLAN, (quiz_id,))
         conn.commit()
 
@@ -357,6 +375,8 @@ def submit_plan(quiz_id: str, student_id: int) -> dict:
         'percent': grade_result['percent'],
         'status': 'provisional' if pending_open_count else 'final',
         'llm_pending': bool(pending_open_count),
+        'pending_open_count': pending_open_count,
+        'pending_open_weight': pending_open_weight,
     }
 
 

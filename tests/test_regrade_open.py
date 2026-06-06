@@ -48,9 +48,10 @@ def test_grade_open_answer_returns_feedback_when_llm_fails(monkeypatch):
         {'id': 'q1', 'type': 'open', 'text': 'Spiega.', 'keywords': ['parola'], 'weight': 2},
     )
 
-    assert result['points'] == 2
-    assert result['llm_verdict'] == 'fallback'
-    assert 'Valutazione LLM non disponibile' in result['llm_feedback']
+    # When LLM fails the answer is left pending (0 points) — no opaque keyword fallback.
+    assert result['points'] == 0.0
+    assert result['llm_pending'] is True
+    assert 'model unavailable' in str(result.get('llm_feedback', ''))
 
 
 def test_regrade_open_enqueues_job_and_worker_uses_shared_grader(

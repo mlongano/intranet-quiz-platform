@@ -35,6 +35,7 @@ def transform_scores(
     *,
     entry_ids: Iterable[int] | None = None,
     transform_fn: TransformFn,
+    reason: str = 'recalculate',
 ) -> int:
     """Apply *transform_fn* to score entries in *session_id*.
 
@@ -80,6 +81,10 @@ def transform_scores(
             new_max = round(sum(a.get("weight", 0) for a in new_answers), 2)
             new_pct = round(new_raw / new_max * 100, 2) if new_max else 0
 
+            old_raw = round(sum(a.get("points_awarded", 0) for a in answers), 2)
+            old_max = round(sum(a.get("weight", 0) for a in answers), 2)
+            old_pct = round(old_raw / old_max * 100, 2) if old_max else 0
+
             conn.execute(Q.UPDATE_SCORE_ANSWERS, {
                 "answers": json.dumps(new_answers),
                 "raw_points": new_raw,
@@ -88,6 +93,16 @@ def transform_scores(
                 "id": score_id,
                 "teacher_id": teacher_id,
             })
+            record_score_history(
+                conn,
+                score_entry_id=score_id,
+                old_answers=answers,
+                new_answers=new_answers,
+                old_percent=old_pct,
+                new_percent=new_pct,
+                reason=reason,
+                changed_by=teacher_id,
+            )
             updated += 1
 
         conn.commit()
@@ -96,6 +111,49 @@ def transform_scores(
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
+def record_score_history(
+    conn,  # psycopg.Connection on which caller already manages commit
+    *,
+    score_entry_id: int,
+    old_answers: list[dict] | None,
+    new_answers: list[dict],
+    old_percent: float | None,
+    new_percent: float,
+    reason: str,
+    changed_by: int,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
+) -> None:
+    """Insert score_history rows for each answer whose points changed.
+
+    old_answers may be None (first submission — every answer is new).
+    Each row records a single answer-index delta so the audit trail is
+    granular and cheap to query.
+    """
+    for idx, new_a in enumerate(new_answers):
+        new_pts = new_a.get('points_awarded', 0)
+        old_pts = None
+        if old_answers is not None and idx < len(old_answers):
+            old_pts = old_answers[idx].get('points_awarded')
+
+        # Skip unchanged — for first submission every answer is new
+        if old_answers is not None and old_pts == new_pts:
+            continue
+
+        conn.execute(Q.INSERT_SCORE_HISTORY, {
+            'score_entry_id': score_entry_id,
+            'answer_index': idx,
+            'old_points': None if old_pts is None else round(float(old_pts), 2),
+            'new_points': round(float(new_pts), 2),
+            'old_percent': None if old_percent is None else round(float(old_percent), 2),
+            'new_percent': round(float(new_percent), 2),
+            'reason': reason,
+            'llm_provider': llm_provider,
+            'llm_model': llm_model,
+            'changed_by': changed_by,
+        })
+
 
 def load_qbank_for_session(
     conn,              # psycopg.Connection
