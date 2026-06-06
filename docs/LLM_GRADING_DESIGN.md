@@ -31,26 +31,52 @@ scrivere altro codice su valutazione/rivalutazione.
 
 ### Cosa deve succedere
 
-Quando la valutazione LLM non è disponibile, la risposta aperta deve restare
-**pending** con 0 punti fino a quando non viene valutata esplicitamente:
+Le domande aperte sono valutate esclusivamente dall'LLM oppure manualmente dal
+docente. Il keyword scoring è troppo impreciso per assegnare punti e non deve
+essere usato come fallback né come modalità alternativa.
 
-- `grade_open_answer()` restituisce `points=0`, `llm_status='pending'`,
-  `llm_error='LLM unavailable: <reason>'` invece di chiamare `score_open()`.
-- La `points_awarded` nella `DetailedAnswer` resta 0; il `score_entries.percent`
-  ignora le domande pending (o le conta come 0, ma con flag visibile).
+Quando la valutazione LLM non è disponibile, la risposta aperta deve restare
+**pending** con 0 punti fino a quando non viene valutata dall'LLM o dal docente:
+
+- `grade_open_answer()` non chiama mai `score_open()`.
+- Un errore LLM produce uno stato `pending` con `points_awarded=0` e
+  `llm_error` valorizzato. Non produce mai un voto definitivo.
+- Il worker distingue errori temporanei, eventualmente ritentabili, da errori
+  definitivi di configurazione. Entrambi lasciano la risposta `pending`; il
+  dettaglio dell'errore resta visibile al docente.
+- `score_entries.percent` continua a essere calcolato sul massimo totale,
+  contando le risposte pending come 0. Finché esistono pending, il valore è
+  esplicitamente un **punteggio provvisorio**, non il risultato definitivo.
+- Le API espongono `grading_complete`, `pending_open_count` e
+  `pending_open_weight`.
 - Al momento della consegna, il frontend mostra un messaggio:
-  «**N risposte aperte non ancora valutate (X punti su Y)**»
+  «**Punteggio provvisorio: N risposte aperte non ancora valutate
+  (X punti ancora da assegnare)**».
 - Il banner appare ogni volta che lo studente consulta i punteggi e ci sono
   pending, finché tutte le aperte non sono state valutate.
 - Lo stesso deve valere dopo la riapertura di una sessione: se arriva un nuovo
   submit e il LLM non è disponibile, le nuove aperte vanno in pending.
+- Una sessione può essere chiusa con risposte ancora pending. Il punteggio
+  rimane provvisorio e il banner rimane visibile allo studente finché il
+  docente non completa la valutazione. Non viene impedita la chiusura: la
+  responsabilità di completare il ciclo è del docente.
+- Una valutazione manuale imposta `llm_status='graded'` e
+  `manual_override=true`; non viene sovrascritta da rivalutazioni automatiche
+  salvo richiesta esplicita del docente. Vedere la sezione
+  **Invariante di sistema — Protezione valutazioni manuali**.
 
 ### Impatto
 
-- `services/grading.py`: `grade_open_answer()` — rimuovere fallback keyword.
+- `services/grading.py`: `grade_open_answer()` — rimuovere completamente il
+  fallback keyword dal flusso delle domande aperte. `score_open()` viene
+  deprecata per i percorsi di produzione (non chiamata né da
+  `grade_open_answer()` né da `regrade_open_fn` in `score_transforms.py`);
+  resta disponibile nei test unitari fino alla Fase 3.
+- `services/llm_jobs.py`: preservare `pending` e `llm_error` quando il provider
+  fallisce, senza convertire il risultato in `graded`.
 - `services/quiz_session.py`: `submit_quiz()` — mostrare conteggio pending.
-- `routes/quiz.py`: endpoint submit — includere `pending_open_count` nella
-  response.
+- `routes/quiz.py`: endpoint submit e punteggi — includere
+  `grading_complete`, `pending_open_count` e `pending_open_weight`.
 - `frontend`: `QuizPage.tsx` o componente punteggi — banner pending.
 - `tests`: aggiornare test esistenti su `grade_open_answer`.
 
@@ -68,78 +94,83 @@ Quando la valutazione LLM non è disponibile, la risposta aperta deve restare
 
 ### Cosa deve succedere
 
-Ogni docente può configurare le proprie credenziali LLM. Ci sono **due tipi**
-di autenticazione, non solo API key:
+Ogni docente può configurare le proprie credenziali LLM. La prima
+implementazione supporta soltanto meccanismi di autenticazione ufficialmente
+documentati dal provider per applicazioni di terze parti.
 
-**1. API key (OpenAI, Anthropic, DeepSeek, provider custom)**
+**API key (OpenAI, Anthropic, DeepSeek, provider custom)**
 
 Il docente incolla una chiave nel pannello impostazioni. Usata direttamente
-nelle chiamate API (header `Authorization: Bearer sk-...`).
+nelle chiamate API secondo il protocollo del provider.
 
-**2. OAuth2 / subscription (Codex, OpenCode Go, …)**
+Le credenziali non vengono salvate in chiaro dentro `teachers.llm_config`.
+Configurazione non sensibile e segreti hanno storage separato:
 
-Alcuni servizi non forniscono API key ma usano OAuth2 con login browser.
-Esempio: Codex Pro si autentica con `codex login` che apre il browser,
-l'utente autorizza, e il provider restituisce un JWT access token + refresh
-token. Il token è legato all'account e determina quali modelli sono disponibili.
+- `teachers.llm_config`: provider, modelli, endpoint e preferenze, senza segreti.
+- `teacher_llm_credentials`: API key o token cifrati a livello applicativo.
+- La chiave master di cifratura vive fuori dal database, in una variabile
+  d'ambiente o secret Docker dedicato (`CREDENTIAL_ENCRYPTION_KEY`).
+- Algoritmo: AES-256-GCM con IV/nonce casuale per ogni credenziale (o Fernet,
+  che include HMAC per autenticità). L'algoritmo è fisso nel codice; nessuna
+  auto-detection a runtime.
+- Rotazione della chiave master: le credenziali già cifrate devono essere
+  re-cifrate prima di sostituire `CREDENTIAL_ENCRYPTION_KEY`. Il modulo di
+  cifratura espone `re_encrypt_all(old_key, new_key, conn)` — operazione
+  offline, atomica per transazione, testabile in isolamento.
+- Gli endpoint di lettura non restituiscono mai il segreto: mostrano soltanto
+  stato configurato/non configurato e una fingerprint redatta.
+- Log, eccezioni e audit non devono contenere credenziali.
 
-**Struttura `teachers.llm_config`**:
+**Struttura `teachers.llm_config` senza segreti**:
 
 ```json
 {
   "providers": {
     "openai": {
       "type": "api_key",
-      "api_key": "sk-...",
       "models": ["gpt-4o-mini", "gpt-4o"]
-    },
-    "openai-codex": {
-      "type": "oauth",
-      "access_token": "eyJ...",
-      "refresh_token": "rt_...",
-      "expires_at": "2026-06-07T12:00:00Z",
-      "account_id": "9abf12f0-...",
-      "models": ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "o4-mini"]
     },
     "custom": {
       "type": "api_key",
-      "api_key": "...",
       "base_url": "https://api.opencode.ai/v1",
       "models": ["opencode-gpt-4o"]
     }
   },
-  "default_provider": "openai-codex",
-  "default_model": "gpt-4.1"
+  "default_provider": "openai",
+  "default_model": "gpt-4o-mini"
 }
 ```
 
-**Flusso OAuth per docente**:
-
-1. Il docente clicca «Collega account Codex» nelle impostazioni.
-2. Il backend genera un `state` token e reindirizza al provider OAuth.
-3. Il docente autorizza nel browser.
-4. Il provider reindirizza al callback del backend con il codice.
-5. Il backend scambia il codice per access + refresh token e li salva in
-   `teachers.llm_config`.
-6. Prima di ogni chiamata LLM, se l'access token è scaduto, il backend
-   usa il refresh token per ottenerne uno nuovo (trasparente al docente).
-
 **UI**:
 - Per provider API key: campo password «Incolla la tua chiave API».
-- Per provider OAuth: pulsante «Collega account» che apre il flusso browser.
-  Mostra stato: «Connesso come mauro@oruam.org» o «Non connesso».
+- Dopo il salvataggio mostra soltanto «Chiave configurata» e la fingerprint
+  redatta; la chiave non può essere riletta dal browser.
+
+**OAuth/subscription**:
+
+Il login di Codex CLI e le subscription ChatGPT/Codex non sono considerati
+un'API OAuth pubblica riutilizzabile da QuizParty. Non si copiano token o
+credenziali locali generati da client ufficiali e non si assume che una
+subscription dia accesso alle normali API del provider.
+
+Un provider OAuth potrà essere aggiunto in futuro solo se pubblica un flusso
+ufficiale per applicazioni terze, con client registration, scope, callback,
+refresh e condizioni d'uso documentate. Sarà una fase separata.
 
 **Nessun fallback** a chiavi globali: se un docente non ha configurato
 `llm_config`, semplicemente non può usare la valutazione LLM. Le risposte
- aperte restano pending finché non configura le chiavi o valuta manualmente.
+aperte restano pending finché non configura le chiavi o valuta manualmente.
 
 ### Impatto
 
-- Migrazione: `ALTER TABLE teachers ADD COLUMN llm_config JSONB`.
+- Migrazione: `ALTER TABLE teachers ADD COLUMN llm_config JSONB` e nuova
+  tabella `teacher_llm_credentials` per i segreti cifrati.
 - Nuovo modulo: `services/llm_provider.py` — risolve provider/chiavi dal docente.
+- Nuovo modulo o helper dedicato alla cifratura e rotazione delle credenziali.
 - `services/grading.py`: `grade_open_answer()` riceve `teacher_id` e risolve le
   chiavi dal docente.
-- `routes/teacher.py`: endpoint per salvare/leggere `llm_config`.
+- `routes/teacher.py`: endpoint per salvare configurazione e credenziali; le
+  risposte sono sempre redatte.
 - `frontend`: nuova pagina o pannello «Configurazione LLM» nelle impostazioni
   docente.
 - Rimozione dipendenza da variabili d'ambiente globali per le chiamate LLM.
@@ -153,9 +184,8 @@ token. Il token è legato all'account e determina quali modelli sono disponibili
 - Si usa la libreria Python `llm` (Datasette) con plugin per provider.
 - I plugin hanno supporto parziale: es. il plugin DeepSeek non espone i modelli
   V4 Pro, V4 Flash.
-- Le subscription Codex Pro e OpenCode Go _possono_ funzionare puntando
-  `OPENAI_API_BASE` al loro endpoint, ma la lista modelli è cablata nei plugin:
-  non c'è modo pulito di esporre modelli arbitrari di un provider custom.
+- La lista dei modelli è cablata nei plugin e non c'è un modo pulito di
+  configurare modelli arbitrari di un endpoint custom.
 - Aggiunge un layer di astrazione non necessario per il nostro caso d'uso
   (una singola chiamata prompt/risposta).
 
@@ -191,6 +221,25 @@ def evaluate_open_question(
 ) -> dict:
     """Restituisce {'score': float 0-1, 'verdict': str, 'llm_feedback': str}"""
 ```
+
+L'interfaccia restituisce un dizionario soltanto quando la risposta del
+provider è valida e supera la validazione dello schema. In caso contrario
+solleva eccezioni tipizzate:
+
+```python
+class LlmTemporaryError(Exception):
+    """Timeout, rate limit o indisponibilità: il worker può ritentare."""
+
+class LlmConfigurationError(Exception):
+    """Credenziali, modello o endpoint non validi: richiede intervento docente."""
+
+class LlmInvalidResponseError(Exception):
+    """Risposta ricevuta ma non conforme allo schema atteso."""
+```
+
+`grade_open_answer()` propaga queste eccezioni. Non restituisce un punteggio
+zero che potrebbe essere scambiato per una valutazione valida. Il worker è
+l'unico responsabile di retry, stato `pending` e registrazione dell'errore.
 
 Il sistema prompt (da `prompts/open-question-system.md`) resta invariato:
 cambia solo il trasporto.
@@ -239,14 +288,42 @@ cambia solo il trasporto.
    «Attenzione: la rivalutazione può modificare i punteggi già assegnati,
    anche in diminuzione. Le risposte già valutate sono N.»
 
+5. **Rivalutazione non distruttiva**:
+   - Accodare un job non modifica punti, feedback, stato, provider o modello
+     della valutazione corrente.
+   - Per risposte mai valutate, lo stato corrente resta `pending`.
+   - Per risposte già valutate, il voto corrente resta valido e visibile mentre
+     la rivalutazione è in corso.
+   - Il worker valida il nuovo risultato e sostituisce la risposta corrente
+     nella stessa transazione che scrive lo storico.
+   - Se il provider fallisce, la valutazione precedente resta invariata e il
+     tentativo fallito viene registrato nel job. Una risposta senza valutazione
+     precedente resta `pending`.
+   - I `manual_override` sono esclusi per default e possono essere inclusi solo
+     tramite un'opzione separata con conferma esplicita.
+
+6. **Riproducibilità**: oltre a provider e modello, ogni valutazione registra
+   `prompt_version` e i parametri effettivi rilevanti. Il testo completo del
+   prompt resta versionato nel repository; non serve duplicarlo in ogni
+   risposta. Convenzione: il file `prompts/open-question-system.md` è
+   immutabile per ogni versione — la `prompt_version` è uno slug derivato
+   dall'hash SHA-256 dei primi 8 caratteri del contenuto (es. `v1-a3f8c2d1`).
+   Modificare il prompt genera una nuova versione; la precedente non viene
+   sovrascritta.
+
 ### Impatto
 
-- Migrazione: nessuna (i campi `llm_provider`/`llm_model` sono JSONB
-  dentro `answers`).
+- I campi `llm_provider`/`llm_model` restano nel JSONB `answers`, senza colonne
+  dedicate.
+- Una migrazione estende `llm_grading_jobs` con provider, modello, versione
+  prompt, parametri e scope della rivalutazione.
 - `services/llm_provider.py`: popolare `llm_provider` e `llm_model` nel
   risultato.
 - `services/llm_jobs.py`: `enqueue_regrade_session()` accetta `provider`
   e `model` opzionali; default dal `llm_config` del docente.
+- `llm_grading_jobs`: memorizza provider, modello, prompt version, scope della
+  rivalutazione e parametri effettivi, così il worker non dipende da una
+  configurazione che potrebbe cambiare dopo l'accodamento.
 - `routes/teacher.py`: endpoint regrade-open accetta `provider` e `model`
   nel body.
 - `frontend/src/pages/SessionScoresPage.tsx`: pannello rivalutazione con
@@ -255,63 +332,220 @@ cambia solo il trasporto.
 
 ---
 
-## Piano di implementazione
+## Invariante di sistema — Protezione valutazioni manuali
 
-### Fase 1 — Fallback → pending + storico + rate limit (priorità: immediata)
+Una risposta con `manual_override=true` è protetta per default da qualsiasi
+rivalutazione automatica LLM. La protezione è applicata a tre livelli
+complementari, in modo che nessun singolo punto di fallimento possa
+sovrascrivere silenziosamente una valutazione manuale.
 
-- `grade_open_answer()`: rimuove fallback keyword, restituisce `points=0`,
-  `llm_status='pending'`, `llm_error='LLM unavailable: <reason>'`.
-- `submit_quiz()`: la response include `pending_open_count` e `pending_open_weight`.
-- Migrazione `005`: tabella `score_history` + colonna
-  `quiz_sessions.last_regrade_at`.
-- `enqueue_regrade_session()`, `grade()`, route `review`: scrivono in
-  `score_history` a ogni cambio punteggio.
-- `enqueue_regrade_session()`: controllo rate limit su `last_regrade_at`.
-- Frontend: banner «N risposte non ancora valutate (X punti su Y)» dopo
-  submit e nella pagina punteggi finché ci sono pending.
+### 1. Il worker (enforcement primario)
 
-### Fase 2 — Chiavi per docente + tracciamento provider/modello
+Prima di scrivere ogni risposta, il worker controlla `manual_override` sulla
+risposta corrente. Se `true` e il job ha `force_override_manual=false`, la
+risposta viene saltata. Questo garantisce la protezione anche se il job è
+stato accodato con parametri errati o se la UI non ha applicato il controllo.
 
-Dipende dalla Fase 1. Aggiunge `llm_config`, endpoint docente, colonne
-`llm_provider`/`llm_model` negli answer.
+### 2. Il job (scope persistente)
 
-### Fase 3 — Sostituzione libreria `llm` con SDK diretti
+```sql
+-- colonna da aggiungere a llm_grading_jobs
+force_override_manual  BOOLEAN NOT NULL DEFAULT false
+```
 
-Dipende dalla Fase 2. Refactor interno: l'interfaccia pubblica
-(`grade_open_answer`) non cambia.
+Il worker legge `force_override_manual` dal record del job, non da una
+variabile runtime. Se un job è già in coda con `false`, un successivo cambio
+di configurazione non altera il comportamento del job in corso.
 
-### Fase 4 — UI rivalutazione con scelta modello
+La route `regrade-open` accetta `force_override_manual` nel body (default
+`false`). Quando `true`, il frontend mostra una conferma esplicita con il
+conteggio delle risposte manuali che verranno sovrascritte.
 
-Dipende dalle Fasi 2 e 3. Aggiunge il pannello di rivalutazione avanzato
-nel frontend.
+### 3. Il revert (ripristino del flag)
+
+Quando un revert ripristina una risposta la cui `old_answer` aveva
+`manual_override=true`, il revert deve ripristinare anche il flag, non solo
+i punti. Altrimenti una rivalutazione successiva la tratterebbe come non
+protetta.
+
+### Gerarchia
+
+```
+manual_override=true  →  protetta da qualsiasi job LLM automatico (default)
+                      →  sovrascrivibile solo con force_override_manual=true
+                                          + conferma esplicita in UI
+                      →  il revert ripristina il flag insieme ai punti
+```
 
 ---
 
-## Storico punteggi (da implementare nella Fase 1)
+## Piano di implementazione
+
+### Fase 1 — Semantica pending e punteggio provvisorio (priorità: immediata)
+
+- `grade_open_answer()`: rimuove ogni fallback keyword.
+- Il worker lascia `pending` con 0 punti quando una prima valutazione LLM
+  fallisce e non converte l'errore in `graded`.
+- `submit_quiz()` e le API punteggi includono `grading_complete`,
+  `pending_open_count` e `pending_open_weight`.
+- Frontend: banner di punteggio provvisorio dopo submit e nella pagina punteggi
+  finché esistono risposte pending.
+- Test verticali del contratto LLM riuscito, LLM fallito e review manuale.
+
+### Fase 2 — Rivalutazione non distruttiva, storico e concorrenza
+
+- Accodare una rivalutazione non modifica la valutazione corrente.
+- Migrazione `005`: tabelle `score_change_sets` e `score_history` + colonna
+  `quiz_sessions.last_regrade_at`.
+- Il worker LLM, `transform_scores()` e la route `review` scrivono in
+  `score_history` a ogni modifica effettiva.
+- Endpoint e UI per consultare lo storico e revertire atomicamente un intero
+  change set.
+- Un solo job `pending` o `running` per sessione, garantito dal database.
+- Cooldown aggiornato atomicamente nella stessa transazione di accodamento.
+- Test di job concorrenti, fallimento senza perdita del voto e conflitto sul
+  revert.
+
+### Fase 3 — Provider diretti e tracciamento
+
+Sostituisce la libreria `llm` con SDK diretti. Registra provider, modello,
+prompt version e parametri effettivi, mantenendo invariata l'interfaccia
+pubblica `grade_open_answer()`.
+
+### Fase 4 — Credenziali cifrate per docente
+
+Aggiunge `llm_config`, `teacher_llm_credentials`, endpoint redatti e gestione
+della chiave master. In questa fase sono supportate le API key ufficiali; OAuth
+resta escluso finché il provider non documenta un flusso per applicazioni terze.
+
+### Fase 5 — UI rivalutazione con scelta modello
+
+Dipende dalle fasi precedenti. Aggiunge il pannello di rivalutazione avanzato,
+la conferma per sovrascrivere valutazioni esistenti e la consultazione dello
+storico con revert.
+
+---
+
+## Storico punteggi e revert (da implementare nella Fase 2)
 
 Quando un punteggio viene modificato (rivalutazione LLM, recalculate,
-review manuale), il vecchio valore viene perso. Serve traccia per audit
-ed eventuale revert.
+review manuale), il vecchio valore viene perso. Serve una traccia completa
+per audit e per ripristinare in modo affidabile una modifica.
 
-### Tabella `score_history`
+Il solo delta dei punti non basta: una valutazione modifica anche stato,
+feedback, verdetto, errore, provider, modello e timestamp. Lo storico salva
+quindi l'intero oggetto `DetailedAnswer` prima e dopo la modifica, ma soltanto
+per le risposte effettivamente cambiate.
+
+### Tabelle `score_change_sets` e `score_history`
 
 ```sql
+CREATE TABLE score_change_sets (
+    id                  UUID PRIMARY KEY,
+    session_id          BIGINT NOT NULL REFERENCES quiz_sessions(id) ON DELETE CASCADE,
+    reason              TEXT NOT NULL CHECK (reason IN (
+                            'llm_grade',
+                            'llm_regrade',
+                            'manual_review',
+                            'recalculate',
+                            'revert'
+                        )),
+    actor_type          TEXT NOT NULL CHECK (actor_type IN ('teacher', 'system')),
+    changed_by          BIGINT REFERENCES teachers(id) ON DELETE SET NULL,
+    llm_job_id          BIGINT REFERENCES llm_grading_jobs(id) ON DELETE SET NULL,
+    reverted_change_id  UUID REFERENCES score_change_sets(id) ON DELETE SET NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (
+        (actor_type = 'teacher' AND changed_by IS NOT NULL)
+        OR actor_type = 'system'
+    ),
+    CHECK (
+        NOT (
+            actor_type = 'system'
+            AND reason IN ('llm_grade', 'llm_regrade')
+            AND llm_job_id IS NULL
+        )
+    )
+);
+CREATE INDEX idx_score_change_sets_session
+    ON score_change_sets(session_id, created_at DESC);
+
 CREATE TABLE score_history (
     id              BIGSERIAL PRIMARY KEY,
+    change_set_id   UUID NOT NULL REFERENCES score_change_sets(id) ON DELETE CASCADE,
     score_entry_id  BIGINT NOT NULL REFERENCES score_entries(id) ON DELETE CASCADE,
-    answer_index    INT NOT NULL,              -- posizione nell'array answers
-    old_points      NUMERIC(10,2),             -- NULL se prima valutazione
-    new_points      NUMERIC(10,2) NOT NULL,
-    old_percent     NUMERIC(6,2),
+    question_id     TEXT NOT NULL,
+    answer_index    INT NOT NULL,
+    old_answer      JSONB NOT NULL,
+    new_answer      JSONB NOT NULL,
+    old_raw_points  NUMERIC(10,2) NOT NULL,
+    new_raw_points  NUMERIC(10,2) NOT NULL,
+    old_percent     NUMERIC(6,2) NOT NULL,
     new_percent     NUMERIC(6,2) NOT NULL,
-    reason          TEXT NOT NULL,             -- 'regrade_llm' | 'manual_review' | 'recalculate'
-    llm_provider    TEXT,
-    llm_model       TEXT,
-    changed_by      BIGINT NOT NULL REFERENCES teachers(id),
-    changed_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (change_set_id, score_entry_id, question_id)
 );
-CREATE INDEX idx_score_history_entry ON score_history(score_entry_id, changed_at DESC);
+CREATE INDEX idx_score_history_entry
+    ON score_history(score_entry_id, created_at DESC);
+CREATE INDEX idx_score_history_change_set
+    ON score_history(change_set_id);
 ```
+
+`question_id` è l'identificatore stabile della risposta; `answer_index` viene
+conservato per ripristinare efficientemente l'array JSONB e per compatibilità
+con i dati storici.
+
+### Semantica del revert
+
+Il revert non cancella né modifica lo storico originale:
+
+1. Il docente seleziona un `score_change_set`.
+2. Il backend blocca con `FOR UPDATE` tutti gli `score_entries` coinvolti.
+3. Verifica che ogni risposta corrente non sia stata modificata dopo il
+   change set. Il confronto avviene sui campi determinanti:
+   `points_awarded`, `llm_status` e `manual_override` — non sull'intero
+   JSONB, per evitare falsi conflitti su campi marginali (`llm_feedback`,
+   timestamp). Se anche uno solo di questi campi differisce, il revert
+   viene rifiutato con `409` per evitare di sovrascrivere lavoro recente.
+4. Ripristina `old_answer` nella posizione individuata da `question_id`
+   (usando `answer_index` solo come fallback).
+5. Ricalcola `raw_points`, `max_points` e `percent` dall'array risultante.
+6. Registra un nuovo `score_change_set` con `reason='revert'` e
+   `reverted_change_id` riferito all'operazione originale.
+7. Per ogni risposta ripristinata inserisce una nuova riga `score_history`
+   con prima/dopo invertiti. Se `old_answer` aveva `manual_override=true`,
+   il revert ripristina anche il flag — non solo i punti.
+
+Il revert è atomico per l'intero change set: o tutte le risposte vengono
+ripristinate e registrate, oppure nessuna viene modificata.
+
+Non si consente il revert diretto di un change set già revertito. Per annullare
+un revert si esegue il revert dell'operazione di revert, mantenendo così una
+catena audit completa.
+
+### API proposta
+
+```text
+GET  /api/teacher/sessions/<session_id>/score-history
+POST /api/teacher/sessions/<session_id>/score-history/<change_set_id>/revert
+```
+
+La lista restituisce operazione, autore, data, motivo, numero di risposte
+modificate, modello LLM ed eventuale stato di revert. Il `POST` richiede una
+conferma esplicita nel frontend.
+
+### Integrazione
+
+- `transform_scores()` crea un solo change set per ogni review o recalculate.
+- Ogni job LLM crea un change set; tutte le risposte modificate dal job vi
+  appartengono.
+- Un job completamente fallito, che non modifica risposte, conserva errori e
+  tentativi in `llm_grading_jobs` ma non crea righe `score_history`.
+- Le righe di storico e l'aggiornamento di `score_entries` avvengono nella
+  stessa transazione.
+- Le risposte il cui contenuto non cambia non producono righe di storico.
+- Provider e modello restano dentro `new_answer`/`old_answer`; i dati comuni
+  del job restano in `llm_grading_jobs`.
 
 ### Perché NON `score_archives`
 
@@ -326,39 +560,73 @@ CREATE INDEX idx_score_history_entry ON score_history(score_entry_id, changed_at
 
 ### Vantaggi di `score_history`
 
-- Leggero: registra solo il delta (old→new), non l'intero `answers`.
+- Granulare: registra solo le risposte cambiate, non l'intero array `answers`.
+- Completo: conserva punti e tutti i metadati necessari per un vero revert.
 - Query semplici e indicizzate.
-- Abilita future feature: UI storico modifiche, revert punteggio, audit log.
+- Abilita UI storico modifiche, revert atomico e audit log.
 - Non confligge con `score_archives`, che resta per export e raw import.
 
 ## Rate limiting
 
-Aggiunta colonna `quiz_sessions.last_regrade_at TIMESTAMPTZ`. In
-`enqueue_regrade_session()`, controllo:
+Il solo controllo temporale non impedisce due richieste concorrenti. Servono
+due protezioni complementari:
+
+1. Un indice univoco parziale impedisce più job attivi per la stessa sessione:
+
+```sql
+CREATE UNIQUE INDEX uq_llm_active_regrade_per_session
+ON llm_grading_jobs(session_id)
+WHERE job_type = 'regrade_session'
+  AND status IN ('pending', 'running');
+```
+
+2. `quiz_sessions.last_regrade_at` applica un cooldown contro doppi click e
+abuso. La riga della sessione viene bloccata e aggiornata nella stessa
+transazione che crea il job:
 
 ```python
 MIN_REGRADE_INTERVAL = 60  # secondi
 
 row = conn.execute(
-    "SELECT EXTRACT(EPOCH FROM (now() - last_regrade_at)) FROM quiz_sessions WHERE id = %s",
+    """SELECT EXTRACT(EPOCH FROM (now() - last_regrade_at))
+       FROM quiz_sessions
+       WHERE id = %s
+       FOR UPDATE""",
     (session_id,)
 ).fetchone()
 if row and row[0] is not None and row[0] < MIN_REGRADE_INTERVAL:
     raise TooManyRequests("Attendi N secondi prima di una nuova rivalutazione.")
+
+conn.execute(
+    "UPDATE quiz_sessions SET last_regrade_at = now() WHERE id = %s",
+    (session_id,)
+)
 ```
 
-Copre doppio click accidentale e abuso. Configurabile via env
-`LLM_REGRADE_COOLDOWN_SECONDS` (default 60).
+Una violazione dell'indice univoco restituisce `409 Conflict`: «Una
+rivalutazione è già in corso». Il cooldown è configurabile via env
+`LLM_REGRADE_COOLDOWN_SECONDS` con default 60 secondi.
 
-## Domande aperte
+## Decisioni ulteriori
 
-1. **Costo**: ogni docente paga il proprio provider. Serve un modo per
-   mostrare il costo stimato di una rivalutazione prima di lanciarla?
-   (Numero risposte × token stimati × prezzo modello)
+1. **Costo**: la stima non è necessaria per la prima implementazione. Si
+   registrano token di input/output e costo, quando il provider li restituisce;
+   una stima preventiva può essere aggiunta in seguito.
 
 2. **Modelli locali (Ollama)**: **Inclusi nella Fase 3**. Provider `custom`
-   con `base_url: "http://host:11434/v1"`. Nessuna complessità aggiuntiva.
+   con `base_url: "http://host:11434/v1"`. Validazione SSRF applicata a ogni
+   `base_url` prima della chiamata:
+   - Schema: solo `https://` per endpoint remoti; `http://` consentito solo
+     per `localhost` / `127.0.0.1` / `::1` se abilitato da configurazione
+     amministrativa (`ALLOW_HTTP_LLM_ENDPOINTS=true`).
+   - Blocco esplicito dei range privati non consentiti: `10.0.0.0/8`,
+     `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` (link-local /
+     AWS metadata), `::1/128`, a meno che non siano in una allowlist
+     amministrativa esplicita.
+   - La risoluzione DNS avviene server-side prima della chiamata; l'IP
+     risolto viene validato contro gli stessi range.
 
-3. **Temperature**: vogliamo esporre la temperature nella configurazione
-   docente? Temperature 0 darebbe risultati più deterministici ma meno
-   "sfumati" nella valutazione.
+3. **Temperature**: non viene esposta al docente. Il sistema usa il valore più
+   deterministico supportato dal modello e registra i parametri effettivi.
+   Questo riduce la variabilità ma non garantisce risultati identici; storico,
+   conferma e revert restano necessari.
