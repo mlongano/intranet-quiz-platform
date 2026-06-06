@@ -6,7 +6,7 @@ import ThemeToggle from "../components/ThemeToggle";
 function FinishPage() {
   const location = useLocation();
   const submitResult = (location.state as { submitResult?: SubmitResponse } | null)?.submitResult;
-  const isProvisional = submitResult?.status === 'provisional' || submitResult?.llm_pending;
+  const isProvisional = submitResult?.status === 'provisional' || !submitResult?.grading_complete;
 
   return (
     <div className="min-h-screen bg-surface flex items-center justify-center p-4">

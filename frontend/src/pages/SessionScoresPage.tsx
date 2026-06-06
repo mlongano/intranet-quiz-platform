@@ -18,7 +18,13 @@ import { computeStats, type ScoreStats } from '../lib/scoreStats';
 function ScoreRow({ score, onClick }: { score: ScoreEntry; onClick: () => void }) {
   const pct = score.percent;
   const color = pct >= 60 ? 'text-primary' : pct >= 40 ? 'text-secondary' : 'text-error';
-  const hasPending = score.answers?.some(a => a.type === 'open' && a.llm_status === 'pending') ?? false;
+  const hasPending = (score.grading_complete === false)
+    || (score.answers?.some(a => a.type === 'open' && a.llm_status === 'pending') ?? false);
+  const pendingWeight = score.pending_open_weight
+    ?? (score.answers?.filter(a => a.type === 'open' && a.llm_status === 'pending')
+        .reduce((s, a) => s + (a.weight || 0), 0) ?? 0);
+  const pendingCount = score.pending_open_count
+    ?? (score.answers?.filter(a => a.type === 'open' && a.llm_status === 'pending').length ?? 0);
   return (
     <button
       onClick={onClick}
@@ -32,7 +38,11 @@ function ScoreRow({ score, onClick }: { score: ScoreEntry; onClick: () => void }
         <div className="text-right">
           <p className={`text-lg font-bold ${color}`}>{pct.toFixed(1)}%</p>
           <p className="text-xs text-on-surface-variant">{score.raw_points.toFixed(1)} / {score.max_points.toFixed(1)}</p>
-          {hasPending && <p className="text-[11px] font-semibold text-secondary">provvisorio</p>}
+          {hasPending && (
+            <p className="text-[11px] font-semibold text-secondary leading-tight">
+              provvisorio{pendingCount > 0 ? ` — ${pendingCount} risposte (${pendingWeight} pt)` : ''}
+            </p>
+          )}
         </div>
         <ChevronRight size={16} className="text-on-surface-variant" />
       </div>

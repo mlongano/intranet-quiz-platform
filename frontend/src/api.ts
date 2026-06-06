@@ -66,6 +66,9 @@ export interface ScoreEntry {
   percent: number;
   timestamp?: string;
   submitted_at?: string;
+  grading_complete?: boolean;
+  pending_open_count?: number;
+  pending_open_weight?: number;
 }
 
 export interface SnapshotMeta {
@@ -358,7 +361,7 @@ export interface SubmitResponse {
   max_points: number;
   percent: number;
   status: 'provisional' | 'final';
-  llm_pending: boolean;
+  grading_complete: boolean;
   pending_open_count: number;
   pending_open_weight: number;
 }

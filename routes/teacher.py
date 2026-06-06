@@ -378,16 +378,29 @@ def session_scores(session_id: int):
     with db.get_conn() as conn:
         _assert_session_owner(conn, session_id, teacher_id)
         rows = conn.execute(Q.LIST_SCORES_FOR_SESSION, (session_id,)).fetchall()
-    return jsonify([
-        {
+
+    entries = []
+    for r in rows:
+        answers = r[4] if isinstance(r[4], list) else json.loads(r[4] or '[]')
+        pending_count = sum(
+            1 for a in answers
+            if a.get('type') == 'open' and a.get('llm_status') == 'pending'
+        )
+        pending_weight = sum(
+            a.get('weight', 0) for a in answers
+            if a.get('type') == 'open' and a.get('llm_status') == 'pending'
+        )
+        entries.append({
             'id': r[0], 'raw_points': float(r[1]), 'max_points': float(r[2]),
             'percent': float(r[3]),
-            'answers': r[4] if isinstance(r[4], list) else json.loads(r[4] or '[]'),
+            'answers': answers,
             'submitted_at': r[5].isoformat() if r[5] else None,
             'student_email': r[6], 'student_name': r[7],
-        }
-        for r in rows
-    ]), 200
+            'grading_complete': pending_count == 0,
+            'pending_open_count': pending_count,
+            'pending_open_weight': pending_weight,
+        })
+    return jsonify(entries), 200
 
 
 @teacher_bp.post('/sessions/<int:session_id>/scores/review')

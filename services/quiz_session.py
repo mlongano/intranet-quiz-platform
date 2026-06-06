@@ -374,7 +374,7 @@ def submit_plan(quiz_id: str, student_id: int) -> dict:
         'max_points': grade_result['max_points'],
         'percent': grade_result['percent'],
         'status': 'provisional' if pending_open_count else 'final',
-        'llm_pending': bool(pending_open_count),
+        'grading_complete': pending_open_count == 0,
         'pending_open_count': pending_open_count,
         'pending_open_weight': pending_open_weight,
     }
