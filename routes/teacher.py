@@ -60,7 +60,7 @@ import json
 import os
 
 from flask import Blueprint, Response, g, jsonify, request
-from werkzeug.exceptions import BadRequest, Forbidden, NotFound
+from werkzeug.exceptions import BadRequest, Conflict, Forbidden, NotFound
 
 import db
 from db import queries as Q
@@ -515,6 +515,156 @@ def regrade_open_questions(session_id: int):
     """Queue open-question regrading without blocking on the LLM provider."""
     job = enqueue_regrade_session(session_id, _teacher_id())
     return jsonify(job), 202
+
+
+# ── score history & revert ───────────────────────────────────────────────────
+
+@teacher_bp.get('/sessions/<int:session_id>/score-history')
+@require_teacher
+def get_score_history(session_id: int):
+    teacher_id = _teacher_id()
+    with db.get_conn() as conn:
+        _assert_session_owner(conn, session_id, teacher_id)
+        rows = conn.execute(Q.LIST_SCORE_HISTORY, (session_id,)).fetchall()
+    return jsonify([{
+        'id': str(r[0]),
+        'reason': r[1],
+        'actor_type': r[2],
+        'changed_by': r[3],
+        'llm_job_id': r[4],
+        'reverted_change_id': str(r[5]) if r[5] else None,
+        'created_at': r[6].isoformat() if r[6] else None,
+        'changed_answers': r[7],
+        'actor_name': r[8],
+    } for r in rows]), 200
+
+
+@teacher_bp.post('/sessions/<int:session_id>/score-history/<change_set_id>/revert')
+@require_teacher
+def revert_change_set(session_id: int, change_set_id: str):
+    """Atomically revert a change set.
+
+    Uses FOR UPDATE + answer_revision for conflict detection.
+    If any answer was modified since the change set, returns 409.
+    """
+    import json as _json
+    teacher_id = _teacher_id()
+
+    with db.get_conn() as conn:
+        _assert_session_owner(conn, session_id, teacher_id)
+
+        # 1. Verify change set exists and belongs to this session
+        cs = conn.execute(Q.GET_CHANGE_SET, (change_set_id, session_id)).fetchone()
+        if not cs:
+            raise NotFound(description="Change set non trovato.")
+
+        # 2. Load all entries from the change set
+        entries = conn.execute(Q.GET_CHANGE_SET_ENTRIES, (change_set_id,)).fetchall()
+        if not entries:
+            raise NotFound(description="Nessuna risposta da ripristinare in questo change set.")
+
+        # 3. Lock and verify: collect score_entry_ids, lock them, check revisions
+        score_ids = list({e[0] for e in entries})
+        locked_rows = {}
+        for sid in score_ids:
+            row = conn.execute(
+                "SELECT id, answers, raw_points, max_points, percent FROM score_entries WHERE id = %s FOR UPDATE",
+                (sid,),
+            ).fetchone()
+            if not row:
+                raise NotFound(description=f"Score entry {sid} non trovato.")
+            answers = _json.loads(row[1]) if isinstance(row[1], str) else row[1]
+            locked_rows[sid] = {
+                'answers': answers,
+                'raw_points': float(row[2]),
+                'max_points': float(row[3]),
+                'percent': float(row[4]),
+            }
+
+        # 4. Check revision match for every entry; build reverted answers
+        revert_map: dict[int, list[dict]] = {}
+        for e in entries:
+            sid = e[0]
+            q_id = e[1]
+            hist_new_rev = e[4]  # new_revision from history
+            old_answer = e[6] if isinstance(e[6], dict) else _json.loads(e[6])
+            new_answer_snap = e[7] if isinstance(e[7], dict) else _json.loads(e[7])
+
+            current_answers = locked_rows[sid]['answers']
+            # Find the matching answer by question_id
+            found = False
+            for cur_a in current_answers:
+                if str(cur_a.get('question_id')) == q_id:
+                    cur_rev = cur_a.get('answer_revision', 0)
+                    if cur_rev != hist_new_rev:
+                        raise Conflict(
+                            description=f"Conflitto: la risposta {q_id} è stata modificata dopo il change set."
+                        )
+                    found = True
+                    break
+            if not found:
+                # Answer may have been removed — allow revert to restore it
+                pass
+
+            if sid not in revert_map:
+                revert_map[sid] = [dict(a) for a in current_answers]
+
+            # Replace the answer in the array
+            replaced = False
+            for idx, cur_a in enumerate(revert_map[sid]):
+                if str(cur_a.get('question_id')) == q_id:
+                    restored = dict(old_answer)
+                    from services.score_transforms import bump_answer_revision
+                    bump_answer_revision(restored)
+                    revert_map[sid][idx] = restored
+                    replaced = True
+                    break
+            if not replaced:
+                # Question not in current array — append it
+                restored = dict(old_answer)
+                from services.score_transforms import bump_answer_revision
+                bump_answer_revision(restored)
+                revert_map[sid].append(restored)
+
+        # 5. Update all modified score entries and record new change set
+        from services.score_transforms import open_change_set, record_answer_changes
+        revert_cs_id = open_change_set(
+            conn,
+            session_id=session_id,
+            reason='revert',
+            actor_type='teacher',
+            changed_by=teacher_id,
+            reverted_change_id=change_set_id,
+        )
+
+        for sid, new_answers in revert_map.items():
+            old_data = locked_rows[sid]
+            old_answers = old_data['answers']
+            new_raw = round(sum(a.get('points_awarded', 0) for a in new_answers), 2)
+            new_max = round(sum(a.get('weight', 0) for a in new_answers), 2)
+            new_pct = round(new_raw / new_max * 100, 2) if new_max else 0
+
+            conn.execute(Q.UPDATE_SCORE_ANSWERS, {
+                'answers': _json.dumps(new_answers),
+                'raw_points': new_raw,
+                'max_points': new_max,
+                'percent': new_pct,
+                'id': sid,
+                'teacher_id': teacher_id,
+            })
+            record_answer_changes(
+                conn,
+                change_set_id=revert_cs_id,
+                score_entry_id=sid,
+                old_answers=old_answers,
+                new_answers=new_answers,
+                old_percent=old_data['percent'],
+                new_percent=new_pct,
+            )
+
+        conn.commit()
+
+    return jsonify({'ok': True, 'revert_change_set_id': revert_cs_id}), 200
 
 
 @teacher_bp.get('/llm-jobs/<int:job_id>')

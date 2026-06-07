@@ -353,17 +353,26 @@ def submit_plan(quiz_id: str, student_id: int) -> dict:
                 total_items=pending_open_count,
             )
 
-        # Record score history for initial submission
-        from services.score_transforms import record_score_history
-        record_score_history(
+        # Set answer_revision=0 and record score history for initial submission
+        for answer in detailed:
+            answer['answer_revision'] = 0
+
+        from services.score_transforms import open_change_set, record_answer_changes
+        change_set_id = open_change_set(
             conn,
+            session_id=session_id,
+            reason='submission',
+            actor_type='system',
+            changed_by=teacher_id,
+        )
+        record_answer_changes(
+            conn,
+            change_set_id=change_set_id,
             score_entry_id=score_row[0],
             old_answers=None,
             new_answers=detailed,
             old_percent=None,
             new_percent=grade_result['percent'],
-            reason='submission',
-            changed_by=teacher_id,
         )
 
         conn.execute(Q.DELETE_PLAN, (quiz_id,))

@@ -563,16 +563,59 @@ GET_SYNC_RUN = """
     WHERE id = %s
 """
 
+# ── score change sets ────────────────────────────────────────────────────────
+
+CREATE_CHANGE_SET = """
+    INSERT INTO score_change_sets
+        (session_id, reason, actor_type, changed_by, llm_job_id, reverted_change_id)
+    VALUES (
+        %(session_id)s, %(reason)s, %(actor_type)s, %(changed_by)s,
+        %(llm_job_id)s, %(reverted_change_id)s
+    )
+    RETURNING id
+"""
+
 # ── score history ────────────────────────────────────────────────────────────
 
 INSERT_SCORE_HISTORY = """
     INSERT INTO score_history
-        (score_entry_id, answer_index, old_points, new_points,
-         old_percent, new_percent, reason,
-         llm_provider, llm_model, changed_by)
+        (change_set_id, score_entry_id, question_id, answer_index,
+         old_revision, new_revision, old_answer, new_answer,
+         old_raw_points, new_raw_points, old_percent, new_percent)
     VALUES (
-        %(score_entry_id)s, %(answer_index)s, %(old_points)s, %(new_points)s,
-        %(old_percent)s, %(new_percent)s, %(reason)s,
-        %(llm_provider)s, %(llm_model)s, %(changed_by)s
+        %(change_set_id)s, %(score_entry_id)s, %(question_id)s, %(answer_index)s,
+        %(old_revision)s, %(new_revision)s, %(old_answer)s, %(new_answer)s,
+        %(old_raw_points)s, %(new_raw_points)s, %(old_percent)s, %(new_percent)s
     )
+"""
+
+LIST_SCORE_HISTORY = """
+    SELECT scs.id, scs.reason, scs.actor_type, scs.changed_by,
+           scs.llm_job_id, scs.reverted_change_id, scs.created_at,
+           count(sh.id) as changed_answers,
+           t.display_name as actor_name
+    FROM score_change_sets scs
+    LEFT JOIN teachers t ON t.id = scs.changed_by
+    LEFT JOIN score_history sh ON sh.change_set_id = scs.id
+    WHERE scs.session_id = %s
+    GROUP BY scs.id, t.display_name
+    ORDER BY scs.created_at DESC
+"""
+
+GET_CHANGE_SET = """
+    SELECT id, session_id, reason, actor_type, changed_by,
+           llm_job_id, reverted_change_id, created_at
+    FROM score_change_sets
+    WHERE id = %s AND session_id = %s
+"""
+
+GET_CHANGE_SET_ENTRIES = """
+    SELECT sh.score_entry_id, sh.question_id, sh.answer_index,
+           sh.old_revision, sh.new_revision,
+           sh.old_answer, sh.new_answer,
+           sh.old_raw_points, sh.new_raw_points,
+           sh.old_percent, sh.new_percent
+    FROM score_history sh
+    WHERE sh.change_set_id = %s
+    ORDER BY sh.score_entry_id, sh.answer_index
 """

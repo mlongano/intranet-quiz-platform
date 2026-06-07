@@ -41,7 +41,12 @@ def create_llm_job(
 
 
 def enqueue_regrade_session(session_id: int, teacher_id: int) -> dict:
-    """Mark open answers pending and create a regrade job without calling the LLM."""
+    """Create a regrade job WITHOUT modifying current evaluations.
+
+    The worker is solely responsible for changing scores, feedback, and
+    status.  Enqueuing preserves the current state so a running regrade
+    never leaves answers in an inconsistent intermediate condition.
+    """
     import os as _os
     _cooldown = int(_os.getenv('LLM_REGRADE_COOLDOWN_SECONDS', '60'))
 
@@ -56,10 +61,11 @@ def enqueue_regrade_session(session_id: int, teacher_id: int) -> dict:
         if owner[0] != teacher_id:
             raise Forbidden(description="Not your session.")
 
-        # ── rate limit ───────────────────────────────────────────────────
+        # ── rate limit + concurrency lock ───────────────────────────────
         row = conn.execute(
             """SELECT EXTRACT(EPOCH FROM (now() - last_regrade_at))
-               FROM quiz_sessions WHERE id = %s""",
+               FROM quiz_sessions WHERE id = %s
+               FOR UPDATE""",
             (session_id,),
         ).fetchone()
         if row and row[0] is not None and row[0] < _cooldown:
@@ -69,46 +75,41 @@ def enqueue_regrade_session(session_id: int, teacher_id: int) -> dict:
                 f"Attendi {remaining} secondi prima di una nuova rivalutazione."
             )
 
+        # Count open answers that need regrade WITHOUT modifying them
         rows = conn.execute(Q.LIST_SCORES_FOR_SESSION, (session_id,)).fetchall()
         for row in rows:
-            score_id = row[0]
             answers = ensure_list(row[4])
-            changed = False
             for answer in answers:
                 if _answer_type(answer) != 'open':
-                    answer.setdefault('llm_status', 'not_applicable')
                     continue
-                answer.setdefault('type', 'open')
                 if answer.get('manual_override'):
-                    answer['llm_status'] = 'graded'
                     continue
-                answer['llm_status'] = 'pending'
-                answer['llm_feedback'] = None
-                answer['llm_verdict'] = None
-                answer['llm_error'] = None
-                answer['llm_updated_at'] = None
                 total_items += 1
-                changed = True
-            if changed:
-                raw_points, max_points, percent = _score_totals(answers)
-                conn.execute(Q.UPDATE_SCORE_ANSWERS, {
-                    'answers': json.dumps(answers),
-                    'raw_points': raw_points,
-                    'max_points': max_points,
-                    'percent': percent,
-                    'id': score_id,
-                    'teacher_id': teacher_id,
-                })
 
-        job = create_llm_job(
-            conn,
-            teacher_id=teacher_id,
-            session_id=session_id,
-            score_entry_id=None,
-            job_type='regrade_session',
-            total_items=total_items,
-        )
-        if total_items == 0:
+        if total_items > 0:
+            # Concurrency: try to insert pending job; unique index rejects duplicate
+            try:
+                job = create_llm_job(
+                    conn,
+                    teacher_id=teacher_id,
+                    session_id=session_id,
+                    score_entry_id=None,
+                    job_type='regrade_session',
+                    total_items=total_items,
+                )
+            except Exception:
+                conn.rollback()
+                from werkzeug.exceptions import Conflict
+                raise Conflict(description="Una rivalutazione è già in corso per questa sessione.")
+        else:
+            job = create_llm_job(
+                conn,
+                teacher_id=teacher_id,
+                session_id=session_id,
+                score_entry_id=None,
+                job_type='regrade_session',
+                total_items=0,
+            )
             conn.execute(Q.FINISH_LLM_GRADING_JOB, {
                 'id': job['id'],
                 'status': 'completed',
@@ -116,6 +117,7 @@ def enqueue_regrade_session(session_id: int, teacher_id: int) -> dict:
                 'error': None,
             })
             job['status'] = 'completed'
+
         conn.execute(
             "UPDATE quiz_sessions SET last_regrade_at = now() WHERE id = %s",
             (session_id,),
@@ -147,11 +149,24 @@ def process_next_job() -> bool:
     processed = int(job.get('processed_items') or 0)
     try:
         score_ids = _score_ids_for_job(job)
+
+        # Open one change set for the entire job
+        from services.score_transforms import open_change_set
+        with db.get_conn() as conn:
+            change_set_id = open_change_set(
+                conn,
+                session_id=job['session_id'],
+                reason='llm_regrade',
+                actor_type='system',
+                changed_by=job['teacher_id'],
+                llm_job_id=job['id'],
+            )
+            conn.commit()
+        job['_change_set_id'] = change_set_id
+
         for score_id in score_ids:
-            while True:
-                changed = _process_next_answer_for_score(job, score_id)
-                if not changed:
-                    break
+            changed = _process_next_answer_for_score(job, score_id)
+            if changed:
                 processed += 1
                 _update_job_progress(job['id'], processed)
 
@@ -221,7 +236,7 @@ def _score_ids_for_job(job: dict) -> list[int]:
 
 
 def _process_next_answer_for_score(job: dict, score_id: int) -> bool:
-    from services.score_transforms import record_score_history
+    from services.score_transforms import record_answer_changes, bump_answer_revision
 
     with db.get_conn() as conn:
         row = conn.execute(
@@ -232,12 +247,21 @@ def _process_next_answer_for_score(job: dict, score_id: int) -> bool:
             conn.commit()
             return False
         answers = ensure_list(row[7])
-        old_percent = float(row[6]) if row[6] is not None else None  # score_entries.percent
-        old_answers = ensure_list(row[7])
-        changed = _process_one_pending_answer(answers)
+        old_percent = float(row[6]) if row[6] is not None else None
+        old_answers = [dict(a) for a in answers]  # deep copy for history
+        changed = _process_one_pending_answer(
+            answers,
+            is_regrade=(job.get('job_type') == 'regrade_session')
+        )
         if not changed:
             conn.commit()
             return False
+
+        # Bump revision on every modified open answer
+        for a in answers:
+            if _answer_type(a) == 'open' and a.get('llm_status') in ('graded', 'fallback', 'error'):
+                bump_answer_revision(a)
+
         raw_points, max_points, percent = _score_totals(answers)
         conn.execute(Q.UPDATE_SCORE_ANSWERS, {
             'answers': json.dumps(answers),
@@ -247,15 +271,14 @@ def _process_next_answer_for_score(job: dict, score_id: int) -> bool:
             'id': score_id,
             'teacher_id': job['teacher_id'],
         })
-        record_score_history(
+        record_answer_changes(
             conn,
+            change_set_id=job.get('_change_set_id', ''),
             score_entry_id=score_id,
             old_answers=old_answers,
             new_answers=answers,
             old_percent=old_percent,
             new_percent=percent,
-            reason='regrade_llm',
-            changed_by=job['teacher_id'],
         )
         conn.commit()
     return True
@@ -309,19 +332,19 @@ def _process_answers(answers: list[dict]) -> tuple[bool, int]:
     return changed, processed
 
 
-def _process_one_pending_answer(answers: list[dict]) -> bool:
+def _process_one_pending_answer(answers: list[dict], *, is_regrade: bool = False) -> bool:
     now = datetime.now(timezone.utc).isoformat()
+    any_changed = False
 
     for answer in answers:
-        if _answer_type(answer) != 'open' or answer.get('llm_status') != 'pending':
+        if _answer_type(answer) != 'open':
+            continue
+        # Submission jobs: only process pending answers.
+        if not is_regrade and answer.get('llm_status') != 'pending':
+            continue
+        if answer.get('manual_override'):
             continue
         answer.setdefault('type', 'open')
-
-        if answer.get('manual_override'):
-            answer['llm_status'] = 'graded'
-            answer['llm_error'] = None
-            answer['llm_updated_at'] = now
-            return True
 
         q = answer.get('question_snapshot')
         if not isinstance(q, dict):
@@ -344,13 +367,14 @@ def _process_one_pending_answer(answers: list[dict]) -> bool:
             answer['llm_status'] = 'fallback' if verdict == 'fallback' else 'graded'
             answer['llm_error'] = None
             answer['llm_updated_at'] = now
+            any_changed = True
         except Exception as exc:
             answer['llm_status'] = 'error'
             answer['llm_error'] = str(exc)
             answer['llm_updated_at'] = now
-        return True
+            any_changed = True
 
-    return False
+    return any_changed
 
 
 def _update_job_progress(job_id: int, processed: int) -> None:

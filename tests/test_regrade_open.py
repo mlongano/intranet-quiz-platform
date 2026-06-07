@@ -135,7 +135,9 @@ def test_regrade_open_enqueues_job_and_worker_uses_shared_grader(
         "SELECT answers FROM score_entries WHERE session_id = %s",
         (session_id,),
     ).fetchone()
-    assert pending_row[0][0]['llm_status'] == 'pending'
+    # Non-destructive: enqueue does NOT change llm_status
+    assert pending_row[0][0]['llm_status'] == 'graded'
+    assert pending_row[0][0]['llm_feedback'] == 'Feedback vecchio'
 
     assert llm_jobs.process_next_job() is True
     assert calls == [('Aggiorna alcuni campi.', 'open-1')]
