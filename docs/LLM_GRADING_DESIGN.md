@@ -241,8 +241,9 @@ class LlmInvalidResponseError(Exception):
 zero che potrebbe essere scambiato per una valutazione valida. Il worker è
 l'unico responsabile di retry, stato `pending` e registrazione dell'errore.
 
-Il sistema prompt (da `prompts/open-question-system.md`) resta invariato:
-cambia solo il trasporto.
+Il contenuto del prompt resta invariato durante questo refactor; cambia solo il
+trasporto. I file prompt vengono però spostati nella struttura versionata
+descritta nella sezione sulla riproducibilità.
 
 ### Impatto
 
@@ -303,27 +304,36 @@ cambia solo il trasporto.
      tramite un'opzione separata con conferma esplicita.
 
 6. **Riproducibilità**: oltre a provider e modello, ogni valutazione registra
-   `prompt_version` e i parametri effettivi rilevanti. Il testo completo del
-   prompt resta versionato nel repository; non serve duplicarlo in ogni
-   risposta. Convenzione: il file `prompts/open-question-system.md` è
-   immutabile per ogni versione — la `prompt_version` è uno slug derivato
-   dall'hash SHA-256 dei primi 8 caratteri del contenuto (es. `v1-a3f8c2d1`).
-   Modificare il prompt genera una nuova versione; la precedente non viene
-   sovrascritta.
+   `prompt_version` e i parametri effettivi rilevanti. I prompt vivono in file
+   immutabili e versionati, per esempio:
+
+   ```text
+   prompts/open-question-system/
+     v1-a3f8c2d1.md
+     v2-79b14e62.md
+   ```
+
+   Lo slug contiene i primi 8 caratteri dell'hash SHA-256 del contenuto.
+   Modificare il prompt significa aggiungere un nuovo file; un file già
+   pubblicato non viene sovrascritto. Al momento dell'accodamento il backend
+   legge il file selezionato e salva nel job sia `prompt_version` sia
+   `prompt_snapshot`, cioè il testo esatto usato. Il worker usa esclusivamente
+   lo snapshot del job, quindi una modifica o rimozione accidentale nel
+   repository non cambia un job già in coda e lo storico rimane riproducibile.
 
 ### Impatto
 
 - I campi `llm_provider`/`llm_model` restano nel JSONB `answers`, senza colonne
   dedicate.
-- Una migrazione estende `llm_grading_jobs` con provider, modello, versione
-  prompt, parametri e scope della rivalutazione.
+- Una migrazione estende `llm_grading_jobs` con provider, modello,
+  `prompt_version`, `prompt_snapshot`, parametri e scope della rivalutazione.
 - `services/llm_provider.py`: popolare `llm_provider` e `llm_model` nel
   risultato.
 - `services/llm_jobs.py`: `enqueue_regrade_session()` accetta `provider`
   e `model` opzionali; default dal `llm_config` del docente.
-- `llm_grading_jobs`: memorizza provider, modello, prompt version, scope della
-  rivalutazione e parametri effettivi, così il worker non dipende da una
-  configurazione che potrebbe cambiare dopo l'accodamento.
+- `llm_grading_jobs`: memorizza provider, modello, prompt version e snapshot,
+  scope della rivalutazione e parametri effettivi, così il worker non dipende
+  da configurazione o file che potrebbero cambiare dopo l'accodamento.
 - `routes/teacher.py`: endpoint regrade-open accetta `provider` e `model`
   nel body.
 - `frontend/src/pages/SessionScoresPage.tsx`: pannello rivalutazione con
@@ -397,6 +407,9 @@ manual_override=true  →  protetta da qualsiasi job LLM automatico (default)
 - Accodare una rivalutazione non modifica la valutazione corrente.
 - Migrazione `005`: tabelle `score_change_sets` e `score_history` + colonna
   `quiz_sessions.last_regrade_at`.
+- La stessa migrazione aggiunge `answer_revision=0` alle risposte esistenti che
+  non hanno ancora il campo; in lettura il campo assente viene comunque
+  interpretato come `0` per compatibilità durante il rollout.
 - Il worker LLM, `transform_scores()` e la route `review` scrivono in
   `score_history` a ogni modifica effettiva.
 - Endpoint e UI per consultare lo storico e revertire atomicamente un intero
@@ -437,6 +450,12 @@ feedback, verdetto, errore, provider, modello e timestamp. Lo storico salva
 quindi l'intero oggetto `DetailedAnswer` prima e dopo la modifica, ma soltanto
 per le risposte effettivamente cambiate.
 
+Ogni `DetailedAnswer` contiene inoltre `answer_revision`, intero monotono che
+parte da `0` e viene incrementato di `1` per qualsiasi modifica persistita
+all'oggetto, inclusi feedback, modello, timestamp e flag. Tutti i percorsi di
+scrittura (`worker`, review manuale, recalculate e revert) devono aggiornare la
+revisione nella stessa transazione della modifica.
+
 ### Tabelle `score_change_sets` e `score_history`
 
 ```sql
@@ -476,6 +495,8 @@ CREATE TABLE score_history (
     score_entry_id  BIGINT NOT NULL REFERENCES score_entries(id) ON DELETE CASCADE,
     question_id     TEXT NOT NULL,
     answer_index    INT NOT NULL,
+    old_revision    BIGINT NOT NULL,
+    new_revision    BIGINT NOT NULL,
     old_answer      JSONB NOT NULL,
     new_answer      JSONB NOT NULL,
     old_raw_points  NUMERIC(10,2) NOT NULL,
@@ -483,6 +504,7 @@ CREATE TABLE score_history (
     old_percent     NUMERIC(6,2) NOT NULL,
     new_percent     NUMERIC(6,2) NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (new_revision = old_revision + 1),
     UNIQUE (change_set_id, score_entry_id, question_id)
 );
 CREATE INDEX idx_score_history_entry
@@ -493,7 +515,9 @@ CREATE INDEX idx_score_history_change_set
 
 `question_id` è l'identificatore stabile della risposta; `answer_index` viene
 conservato per ripristinare efficientemente l'array JSONB e per compatibilità
-con i dati storici.
+con i dati storici. `old_answer.answer_revision` e
+`new_answer.answer_revision` devono corrispondere alle colonne
+`old_revision`/`new_revision`.
 
 ### Semantica del revert
 
@@ -501,20 +525,22 @@ Il revert non cancella né modifica lo storico originale:
 
 1. Il docente seleziona un `score_change_set`.
 2. Il backend blocca con `FOR UPDATE` tutti gli `score_entries` coinvolti.
-3. Verifica che ogni risposta corrente non sia stata modificata dopo il
-   change set. Il confronto avviene sui campi determinanti:
-   `points_awarded`, `llm_status` e `manual_override` — non sull'intero
-   JSONB, per evitare falsi conflitti su campi marginali (`llm_feedback`,
-   timestamp). Se anche uno solo di questi campi differisce, il revert
-   viene rifiutato con `409` per evitare di sovrascrivere lavoro recente.
+3. Verifica che `current_answer.answer_revision == history.new_revision`.
+   Qualsiasi modifica successiva, anche a feedback, modello o timestamp,
+   incrementa la revisione e causa un conflitto `409`. Il revert non confronta
+   selettivamente campi JSONB e non può quindi sovrascrivere silenziosamente
+   metadati aggiornati dopo il change set.
 4. Ripristina `old_answer` nella posizione individuata da `question_id`
-   (usando `answer_index` solo come fallback).
+   (usando `answer_index` solo come fallback), ma assegna una nuova revisione
+   pari a `current_revision + 1`: la revisione non torna mai indietro.
 5. Ricalcola `raw_points`, `max_points` e `percent` dall'array risultante.
 6. Registra un nuovo `score_change_set` con `reason='revert'` e
    `reverted_change_id` riferito all'operazione originale.
-7. Per ogni risposta ripristinata inserisce una nuova riga `score_history`
-   con prima/dopo invertiti. Se `old_answer` aveva `manual_override=true`,
-   il revert ripristina anche il flag — non solo i punti.
+7. Per ogni risposta ripristinata inserisce una nuova riga `score_history`.
+   Il contenuto applicativo prima/dopo è invertito rispetto all'operazione
+   originale, mentre le revisioni continuano a crescere. Se `old_answer` aveva
+   `manual_override=true`, il revert ripristina anche il flag — non solo i
+   punti.
 
 Il revert è atomico per l'intero change set: o tutte le risposte vengono
 ripristinate e registrate, oppure nessuna viene modificata.
@@ -543,6 +569,8 @@ conferma esplicita nel frontend.
   tentativi in `llm_grading_jobs` ma non crea righe `score_history`.
 - Le righe di storico e l'aggiornamento di `score_entries` avvengono nella
   stessa transazione.
+- Ogni modifica incrementa `answer_revision`; il valore nello storico è la
+  condizione di concorrenza usata dal revert.
 - Le risposte il cui contenuto non cambia non producono righe di storico.
 - Provider e modello restano dentro `new_answer`/`old_answer`; i dati comuni
   del job restano in `llm_grading_jobs`.
@@ -614,8 +642,8 @@ rivalutazione è già in corso». Il cooldown è configurabile via env
    una stima preventiva può essere aggiunta in seguito.
 
 2. **Modelli locali (Ollama)**: **Inclusi nella Fase 3**. Provider `custom`
-   con `base_url: "http://host:11434/v1"`. Validazione SSRF applicata a ogni
-   `base_url` prima della chiamata:
+   con `base_url: "http://host:11434/v1"`. La protezione SSRF non si limita
+   alla validazione preliminare del nome host:
    - Schema: solo `https://` per endpoint remoti; `http://` consentito solo
      per `localhost` / `127.0.0.1` / `::1` se abilitato da configurazione
      amministrativa (`ALLOW_HTTP_LLM_ENDPOINTS=true`).
@@ -623,8 +651,20 @@ rivalutazione è già in corso». Il cooldown è configurabile via env
      `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` (link-local /
      AWS metadata), `::1/128`, a meno che non siano in una allowlist
      amministrativa esplicita.
-   - La risoluzione DNS avviene server-side prima della chiamata; l'IP
-     risolto viene validato contro gli stessi range.
+   - La risoluzione DNS avviene server-side prima della chiamata e tutti gli IP
+     restituiti vengono validati contro gli stessi range.
+   - La connessione HTTP viene effettuata verso uno degli IP già validati,
+     mantenendo hostname originale per TLS SNI e header `Host`. Non viene
+     eseguita una seconda risoluzione DNS implicita da parte del client: questo
+     impedisce DNS rebinding tra validazione e connessione.
+   - I redirect automatici sono disabilitati. Se il provider restituisce un
+     redirect, ogni destinazione viene nuovamente analizzata, risolta,
+     validata e connessa con le stesse regole, con un massimo configurato di
+     redirect. Redirect verso schema, host o IP non consentiti vengono
+     rifiutati.
+   - Il client blocca anche credenziali nella URL, porte non consentite e
+     risposte che tentano di cambiare protocollo. I test coprono IPv4, IPv6,
+     DNS rebinding simulato, redirect e indirizzi metadata cloud.
 
 3. **Temperature**: non viene esposta al docente. Il sistema usa il valore più
    deterministico supportato dal modello e registra i parametri effettivi.
