@@ -9,6 +9,7 @@ import {
   getSessionScores, recalculateScores, archiveSessionScores, sendAllResultEmails,
   listSessions, type DetailedAnswer, ScoreEntry, ScoreOverride, reviewScores,
   regradeOpenScores, getLlmInfo, getLatestSessionLlmJob,
+  getScoreHistory, revertChangeSet,
 } from '../api';
 import { useConfirmModal } from '../lib/useConfirmModal';
 import { computeStats, type ScoreStats } from '../lib/scoreStats';
@@ -294,6 +295,20 @@ function SessionScoresPage() {
     }
   }, [id, latestLlmJob?.status, queryClient]);
 
+  const { data: scoreHistory } = useQuery({
+    queryKey: ['score-history', id],
+    queryFn: () => getScoreHistory(id),
+    enabled: !!id,
+  });
+
+  const revertMutation = useMutation({
+    mutationFn: (changeSetId: string) => revertChangeSet(id, changeSetId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['session-scores', id] });
+      queryClient.invalidateQueries({ queryKey: ['score-history', id] });
+    },
+  });
+
   const saveOverrideMutation = useMutation({
     mutationFn: (overrides: ScoreOverride[]) => reviewScores(id, overrides),
     onSuccess: () => {
@@ -516,6 +531,60 @@ function SessionScoresPage() {
       {regradeMutation.isError && (
         <div className="mb-4 p-3 bg-error/10 border border-error/30 text-error rounded-lg text-sm">
           Rivalutazione non riuscita: {String((regradeMutation.error as Error).message)}
+        </div>
+      )}
+
+      {/* ── Score history ─────────────────────────────────────────────── */}
+      {scoreHistory && scoreHistory.length > 0 && (
+        <div className="mb-6 bg-surface-container border border-outline-variant/30 rounded-xl p-4">
+          <h3 className="text-sm font-semibold text-on-surface mb-3">Cronologia modifiche</h3>
+          <div className="space-y-2">
+            {scoreHistory.map(cs => {
+              const reasonLabels: Record<string, string> = {
+                submission: 'Consegna',
+                llm_grade: 'Valutazione LLM',
+                llm_regrade: 'Rivalutazione LLM',
+                manual_review: 'Revisione manuale',
+                recalculate: 'Ricalcolo',
+                revert: 'Ripristino',
+              };
+              const isReverted = !!cs.reverted_change_id;
+              return (
+                <div key={cs.id} className="flex items-center justify-between gap-3 rounded-lg border border-outline-variant/20 bg-surface px-3 py-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-on-surface truncate">
+                      <span className="font-medium">{reasonLabels[cs.reason] ?? cs.reason}</span>
+                      {cs.actor_name && <span className="text-on-surface-variant"> da {cs.actor_name}</span>}
+                    </p>
+                    <p className="text-xs text-on-surface-variant">
+                      {cs.changed_answers} risposte modificate ·{' '}
+                      {new Date(cs.created_at).toLocaleString('it-IT')}
+                      {isReverted && ' · ripristinato'}
+                    </p>
+                  </div>
+                  {!isReverted && (
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Ripristinare questa modifica? Le ${cs.changed_answers} risposte torneranno al valore precedente.`)) {
+                          revertMutation.mutate(cs.id);
+                        }
+                      }}
+                      disabled={revertMutation.isPending}
+                      className="flex-shrink-0 px-3 py-1.5 text-xs font-medium rounded-md bg-surface-container-high border border-outline-variant/30 text-on-surface-variant hover:bg-secondary/10 hover:border-secondary/30 hover:text-secondary disabled:opacity-40 transition-colors"
+                    >
+                      {revertMutation.isPending ? '...' : 'Ripristina'}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {revertMutation.isSuccess && (
+            <p className="mt-2 text-xs text-tertiary">Ripristino completato.</p>
+          )}
+          {revertMutation.isError && (
+            <p className="mt-2 text-xs text-error">{String((revertMutation.error as Error).message)}</p>
+          )}
         </div>
       )}
 

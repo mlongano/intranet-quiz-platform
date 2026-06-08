@@ -71,6 +71,18 @@ export interface ScoreEntry {
   pending_open_weight?: number;
 }
 
+export interface ScoreChangeSet {
+  id: string;
+  reason: string;
+  actor_type: 'teacher' | 'system';
+  changed_by: number | null;
+  llm_job_id: number | null;
+  reverted_change_id: string | null;
+  created_at: string;
+  changed_answers: number;
+  actor_name: string | null;
+}
+
 export interface SnapshotMeta {
   id: number;
   title: string;
@@ -563,6 +575,20 @@ export async function regradeOpenScores(sessionId: number): Promise<LlmJobStatus
   return apiFetch<LlmJobStatus>(`/teacher/sessions/${sessionId}/scores/regrade-open`, {
     method: 'POST',
   });
+}
+
+export async function getScoreHistory(sessionId: number): Promise<ScoreChangeSet[]> {
+  return apiFetch<ScoreChangeSet[]>(`/teacher/sessions/${sessionId}/score-history`);
+}
+
+export async function revertChangeSet(
+  sessionId: number,
+  changeSetId: string,
+): Promise<{ ok: boolean; revert_change_set_id: string }> {
+  return apiFetch<{ ok: boolean; revert_change_set_id: string }>(
+    `/teacher/sessions/${sessionId}/score-history/${changeSetId}/revert`,
+    { method: 'POST' },
+  );
 }
 
 export async function archiveSessionScores(
