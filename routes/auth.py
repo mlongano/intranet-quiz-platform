@@ -18,6 +18,7 @@ from werkzeug.exceptions import BadRequest
 
 import db
 from db import queries as Q
+from auth import rate_limit
 from auth.decorators import require_change_password_token, require_teacher
 from auth.jwt_utils import (
     encode_change_password_token,
@@ -53,10 +54,15 @@ def teacher_login():
     if not email or not password:
         return jsonify({'error': 'MISSING_CREDENTIALS'}), 400
 
+    rate_key = f'teacher-login:{email}'
+    if rate_limit.is_blocked(rate_key):
+        return jsonify({'error': 'TOO_MANY_ATTEMPTS'}), 429
+
     with db.get_conn() as conn:
         row = conn.execute(Q.GET_TEACHER_BY_EMAIL, (email,)).fetchone()
 
     if not row:
+        rate_limit.record_failure(rate_key)
         return jsonify({'error': 'INVALID_CREDENTIALS'}), 401
 
     teacher_id, _, pw_hash, role, status, must_change, display_name, _ = row
@@ -65,7 +71,10 @@ def teacher_login():
         return jsonify({'error': 'ACCOUNT_DISABLED'}), 401
 
     if not bcrypt.checkpw(password.encode(), pw_hash.encode()):
+        rate_limit.record_failure(rate_key)
         return jsonify({'error': 'INVALID_CREDENTIALS'}), 401
+
+    rate_limit.clear(rate_key)
 
     with db.get_conn() as conn:
         conn.execute(Q.UPDATE_TEACHER_LAST_LOGIN, (teacher_id,))

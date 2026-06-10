@@ -62,10 +62,59 @@ class TestTeacherLogin:
         assert resp.status_code in (400, 422)
 
 
+class TestTeacherLoginRateLimit:
+    def test_lockout_after_repeated_failures(self, client, db_conn, monkeypatch):
+        from auth import rate_limit
+        rate_limit.reset_all()
+        monkeypatch.setenv('LOGIN_RATE_MAX_FAILURES', '3')
+        make_teacher(db_conn, email='ratelimit@test.it')
+
+        for _ in range(3):
+            resp = post_json(client, '/api/auth/teacher-login',
+                             {'email': 'ratelimit@test.it', 'password': 'wrong'})
+            assert resp.status_code == 401
+
+        # Locked out now — even the correct password is rejected
+        resp = post_json(client, '/api/auth/teacher-login',
+                         {'email': 'ratelimit@test.it', 'password': 'Password123!'})
+        assert resp.status_code == 429
+        assert resp.get_json()['error'] == 'TOO_MANY_ATTEMPTS'
+
+        # Other accounts are unaffected (per-email key)
+        make_teacher(db_conn, email='other-rl@test.it')
+        resp = post_json(client, '/api/auth/teacher-login',
+                         {'email': 'other-rl@test.it', 'password': 'Password123!'})
+        assert resp.status_code == 200
+        rate_limit.reset_all()
+
+    def test_success_clears_failure_count(self, client, db_conn, monkeypatch):
+        from auth import rate_limit
+        rate_limit.reset_all()
+        monkeypatch.setenv('LOGIN_RATE_MAX_FAILURES', '3')
+        make_teacher(db_conn, email='rl-clear@test.it')
+
+        for _ in range(2):
+            post_json(client, '/api/auth/teacher-login',
+                      {'email': 'rl-clear@test.it', 'password': 'wrong'})
+        resp = post_json(client, '/api/auth/teacher-login',
+                         {'email': 'rl-clear@test.it', 'password': 'Password123!'})
+        assert resp.status_code == 200
+
+        # Counter was reset by the successful login
+        resp = post_json(client, '/api/auth/teacher-login',
+                         {'email': 'rl-clear@test.it', 'password': 'wrong'})
+        assert resp.status_code == 401
+        resp = post_json(client, '/api/auth/teacher-login',
+                         {'email': 'rl-clear@test.it', 'password': 'Password123!'})
+        assert resp.status_code == 200
+        rate_limit.reset_all()
+
+
 class TestTeacherGoogleLogin:
     def test_google_login_happy_path(self, client, db_conn, monkeypatch):
         make_teacher(db_conn, email='teacher.google@test.it', display_name='Teacher Google')
         monkeypatch.setenv('GOOGLE_OAUTH_CLIENT_ID', 'client-id.apps.googleusercontent.com')
+        monkeypatch.setenv('GOOGLE_OAUTH_HOSTED_DOMAIN', 'test.it')
         monkeypatch.setattr(
             'routes.auth.google_id_token.verify_oauth2_token',
             lambda credential, req, audience: {
@@ -85,6 +134,7 @@ class TestTeacherGoogleLogin:
 
     def test_google_login_requires_provisioned_teacher(self, client, monkeypatch):
         monkeypatch.setenv('GOOGLE_OAUTH_CLIENT_ID', 'client-id.apps.googleusercontent.com')
+        monkeypatch.delenv('GOOGLE_OAUTH_HOSTED_DOMAIN', raising=False)
         monkeypatch.setattr(
             'routes.auth.google_id_token.verify_oauth2_token',
             lambda credential, req, audience: {
