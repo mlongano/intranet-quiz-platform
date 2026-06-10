@@ -75,6 +75,73 @@ LLM_RETRIES=0
 LLM_BACKOFF_FACTOR=0.5
 ```
 
+## LLM Grading Worker
+
+Open-question grading is asynchronous: submissions mark open answers as
+`pending`, and the `worker` compose service (`python -m services.llm_jobs
+worker`) claims jobs from the `llm_grading_jobs` table and grades one answer at
+a time. If the worker is down or the provider fails, submissions still succeed
+— scores simply stay provisional until grading completes.
+
+Check the worker:
+
+```bash
+docker compose logs worker --tail=100
+docker compose ps worker
+```
+
+Find failed or stuck jobs:
+
+```bash
+docker compose exec db psql -U quizparty -d quizparty -c \
+  "SELECT id, session_id, job_type, status, processed_items, total_items,
+          error, created_at
+   FROM llm_grading_jobs
+   WHERE status IN ('failed', 'running')
+   ORDER BY created_at DESC LIMIT 20;"
+```
+
+Find score entries with answers still pending:
+
+```bash
+docker compose exec db psql -U quizparty -d quizparty -c \
+  "SELECT se.session_id, COUNT(*)
+   FROM score_entries se, jsonb_array_elements(se.answers) a
+   WHERE a->>'llm_status' = 'pending'
+   GROUP BY se.session_id;"
+```
+
+Recovery:
+
+1. Fix the underlying cause (worker container down, provider API key/quota,
+   network egress, `LLM_TIMEOUT_SECONDS` too low).
+2. Restart the worker if needed: `docker compose restart worker`.
+3. Ask the Teacher to click **Rivaluta risposte aperte** on the session's
+   scores page (or `POST /api/teacher/sessions/<id>/scores/regrade-open`).
+   This enqueues a new `regrade_session` job that re-processes answers with
+   `llm_status` of `pending` or `error`.
+
+Note: regrades are rate-limited per session (`LLM_REGRADE_COOLDOWN_SECONDS`,
+default 60s) — a second click within the cooldown returns HTTP 429. Failed
+jobs are never retried automatically; a manual regrade is always required.
+All grading changes are recorded in `score_history` and can be reverted from
+the session's **Cronologia modifiche** panel.
+
+## Teacher Login Rate Limit
+
+`POST /api/auth/teacher-login` locks an account key after repeated failed
+password attempts (sliding window, in-process). Defaults: 10 failures per 15
+minutes per email. Tune with:
+
+```env
+LOGIN_RATE_MAX_FAILURES=10
+LOGIN_RATE_WINDOW_SECONDS=900
+```
+
+The counter clears on successful login and on app restart. A locked-out user
+sees HTTP 429 (`TOO_MANY_ATTEMPTS`); they can wait out the window, use Google
+login, or an operator can restart the `app` container to clear all counters.
+
 ## First Super-Admin
 
 For a fresh database:

@@ -60,43 +60,51 @@ Safety guard:
 ```python
 import os, re, unicodedata       # 1. stdlib
 from pathlib import Path
-import commentjson as json        # 2. third-party (NEVER plain `import json`)
-from flask import Blueprint, request
+import commentjson as json        # 2. third-party (for question JSONC; plain json ok elsewhere)
+from flask import Blueprint, request, g
 from werkzeug.exceptions import NotFound, BadRequest
-from utils import load_scores, ADMIN_PW  # 3. local
+from db import get_conn                       # 3. local
+from db import queries as q
+from services import quiz_session as qs
 ```
 
 ### Naming
-- Constants: `UPPER_SNAKE_CASE` — `ADMIN_PW`, `SCORE_FILE`
-- Functions/variables: `snake_case` — `load_scores`, `quiz_id`
-- Blueprints: `<name>_bp` — `quiz_bp`, `admin_bp`
+- Constants: `UPPER_SNAKE_CASE` — `JWT_SECRET`, `LIST_SNAPSHOTS`
+- Functions/variables: `snake_case` — `transform_scores`, `quiz_id`
+- Blueprints: `<name>_bp` — `quiz_bp`, `teacher_bp`
 - Route handlers: `api_<action>` — `api_scores`, `api_submit`
 
 ### Error Handling
-- Werkzeug exceptions: `abort(400)` bad request · `abort(403)` auth · `abort(404)` not found
-- Catch specific exceptions: `FileNotFoundError`, `ValueError`
+- Werkzeug exceptions: `abort(400)` bad request · `abort(401/403)` auth · `abort(404)` not found
+- Catch specific exceptions: `KeyError`, `ValueError` — never bare `except`
 
-### Admin Authentication
+### Authentication
 ```python
-password = data.get('pw')
-if not password or password != ADMIN_PW:
-    abort(403)
+# Route guards — never check credentials inline in a handler
+@teacher_bp.route('/api/teacher/sessions', methods=['GET'])
+@require_teacher
+def api_list_sessions():
+    teacher_id = int(g.current_user['sub'])
 ```
 
 ### Logging
 ```python
-print(f"[AUTH] Admin login attempt")  # print() only, no logging module
+print(f"[AUTH] Teacher login: {email}")  # print() only, no logging module
 ```
 
-### File Writes — CRITICAL
-Always use atomic helpers; never bare read-modify-write:
+### Database Writes — CRITICAL
+All state lives in PostgreSQL. Use parameterized SQL from `db/queries.py`, one
+transaction per operation, and verify ownership *inside* the transaction:
 ```python
-# CORRECT
-append_score_atomic(score_entry)              # quiz submissions
-update_scores_atomic(lambda s: s + [item])    # admin bulk ops
+# CORRECT — lock, verify owner, mutate, commit (single transaction)
+with get_conn() as conn:
+    row = conn.execute(q.LOCK_SESSION_FOR_UPDATE, (session_id,)).fetchone()
+    if row is None or row['teacher_id'] != teacher_id:
+        raise Forbidden()
+    conn.execute(q.UPDATE_SESSION_STATUS, {...})
+    conn.commit()
 
-# WRONG — race condition
-scores = load_scores(); scores.append(x); save_scores(scores)
+# WRONG — check-then-act across transactions (TOCTOU), or f-string SQL
 ```
 
 ---
@@ -136,7 +144,7 @@ export default MyComponent;
 ### State & Data Fetching
 - **Server state**: TanStack Query only — no bare `useEffect` + `fetch`
 - **Client state**: `useState` only — no Redux/Zustand
-- Query keys must include all dependencies: `["scores", password]`
+- Query keys must include all dependencies: `["scores", sessionId]`
 - Invalidate after every mutation: `queryClient.invalidateQueries(...)`
 
 ### Error Handling
@@ -216,13 +224,14 @@ Added per-type counts.
 
 ## Key Gotchas
 
-1. **JSONC**: always `import commentjson as json` — never stdlib `json`
+1. **JSONC**: parse question files with `commentjson` — never stdlib `json` (comments would crash it)
 2. **Question IDs**: stringify always — `str(q_id)`
-3. **Option indices**: extract with `re.search(r'\(Index:\s*(\d+)\)', formatted_answer)`
-4. **Quiz progression**: question-by-question via `/api/save-answer`; answers are immutable once saved
-5. **Admin password**: required in `.env` — app won't start without it
-6. **Student identity**: email address (lowercased) used as login + filename key
-7. **Frontend build**: run `pnpm build` before production; output goes to `frontend/dist/`
+3. **Option indices**: extract with `re.search(r'\(Index:\s*(\d+)\)', formatted_answer)` for legacy entries
+4. **Quiz progression**: question-by-question via `/api/quiz/save-answer`; answers are immutable once saved
+5. **Required env**: `DATABASE_URL` and `JWT_SECRET` (32+ chars) — app won't start without them
+6. **Student identity**: lowercased school email from Google Workspace sync; students have no passwords
+7. **Frontend build**: run `pnpm build` before production; output goes to `frontend/dist/` (Docker does this in-stage)
+8. **API contract**: response shapes must stay compatible with `frontend/src/api.ts` — update both sides together
 
 ---
 
