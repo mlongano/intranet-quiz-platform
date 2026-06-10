@@ -89,7 +89,7 @@ _STUDENTS_BANK = json.dumps([
 def _build_fixture(tmp_path: Path) -> Path:
     """Build a minimal v2.6.0 project directory tree."""
     src = tmp_path / "quiz-manager-v260"
-    src.mkdir()
+    src.mkdir(parents=True)
 
     (src / "students.jsonc").write_text(_STUDENTS)
     (src / "questions.jsonc").write_text(_QUESTIONS)

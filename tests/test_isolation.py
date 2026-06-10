@@ -23,6 +23,14 @@ def auth_post(client, path, body, teacher_id, email='t@test.it'):
                                 'Authorization': f'Bearer {tok}'})
 
 
+def auth_put(client, path, body, teacher_id, email='t@test.it'):
+    tok = teacher_token(teacher_id, email=email)
+    return client.put(path,
+                      data=json.dumps(body),
+                      headers={'Content-Type': 'application/json',
+                               'Authorization': f'Bearer {tok}'})
+
+
 def auth_delete(client, path, teacher_id, email='t@test.it'):
     tok = teacher_token(teacher_id, email=email)
     return client.delete(path, headers={'Authorization': f'Bearer {tok}'})
@@ -55,8 +63,8 @@ class TestSnapshotIsolation:
     def test_cannot_update_other_snapshot(self, client, two_teachers):
         snap_b = two_teachers['b']['snap']
         tid_a = two_teachers['a']['id']
-        resp = auth_post(client, f'/api/teacher/snapshots/{snap_b}', {'title': 'Hacked'},
-                         tid_a, 'teacher_a@test.it')
+        resp = auth_put(client, f'/api/teacher/snapshots/{snap_b}', {'title': 'Hacked'},
+                        tid_a, 'teacher_a@test.it')
         assert resp.status_code in (403, 404)
 
     def test_cannot_delete_other_snapshot(self, client, two_teachers):
