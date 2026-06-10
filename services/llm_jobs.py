@@ -284,54 +284,6 @@ def _process_next_answer_for_score(job: dict, score_id: int) -> bool:
     return True
 
 
-def _process_answers(answers: list[dict]) -> tuple[bool, int]:
-    changed = False
-    processed = 0
-    now = datetime.now(timezone.utc).isoformat()
-
-    for answer in answers:
-        if _answer_type(answer) != 'open' or answer.get('llm_status') != 'pending':
-            continue
-        answer.setdefault('type', 'open')
-        processed += 1
-
-        if answer.get('manual_override'):
-            answer['llm_status'] = 'graded'
-            answer['llm_error'] = None
-            answer['llm_updated_at'] = now
-            changed = True
-            continue
-
-        q = answer.get('question_snapshot')
-        if not isinstance(q, dict):
-            q = {
-                'id': answer.get('question_id'),
-                'type': 'open',
-                'text': answer.get('question_text') or '',
-                'acceptable': answer.get('raw_correct_answer') or answer.get('correct_answer') or [],
-                'weight': answer.get('weight', 1),
-            }
-
-        try:
-            result = grade_open_answer(answer.get('raw_student_answer') or '', q)
-            points = round(float(result.get('points', 0)), 2)
-            verdict = result.get('llm_verdict')
-            answer['points_awarded'] = points
-            answer['raw_points'] = points
-            answer['llm_feedback'] = result.get('llm_feedback')
-            answer['llm_verdict'] = verdict
-            answer['llm_status'] = 'fallback' if verdict == 'fallback' else 'graded'
-            answer['llm_error'] = None
-            answer['llm_updated_at'] = now
-        except Exception as exc:
-            answer['llm_status'] = 'error'
-            answer['llm_error'] = str(exc)
-            answer['llm_updated_at'] = now
-        changed = True
-
-    return changed, processed
-
-
 def _process_one_pending_answer(answers: list[dict], *, is_regrade: bool = False) -> bool:
     now = datetime.now(timezone.utc).isoformat()
     any_changed = False

@@ -43,19 +43,43 @@ def list_sessions_for_teacher(teacher_id: int, status_filter: str | None = None)
     return result
 
 
+def get_session_for_teacher(teacher_id: int, session_id: int) -> dict:
+    with db.get_conn() as conn:
+        row = conn.execute(Q.GET_SESSION, (session_id, teacher_id)).fetchone()
+    if not row:
+        raise NotFound(description="Session not found.")
+    return {
+        'id': row[0], 'snapshot_id': row[2], 'title': row[3],
+        'join_code': row[4], 'status': row[5],
+        'opens_at': row[6].isoformat() if row[6] else None,
+        'closes_at': row[7].isoformat() if row[7] else None,
+        'created_at': row[8].isoformat() if row[8] else None,
+        'classes': row[9] if isinstance(row[9], list) else json.loads(row[9] or '[]'),
+    }
+
+
 def list_session_scores(teacher_id: int, session_id: int) -> list[dict]:
     with db.get_conn() as conn:
         assert_session_owner(conn, session_id, teacher_id)
         rows = conn.execute(Q.LIST_SCORES_FOR_SESSION, (session_id,)).fetchall()
-    return [
-        {
+
+    entries = []
+    for r in rows:
+        answers = _answers(r[4])
+        pending = [
+            a for a in answers
+            if a.get('type') == 'open' and a.get('llm_status') == 'pending'
+        ]
+        entries.append({
             'id': r[0], 'raw_points': float(r[1]), 'max_points': float(r[2]),
-            'percent': float(r[3]), 'answers': _answers(r[4]),
+            'percent': float(r[3]), 'answers': answers,
             'submitted_at': r[5].isoformat() if r[5] else None,
             'student_email': r[6], 'student_name': r[7],
-        }
-        for r in rows
-    ]
+            'grading_complete': not pending,
+            'pending_open_count': len(pending),
+            'pending_open_weight': sum(a.get('weight', 0) for a in pending),
+        })
+    return entries
 
 
 def delete_draft_session(teacher_id: int, session_id: int) -> None:

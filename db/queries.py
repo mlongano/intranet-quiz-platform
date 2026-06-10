@@ -543,6 +543,10 @@ DELETE_STUDENT_SNAPSHOT = """
     DELETE FROM student_list_snapshots WHERE id = %s AND teacher_id = %s
 """
 
+UPDATE_STUDENT_SNAPSHOT_TITLE = """
+    UPDATE student_list_snapshots SET title = %s WHERE id = %s AND teacher_id = %s
+"""
+
 # ── sync runs ─────────────────────────────────────────────────────────────────
 
 INSERT_SYNC_RUN = """

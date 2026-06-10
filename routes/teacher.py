@@ -60,18 +60,23 @@ import json
 import os
 
 from flask import Blueprint, Response, g, jsonify, request
-from werkzeug.exceptions import BadRequest, Conflict, Forbidden, NotFound
+from werkzeug.exceptions import Conflict, Forbidden, NotFound
 
 import db
 from db import queries as Q
 from auth.decorators import require_teacher
+from services import archives as archive_service
+from services import classes as class_service
 from services import images as img_service
 from services import quiz_session as qs_service
+from services import session_scores as ss_service
 from services import snapshots as snap_service
+from services import student_snapshots as sls_service
 from services.classroom_sync import list_courses_for_teacher, sync_courses_for_teacher
 from services.grading import format_detailed_answers, grade
 from services.llm_jobs import enqueue_regrade_session, get_job_for_teacher, get_latest_job_for_session
 from services import score_transforms
+from services.session_scores import assert_session_owner as _assert_session_owner
 
 teacher_bp = Blueprint('teacher', __name__, url_prefix='/api/teacher')
 
@@ -82,14 +87,22 @@ def _teacher_id() -> int:
     return int(g.current_user['sub'])
 
 
-def _assert_session_owner(conn, session_id: int, teacher_id: int):
-    row = conn.execute(
-        "SELECT teacher_id FROM quiz_sessions WHERE id = %s", (session_id,)
-    ).fetchone()
-    if not row:
-        raise NotFound(description="Session not found.")
-    if row[0] != teacher_id:
-        raise Forbidden(description="Not your session.")
+# Services raise werkzeug exceptions; render them as the JSON error shape the
+# frontend expects (apiFetch reads body.error || body.description).
+
+@teacher_bp.errorhandler(NotFound)
+def _json_not_found(e):
+    return jsonify({'error': 'NOT_FOUND', 'description': e.description}), 404
+
+
+@teacher_bp.errorhandler(Forbidden)
+def _json_forbidden(e):
+    return jsonify({'error': 'FORBIDDEN', 'description': e.description}), 403
+
+
+@teacher_bp.errorhandler(Conflict)
+def _json_conflict(e):
+    return jsonify({'error': 'CONFLICT', 'description': e.description}), 409
 
 
 # ── snapshots ─────────────────────────────────────────────────────────────────
@@ -211,31 +224,13 @@ def clear_images(snapshot_id: int):
 @teacher_bp.get('/classes')
 @require_teacher
 def list_classes():
-    with db.get_conn() as conn:
-        rows = conn.execute(Q.LIST_CLASSES_FOR_TEACHER, (_teacher_id(),)).fetchall()
-    return jsonify([
-        {'id': r[0], 'name': r[1], 'academic_year': r[2], 'student_count': r[3]}
-        for r in rows
-    ]), 200
+    return jsonify(class_service.list_classes_for_teacher(_teacher_id())), 200
 
 
 @teacher_bp.get('/classes/<int:class_id>/students')
 @require_teacher
 def list_class_students(class_id: int):
-    teacher_id = _teacher_id()
-    with db.get_conn() as conn:
-        # Verify teacher owns this class
-        owns = conn.execute(
-            "SELECT 1 FROM class_teachers WHERE class_id = %s AND teacher_id = %s",
-            (class_id, teacher_id),
-        ).fetchone()
-        if not owns:
-            raise Forbidden(description="Not your class.")
-        rows = conn.execute(Q.LIST_STUDENTS_FOR_CLASS, (class_id,)).fetchall()
-    return jsonify([
-        {'id': r[0], 'email': r[1], 'display_name': r[2], 'status': r[3]}
-        for r in rows
-    ]), 200
+    return jsonify(class_service.list_students_for_class(_teacher_id(), class_id)), 200
 
 
 @teacher_bp.get('/classroom/courses')
@@ -265,23 +260,14 @@ def sync_classroom_courses():
 @teacher_bp.get('/sessions')
 @require_teacher
 def list_sessions():
-    teacher_id = _teacher_id()
-    status_filter = request.args.get('status')
-    with db.get_conn() as conn:
-        rows = conn.execute(Q.LIST_SESSIONS_FOR_TEACHER, (teacher_id,)).fetchall()
-    result = []
-    for r in rows:
-        sess = {
-            'id': r[0], 'title': r[1], 'status': r[2], 'join_code': r[3],
-            'opens_at': r[4].isoformat() if r[4] else None,
-            'closes_at': r[5].isoformat() if r[5] else None,
-            'created_at': r[6].isoformat() if r[6] else None,
-            'classes': r[7] if isinstance(r[7], list) else json.loads(r[7] or '[]'),
-            'score_count': r[8],
-        }
-        if not status_filter or sess['status'] == status_filter:
-            result.append(sess)
-    return jsonify(result), 200
+    sessions = ss_service.list_sessions_for_teacher(_teacher_id(), request.args.get('status'))
+    return jsonify(sessions), 200
+
+
+@teacher_bp.get('/sessions/<int:session_id>')
+@require_teacher
+def get_session(session_id: int):
+    return jsonify(ss_service.get_session_for_teacher(_teacher_id(), session_id)), 200
 
 
 @teacher_bp.post('/sessions')
@@ -358,14 +344,10 @@ def regen_join_code(session_id: int):
 @teacher_bp.delete('/sessions/<int:session_id>')
 @require_teacher
 def delete_session(session_id: int):
-    teacher_id = _teacher_id()
-    with db.get_conn() as conn:
-        _assert_session_owner(conn, session_id, teacher_id)
-        result = conn.execute(Q.DELETE_SESSION, (session_id, teacher_id))
-        if result.rowcount == 0:
-            conn.rollback()
-            return jsonify({'error': 'SESSION_NOT_DRAFT'}), 409
-        conn.commit()
+    try:
+        ss_service.delete_draft_session(_teacher_id(), session_id)
+    except Conflict:
+        return jsonify({'error': 'SESSION_NOT_DRAFT'}), 409
     return jsonify({'ok': True}), 200
 
 
@@ -374,33 +356,7 @@ def delete_session(session_id: int):
 @teacher_bp.get('/sessions/<int:session_id>/scores')
 @require_teacher
 def session_scores(session_id: int):
-    teacher_id = _teacher_id()
-    with db.get_conn() as conn:
-        _assert_session_owner(conn, session_id, teacher_id)
-        rows = conn.execute(Q.LIST_SCORES_FOR_SESSION, (session_id,)).fetchall()
-
-    entries = []
-    for r in rows:
-        answers = r[4] if isinstance(r[4], list) else json.loads(r[4] or '[]')
-        pending_count = sum(
-            1 for a in answers
-            if a.get('type') == 'open' and a.get('llm_status') == 'pending'
-        )
-        pending_weight = sum(
-            a.get('weight', 0) for a in answers
-            if a.get('type') == 'open' and a.get('llm_status') == 'pending'
-        )
-        entries.append({
-            'id': r[0], 'raw_points': float(r[1]), 'max_points': float(r[2]),
-            'percent': float(r[3]),
-            'answers': answers,
-            'submitted_at': r[5].isoformat() if r[5] else None,
-            'student_email': r[6], 'student_name': r[7],
-            'grading_complete': pending_count == 0,
-            'pending_open_count': pending_count,
-            'pending_open_weight': pending_weight,
-        })
-    return jsonify(entries), 200
+    return jsonify(ss_service.list_session_scores(_teacher_id(), session_id)), 200
 
 
 @teacher_bp.post('/sessions/<int:session_id>/scores/review')
@@ -476,37 +432,12 @@ def recalculate_scores(session_id: int):
 def archive_session_scores(session_id: int):
     """Snapshot current score entries into score_archives."""
     data = request.get_json(silent=True) or {}
-    title = data.get('title')
-    notes = data.get('notes')
-    teacher_id = _teacher_id()
-
-    with db.get_conn() as conn:
-        _assert_session_owner(conn, session_id, teacher_id)
-        sess_row = conn.execute(
-            "SELECT title FROM quiz_sessions WHERE id = %s", (session_id,)
-        ).fetchone()
-        archive_title = title or (sess_row[0] if sess_row else f"session-{session_id}")
-
-        score_rows = conn.execute(Q.LIST_SCORES_FOR_SESSION, (session_id,)).fetchall()
-        content = [
-            {
-                'student_email': r[6], 'student_name': r[7],
-                'raw_points': float(r[1]), 'max_points': float(r[2]), 'percent': float(r[3]),
-                'answers': r[4] if isinstance(r[4], list) else json.loads(r[4] or '[]'),
-                'submitted_at': r[5].isoformat() if r[5] else None,
-            }
-            for r in score_rows
-        ]
-        row = conn.execute(Q.INSERT_ARCHIVE, {
-            'teacher_id': teacher_id,
-            'title': archive_title,
-            'source_session_id': session_id,
-            'content': json.dumps(content),
-            'notes': notes,
-        }).fetchone()
-        conn.commit()
-
-    return jsonify({'archive_id': row[0], 'archived_at': row[1].isoformat()}), 201
+    result = ss_service.archive_session_scores(
+        _teacher_id(), session_id,
+        title=data.get('title'),
+        notes=data.get('notes'),
+    )
+    return jsonify(result), 201
 
 
 @teacher_bp.post('/sessions/<int:session_id>/scores/regrade-open')
@@ -692,42 +623,21 @@ def latest_llm_job(session_id: int):
 @teacher_bp.get('/archives')
 @require_teacher
 def list_archives():
-    with db.get_conn() as conn:
-        rows = conn.execute(Q.LIST_ARCHIVES, (_teacher_id(),)).fetchall()
-    return jsonify([
-        {
-            'id': r[0], 'title': r[1], 'source_session_id': r[2],
-            'notes': r[3], 'archived_at': r[4].isoformat() if r[4] else None,
-        }
-        for r in rows
-    ]), 200
+    return jsonify(archive_service.list_archives(_teacher_id())), 200
 
 
 @teacher_bp.get('/archives/<int:archive_id>')
 @require_teacher
 def get_archive(archive_id: int):
-    with db.get_conn() as conn:
-        row = conn.execute(Q.GET_ARCHIVE, (archive_id, _teacher_id())).fetchone()
-    if not row:
-        return jsonify({'error': 'NOT_FOUND'}), 404
-    return jsonify({
-        'id': row[0], 'title': row[2], 'source_session_id': row[3],
-        'content': row[4] if isinstance(row[4], list) else json.loads(row[4] or '[]'),
-        'notes': row[5], 'archived_at': row[6].isoformat() if row[6] else None,
-    }), 200
+    return jsonify(archive_service.get_archive(_teacher_id(), archive_id)), 200
 
 
 @teacher_bp.get('/archives/<int:archive_id>/export')
 @require_teacher
 def export_archive(archive_id: int):
-    with db.get_conn() as conn:
-        row = conn.execute(Q.GET_ARCHIVE, (archive_id, _teacher_id())).fetchone()
-    if not row:
-        return jsonify({'error': 'NOT_FOUND'}), 404
-    content = row[4] if isinstance(row[4], list) else json.loads(row[4] or '[]')
-    filename = f"{row[2]}.json"
+    filename, payload = archive_service.export_archive(_teacher_id(), archive_id)
     return Response(
-        json.dumps(content, ensure_ascii=False, indent=2),
+        payload,
         mimetype='application/json',
         headers={'Content-Disposition': f'attachment; filename="{filename}"'},
     )
@@ -736,12 +646,7 @@ def export_archive(archive_id: int):
 @teacher_bp.delete('/archives/<int:archive_id>')
 @require_teacher
 def delete_archive(archive_id: int):
-    with db.get_conn() as conn:
-        result = conn.execute(Q.DELETE_ARCHIVE, (archive_id, _teacher_id()))
-        if result.rowcount == 0:
-            conn.rollback()
-            return jsonify({'error': 'NOT_FOUND'}), 404
-        conn.commit()
+    archive_service.delete_archive(_teacher_id(), archive_id)
     return jsonify({'ok': True}), 200
 
 
@@ -752,12 +657,7 @@ def rename_archive(archive_id: int):
     title = (data.get('title') or '').strip()
     if not title:
         return jsonify({'error': 'MISSING_TITLE'}), 400
-    with db.get_conn() as conn:
-        result = conn.execute(Q.UPDATE_ARCHIVE_TITLE, (title, archive_id, _teacher_id()))
-        if result.rowcount == 0:
-            conn.rollback()
-            return jsonify({'error': 'NOT_FOUND'}), 404
-        conn.commit()
+    archive_service.rename_archive(_teacher_id(), archive_id, title)
     return jsonify({'ok': True}), 200
 
 
@@ -766,12 +666,7 @@ def rename_archive(archive_id: int):
 @teacher_bp.get('/student-snapshots')
 @require_teacher
 def list_student_snapshots():
-    with db.get_conn() as conn:
-        rows = conn.execute(Q.LIST_STUDENT_SNAPSHOTS, (_teacher_id(),)).fetchall()
-    return jsonify([
-        {'id': r[0], 'title': r[1], 'created_at': r[2].isoformat() if r[2] else None}
-        for r in rows
-    ]), 200
+    return jsonify(sls_service.list_student_snapshots(_teacher_id())), 200
 
 
 @teacher_bp.post('/student-snapshots')
@@ -782,40 +677,20 @@ def create_student_snapshot():
     content = data.get('content', [])
     if not title:
         return jsonify({'error': 'MISSING_TITLE'}), 400
-    teacher_id = _teacher_id()
-    with db.get_conn() as conn:
-        row = conn.execute(Q.INSERT_STUDENT_SNAPSHOT, {
-            'teacher_id': teacher_id,
-            'title': title,
-            'content': json.dumps(content),
-        }).fetchone()
-        conn.commit()
-    return jsonify({'id': row[0], 'created_at': row[1].isoformat()}), 201
+    result = sls_service.create_student_snapshot(_teacher_id(), title, content)
+    return jsonify(result), 201
 
 
 @teacher_bp.get('/student-snapshots/<int:snapshot_id>')
 @require_teacher
 def get_student_snapshot(snapshot_id: int):
-    with db.get_conn() as conn:
-        row = conn.execute(Q.GET_STUDENT_SNAPSHOT, (snapshot_id, _teacher_id())).fetchone()
-    if not row:
-        return jsonify({'error': 'NOT_FOUND'}), 404
-    return jsonify({
-        'id': row[0], 'title': row[1],
-        'content': row[2] if isinstance(row[2], list) else json.loads(row[2] or '[]'),
-        'created_at': row[3].isoformat() if row[3] else None,
-    }), 200
+    return jsonify(sls_service.get_student_snapshot(_teacher_id(), snapshot_id)), 200
 
 
 @teacher_bp.delete('/student-snapshots/<int:snapshot_id>')
 @require_teacher
 def delete_student_snapshot(snapshot_id: int):
-    with db.get_conn() as conn:
-        result = conn.execute(Q.DELETE_STUDENT_SNAPSHOT, (snapshot_id, _teacher_id()))
-        if result.rowcount == 0:
-            conn.rollback()
-            return jsonify({'error': 'NOT_FOUND'}), 404
-        conn.commit()
+    sls_service.delete_student_snapshot(_teacher_id(), snapshot_id)
     return jsonify({'ok': True}), 200
 
 
@@ -826,30 +701,16 @@ def rename_student_snapshot(snapshot_id: int):
     title = (data.get('title') or '').strip()
     if not title:
         return jsonify({'error': 'MISSING_TITLE'}), 400
-    with db.get_conn() as conn:
-        result = conn.execute(
-            "UPDATE student_list_snapshots SET title = %s WHERE id = %s AND teacher_id = %s",
-            (title, snapshot_id, _teacher_id()),
-        )
-        if result.rowcount == 0:
-            conn.rollback()
-            return jsonify({'error': 'NOT_FOUND'}), 404
-        conn.commit()
+    sls_service.rename_student_snapshot(_teacher_id(), snapshot_id, title)
     return jsonify({'ok': True}), 200
 
 
 @teacher_bp.get('/student-snapshots/<int:snapshot_id>/export')
 @require_teacher
 def export_student_snapshot(snapshot_id: int):
-    with db.get_conn() as conn:
-        row = conn.execute(Q.GET_STUDENT_SNAPSHOT, (snapshot_id, _teacher_id())).fetchone()
-    if not row:
-        return jsonify({'error': 'NOT_FOUND'}), 404
-    title = row[1]
-    content = row[2] if isinstance(row[2], list) else json.loads(row[2] or '[]')
-    filename = f"{title}.json"
+    filename, payload = sls_service.export_student_snapshot(_teacher_id(), snapshot_id)
     return Response(
-        json.dumps(content, ensure_ascii=False, indent=2),
+        payload,
         mimetype='application/json',
         headers={'Content-Disposition': f'attachment; filename="{filename}"'},
     )
