@@ -1,73 +1,130 @@
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { BarChart3, FileText, Users, Plus, ArrowRight } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Archive, BarChart3, FileText, RefreshCw, Users, Plus, ArrowRight } from 'lucide-react';
 import TeacherLayout from '../layouts/TeacherLayout';
-import { listSessions, listSnapshots, listClasses } from '../api';
+import { listArchives, listSessions, listSnapshots, listClasses } from '../api';
 import { getTeacherSession } from '../lib/session';
 
-type AccentColor = 'primary' | 'secondary' | 'tertiary';
+type AccentColor = 'primary' | 'secondary' | 'tertiary' | 'muted';
 
-function StatCard({ label, value, icon: Icon, accent = 'primary', onClick }: {
+const accentClasses: Record<AccentColor, { bar: string; glow: string; text: string }> = {
+  primary: { bar: 'bg-primary', glow: 'shadow-neon-cyan', text: 'text-primary' },
+  secondary: { bar: 'bg-secondary', glow: 'shadow-neon-magenta', text: 'text-secondary' },
+  tertiary: { bar: 'bg-tertiary', glow: 'shadow-neon-green', text: 'text-tertiary' },
+  muted: { bar: 'bg-primary-dim/70', glow: 'shadow-neon-cyan', text: 'text-on-surface-variant' },
+};
+
+function StatCard({ label, value, meta, detail, icon: Icon, accent = 'primary', onClick }: {
   label: string;
   value: number | string;
+  meta: string;
+  detail?: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
   accent?: AccentColor;
   onClick?: () => void;
 }) {
-  const bgClass = accent === 'primary' ? 'bg-primary/10' : accent === 'secondary' ? 'bg-secondary/10' : 'bg-tertiary/10';
-  const textClass = accent === 'primary' ? 'text-primary' : accent === 'secondary' ? 'text-secondary' : 'text-tertiary';
+  const classes = accentClasses[accent];
+  const valueClass = typeof value === 'string' && value.length > 14 ? 'text-2xl leading-tight' : 'text-4xl';
+
   return (
     <div
       onClick={onClick}
-      className={`bg-surface-container rounded-xl border-t-2 border-${accent}/40 border border-outline-variant/30 border-t-${accent} p-6 flex items-center gap-4 ${onClick ? 'cursor-pointer hover:bg-surface-container-high transition-colors' : ''}`}
-      style={{ borderTopColor: `var(--${accent})`, borderTopWidth: '2px' }}
+      className={`group relative min-h-44 overflow-hidden rounded-xl border border-outline-variant/25 bg-surface-container p-7 transition-all duration-300 ${classes.glow} ${onClick ? 'cursor-pointer hover:-translate-y-0.5 hover:bg-surface-container-high' : ''}`}
     >
-      <div className={`w-12 h-12 rounded-lg ${bgClass} flex items-center justify-center flex-shrink-0`}>
-        <Icon size={22} className={textClass} />
-      </div>
-      <div>
-        <p className="text-2xl font-bold text-on-surface">{value}</p>
-        <p className="text-sm text-on-surface-variant">{label}</p>
-      </div>
+      <div className={`absolute left-0 top-0 h-1 w-full ${classes.bar}`} />
+      <p className="mb-5 text-xs font-bold uppercase tracking-[0.22em] text-on-surface-variant">{label}</p>
+      <p className={`${valueClass} font-headline font-bold text-on-surface`}>{value}</p>
+      <p className={`mt-3 text-sm font-medium ${classes.text}`}>{meta}</p>
+      {detail && <p className="mt-1 text-sm text-on-surface-variant">{detail}</p>}
+      <Icon
+        size={108}
+        aria-hidden="true"
+        className="absolute -bottom-7 -right-5 text-on-surface opacity-[0.04] transition-opacity duration-300 group-hover:opacity-[0.09]"
+      />
     </div>
   );
 }
 
 function TeacherDashboardPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const session = getTeacherSession();
 
   const { data: sessions } = useQuery({ queryKey: ['sessions'], queryFn: () => listSessions() });
   const { data: snapshots } = useQuery({ queryKey: ['snapshots'], queryFn: listSnapshots });
   const { data: classes } = useQuery({ queryKey: ['classes'], queryFn: listClasses });
+  const { data: archives } = useQuery({ queryKey: ['archives'], queryFn: listArchives });
 
   const activeSessions = sessions?.filter(s => s.status === 'active') ?? [];
   const draftSessions = sessions?.filter(s => s.status === 'draft') ?? [];
+  const currentSession = activeSessions[0] ?? draftSessions[0];
+  const totalSubmissions = sessions?.reduce((sum, item) => sum + (item.score_count ?? 0), 0) ?? 0;
+  const totalStudents = classes?.reduce((sum, item) => sum + item.student_count, 0) ?? 0;
+
+  const refreshDashboard = () => {
+    queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    queryClient.invalidateQueries({ queryKey: ['snapshots'] });
+    queryClient.invalidateQueries({ queryKey: ['classes'] });
+    queryClient.invalidateQueries({ queryKey: ['archives'] });
+  };
 
   return (
     <TeacherLayout pageTitle={`Ciao, ${session?.display_name?.split(' ')[0] ?? 'Docente'}`}>
       <div className="space-y-8">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="flex flex-col gap-3 rounded-xl border border-outline-variant/10 bg-surface-container-low p-4 shadow-neon-cyan sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2 rounded-full bg-tertiary/10 px-3 py-1">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-tertiary" />
+              <span className="text-sm font-bold text-tertiary">Sessioni attive: {activeSessions.length}</span>
+            </div>
+            <span className="text-sm text-on-surface-variant">{draftSessions.length} bozze pronte</span>
+          </div>
+          <button
+            type="button"
+            onClick={refreshDashboard}
+            className="flex items-center gap-2 text-sm font-semibold text-primary transition-colors hover:text-on-surface"
+          >
+            <RefreshCw size={15} />
+            Aggiorna ora
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
           <StatCard
-            label="Sessioni attive"
-            value={activeSessions.length}
+            label="Quiz corrente"
+            value={currentSession?.title ?? 'Nessuno'}
+            meta={currentSession ? `${activeSessions.length} sessioni attive` : 'Crea una nuova sessione'}
+            detail={currentSession?.join_code ? `Codice: ${currentSession.join_code}` : undefined}
+            icon={FileText}
+            accent="primary"
+            onClick={() => navigate(currentSession ? `/teacher/sessions/${currentSession.id}` : '/teacher/sessions')}
+          />
+          <StatCard
+            label="Consegne"
+            value={totalSubmissions}
+            meta="consegne registrate"
+            detail={`${activeSessions.length} sessioni attive`}
             icon={BarChart3}
             accent="secondary"
             onClick={() => navigate('/teacher/sessions')}
           />
           <StatCard
-            label="Quiz (snapshot)"
-            value={snapshots?.length ?? '—'}
-            icon={FileText}
-            accent="primary"
-            onClick={() => navigate('/teacher/snapshots')}
-          />
-          <StatCard
-            label="Le mie classi"
-            value={classes?.length ?? '—'}
+            label="Studenti"
+            value={totalStudents || (classes ? 0 : '—')}
+            meta={`${classes?.length ?? 0} classi sincronizzate`}
+            detail="studenti iscritti"
             icon={Users}
             accent="tertiary"
             onClick={() => navigate('/teacher/classes')}
+          />
+          <StatCard
+            label="Archivio"
+            value={archives?.length ?? '—'}
+            meta="punteggi archiviati"
+            detail={`${snapshots?.length ?? 0} quiz salvati`}
+            icon={Archive}
+            accent="muted"
+            onClick={() => navigate('/teacher/archives')}
           />
         </div>
 
