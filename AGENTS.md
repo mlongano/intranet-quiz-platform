@@ -18,7 +18,7 @@ docker compose -f compose.yaml -f compose-debug.yaml up --build
 Notes:
 - `.env` sets `APP_PORT=5002` for this platform because host port `5001` is used by the legacy single-tenant service.
 - Compose maps `${APP_PORT:-5002}:5001`; Flask still listens on container-internal port `5001`.
-- `compose.yaml` is the normal/production stack (`db`, `app`, `worker`, `backup`). The React frontend is built into the `app` image and served from `frontend/dist`; the `backup` service writes automatic PostgreSQL/image backups to host-visible `./backups/`.
+- `compose.yaml` is the normal/production stack (`db`, `app`, `worker`, `backup`). The React frontend is built into the `app` image and served from `frontend/dist`.
 - `compose-debug.yaml` is the development override. It adds the separate `frontend` container for Vite hot reload on port `5173`.
 - `security_opt: apparmor:unconfined` helps runtime containers only; Dockerfile build steps require the `lxc-remote2` BuildKit builder.
 
@@ -28,14 +28,41 @@ uv run server.py              # Dev server (http://localhost:5001)
 python3 -m py_compile <file>  # Syntax check
 ```
 
-### Frontend (TypeScript + React)
+### Backup & Restore
+
+The `backup` service in `compose.yaml` runs automatic PostgreSQL dumps and image tarballs to host-visible `./backups/`:
+- `./backups/db/quizparty-YYYYMMDDTHHMMSSZ.dump`
+- `./backups/images/quizparty-images-YYYYMMDDTHHMMSSZ.tar.gz`
+- `./backups/manifests/quizparty-YYYYMMDDTHHMMSSZ.json`
+
+Configurable via `.env`:
 ```bash
-cd frontend
-pnpm install
-pnpm dev          # Dev server (http://localhost:5173)
-pnpm build        # Production build (includes type-check)
-pnpm lint
+BACKUP_ON_START=1               # run a backup immediately on container start
+BACKUP_INTERVAL_SECONDS=21600   # every 6 hours
+BACKUP_RETENTION_DAYS=30        # auto-delete older backups
 ```
+
+**Run an immediate one-off backup:**
+```bash
+docker compose run --rm backup sh /usr/local/bin/quizparty-backup once
+```
+
+**Restore (always dry-run first):**
+```bash
+# Dry-run the latest backup
+scripts/restore_backup.sh --dry-run --latest
+
+# Restore the latest backup (destructive — stops app + worker)
+scripts/restore_backup.sh --latest --confirm RESTORE_QUIZPARTY
+
+# Restore explicit files
+scripts/restore_backup.sh \
+  --db-dump ./backups/db/quizparty-YYYYMMDDTHHMMSSZ.dump \
+  --images-tar ./backups/images/quizparty-images-YYYYMMDDTHHMMSSZ.tar.gz \
+  --confirm RESTORE_QUIZPARTY
+```
+
+The restore script stops `app` and `worker`, runs `pg_restore` (dropping/recreating the database), optionally extracts images from the tarball, then starts the stack again.
 
 ### Testing
 ```bash
