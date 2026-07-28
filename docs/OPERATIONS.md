@@ -83,6 +83,17 @@ worker`) claims jobs from the `llm_grading_jobs` table and grades one answer at
 a time. If the worker is down or the provider fails, submissions still succeed
 — scores simply stay provisional until grading completes.
 
+**Run exactly one worker replica.** On startup the worker calls
+`requeue_running_jobs()`, which resets *every* job in `running` back to
+`pending`. With a second replica already grading, that reclaims its job and
+both would process the same answers. Scaling grading means adding a claim
+lease first, not `--scale worker=N`.
+
+A worker started with `USE_LLM_EVAL` unset logs a warning and keeps running:
+open answers simply stay `pending`, which is safe — a failed or unconfigured
+evaluation is never recorded as a grade. If `USE_LLM_EVAL=1` but `LLM_MODEL`
+is empty, both the app and the worker refuse to start.
+
 Check the worker:
 
 ```bash
@@ -118,14 +129,37 @@ Recovery:
 2. Restart the worker if needed: `docker compose restart worker`.
 3. Ask the Teacher to click **Rivaluta risposte aperte** on the session's
    scores page (or `POST /api/teacher/sessions/<id>/scores/regrade-open`).
-   This enqueues a new `regrade_session` job that re-processes answers with
-   `llm_status` of `pending` or `error`.
+   This enqueues a new `regrade_session` job that re-processes answers that
+   are still `pending`.
 
 Note: regrades are rate-limited per session (`LLM_REGRADE_COOLDOWN_SECONDS`,
 default 60s) — a second click within the cooldown returns HTTP 429. Failed
 jobs are never retried automatically; a manual regrade is always required.
 All grading changes are recorded in `score_history` and can be reverted from
 the session's **Cronologia modifiche** panel.
+
+A job whose individual answers failed still finishes as `completed`: the
+outcome lives on the answers themselves. Its `error` column summarises which
+questions were not evaluated, including answers skipped because a teacher
+edited them while the evaluation was in flight.
+
+## Legacy image paths
+
+Images are stored at `images/{teacher_id}/{snapshot_id}/{file}`. Rows created
+before the multi-tenant migration may still reference
+`images/{snapshot_id}/{file}`, which `serve_images()` resolves by scanning
+every teacher directory — meaning one teacher's image can be served out of
+another's folder.
+
+Check whether any such reference is left, then remove that fallback:
+
+```bash
+docker compose exec -T app python scripts/check_legacy_image_paths.py
+```
+
+Exit code 0 (no findings) means the fallback in `server.py` can be deleted.
+Otherwise rewrite the reported paths to their full
+`{teacher_id}/{snapshot_id}/{file}` form first.
 
 ## Teacher Login Rate Limit
 

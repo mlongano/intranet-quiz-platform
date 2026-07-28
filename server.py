@@ -5,6 +5,7 @@ Multi-teacher / multi-class edition.
 
 import os
 import socket
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -23,10 +24,26 @@ if env_file.exists():
 else:
     print(f"✗ WARNING: .env file not found at {env_file}")
 
-# Fail fast on missing required secrets
-for required in ('DATABASE_URL', 'JWT_SECRET'):
-    if not os.environ.get(required):
-        print(f"✗ ERROR: {required} is not set — the application will not start.")
+# Fail fast on missing required secrets. This must actually exit: starting
+# without them only defers the failure to the first request that needs them.
+_missing = [name for name in ('DATABASE_URL', 'JWT_SECRET') if not os.environ.get(name)]
+for name in _missing:
+    print(f"✗ ERROR: {name} is not set — the application will not start.")
+if len(os.environ.get('JWT_SECRET', '')) < 32 and 'JWT_SECRET' not in _missing:
+    print("✗ ERROR: JWT_SECRET must be at least 32 characters.")
+    _missing.append('JWT_SECRET')
+if _missing:
+    print("=" * 60)
+    sys.exit(1)
+
+from services.llm_errors import LlmConfigurationError, validate_llm_env
+
+try:
+    validate_llm_env()
+except LlmConfigurationError as exc:
+    print(f"✗ ERROR: {exc}")
+    print("=" * 60)
+    sys.exit(1)
 print("=" * 60)
 
 # ── database pool ─────────────────────────────────────────────────────────────
@@ -72,6 +89,14 @@ def serve_assets(filename):
 
 @APP.route('/images/<path:filename>')
 def serve_images(filename):
+    # Unauthenticated on purpose: students load images with no teacher token,
+    # on a school intranet.
+    #
+    # The block below resolves legacy /images/{snapshot_id}/{file} paths by
+    # scanning every teacher directory, so one teacher's image can be served
+    # from another teacher's folder. It is scheduled for removal once
+    # scripts/check_legacy_image_paths.py reports zero legacy references
+    # against the production database.
     if not IMAGES_FOLDER.exists():
         abort(404, description="Images directory not found.")
     requested = IMAGES_FOLDER / filename
@@ -100,9 +125,6 @@ def serve_react_app(path):
 
 
 # ── startup ───────────────────────────────────────────────────────────────────
-
-import sys
-
 
 def _local_ips() -> list[str]:
     addrs = ['127.0.0.1']

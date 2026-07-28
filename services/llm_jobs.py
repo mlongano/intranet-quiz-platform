@@ -13,11 +13,13 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+from psycopg import errors as pg_errors
 from werkzeug.exceptions import Forbidden, NotFound
 
 import db
 from db import queries as Q
 from services.grading import grade_open_answer
+from services.llm_errors import LlmConfigurationError, llm_enabled, validate_llm_env
 from utils import ensure_list
 
 
@@ -87,7 +89,9 @@ def enqueue_regrade_session(session_id: int, teacher_id: int) -> dict:
                 total_items += 1
 
         if total_items > 0:
-            # Concurrency: try to insert pending job; unique index rejects duplicate
+            # Concurrency: uq_llm_active_regrade_per_session rejects a second
+            # pending/running regrade. Only that collision means "already
+            # running" — any other failure is a real error and must surface.
             try:
                 job = create_llm_job(
                     conn,
@@ -97,7 +101,7 @@ def enqueue_regrade_session(session_id: int, teacher_id: int) -> dict:
                     job_type='regrade_session',
                     total_items=total_items,
                 )
-            except Exception:
+            except pg_errors.UniqueViolation:
                 conn.rollback()
                 from werkzeug.exceptions import Conflict
                 raise Conflict(description="Una rivalutazione è già in corso per questa sessione.")
@@ -202,11 +206,31 @@ def process_next_job() -> bool:
     return True
 
 
-def worker_loop(*, poll_seconds: float = 2.0) -> None:
+def worker_loop(*, poll_seconds: float = 2.0, error_backoff_seconds: float = 5.0) -> None:
+    """Poll for grading jobs forever.
+
+    Assumes a single worker replica: requeue_running_jobs() below reclaims
+    every running job at startup, which would steal jobs from a live sibling.
+
+    A failure inside one iteration (typically a database blip) must not kill
+    the process, or grading silently stops until someone notices.
+    """
     print("[LLM_JOBS] Worker started.", flush=True)
+    if not llm_enabled():
+        print(
+            "[LLM_JOBS] WARNING: USE_LLM_EVAL is not 1 — open answers will stay "
+            "pending until the LLM is configured and a regrade is requested.",
+            flush=True,
+        )
+
     requeue_running_jobs()
     while True:
-        did_work = process_next_job()
+        try:
+            did_work = process_next_job()
+        except Exception as exc:
+            print(f"[LLM_JOBS] Worker iteration failed: {exc}", flush=True)
+            time.sleep(error_backoff_seconds)
+            continue
         if not did_work:
             time.sleep(poll_seconds)
 
@@ -480,6 +504,12 @@ def main() -> None:
     parser.add_argument('command', choices=['worker', 'once'])
     parser.add_argument('--poll-seconds', type=float, default=2.0)
     args = parser.parse_args()
+
+    try:
+        validate_llm_env()
+    except LlmConfigurationError as exc:
+        print(f"[LLM_JOBS] ERROR: {exc}", flush=True)
+        raise SystemExit(1)
 
     db.init_pool(
         dsn=os.environ.get('DATABASE_URL', 'postgresql:///quizparty'),
