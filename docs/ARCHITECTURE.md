@@ -186,6 +186,50 @@ student answer, correct answer, awarded points, option order, raw values,
 LLM feedback, and a `question_snapshot` embedding (deep copy of the question
 at submission time — makes each score entry self-contained).
 
+Each answer also carries `llm_status` (`not_applicable` for closed questions,
+`pending` until the worker grades it, then `graded`), an optional
+`manual_override` flag, and `answer_revision` — a per-answer counter that only
+ever moves forward and ties the stored answer to its audit trail.
+
+### Async LLM grading
+
+```sql
+llm_grading_jobs (id, teacher_id FK, session_id FK, score_entry_id FK,
+                  job_type [submission | regrade_session | regrade_score],
+                  status [pending | running | completed | failed],
+                  total_items, processed_items, error,
+                  created_at, started_at, finished_at)
+                  UNIQUE (session_id) WHERE job_type='regrade_session'
+                                        AND status IN ('pending','running')
+```
+
+`quiz_sessions.last_regrade_at` backs the per-session regrade cooldown.
+
+### Score audit trail
+
+```sql
+score_change_sets (id UUID, session_id FK [CASCADE],
+                   reason [submission | llm_grade | llm_regrade |
+                           manual_review | recalculate | revert],
+                   actor_type [teacher | system], changed_by FK [SET NULL],
+                   llm_job_id FK [SET NULL], reverted_change_id FK [SET NULL],
+                   created_at)
+
+score_history (id, change_set_id FK [CASCADE], score_entry_id FK [CASCADE],
+               question_id, answer_index, old_revision, new_revision,
+               old_answer JSONB, new_answer JSONB,
+               old_raw_points, new_raw_points, old_percent, new_percent,
+               created_at)
+               CHECK ((old_revision = 0 AND new_revision = 0)
+                      OR new_revision = old_revision + 1)
+               UNIQUE (change_set_id, score_entry_id, question_id)
+```
+
+One change set per operation, one history row per *changed* answer.
+`services/score_transforms.py::record_answer_changes()` is the only place that
+decides what counts as a change and assigns the new revision, which is what
+keeps `answer_revision` and the CHECK above in agreement.
+
 ### Archives
 
 ```sql
@@ -222,11 +266,20 @@ sync_runs (id, started_at, finished_at, triggered_by FK, result JSONB,
 │   ├── migrate.py                # Migration runner
 │   ├── bootstrap_admin.py        # First-run super-admin setup
 │   └── migrations/
-│       └── 001_init.sql          # Full schema
+│       ├── 001_init.sql          # Full schema
+│       ├── 002_classroom_sync.sql
+│       ├── 003_llm_grading_jobs.sql
+│       ├── 004_block_production_truncate.sql
+│       ├── 005_score_history.sql       # superseded by 006
+│       └── 006_score_change_sets.sql   # change sets + answer_revision
 │
 ├── services/
 │   ├── grading.py                # Pure grading functions
-│   ├── score_transforms.py       # transform_scores() + load_qbank_for_session()
+│   ├── llm_errors.py             # Typed LLM failures + validate_llm_env()
+│   ├── llm_jobs.py               # Async grading queue + worker loop
+│   ├── score_transforms.py       # transform_scores() + record_answer_changes()
+│   ├── session_scores.py         # Session score listing / archiving
+│   ├── classroom_sync.py         # Class + roster sync
 │   ├── quiz_session.py           # Plan lifecycle, session lifecycle
 │   ├── snapshots.py              # JSONC import/export ↔ DB
 │   └── images.py                 # Per-snapshot image upload/list/delete
@@ -286,10 +339,16 @@ GET/:id/export, POST/:id/rename, image endpoints (POST/GET/DELETE/clear)
 **Classes:** GET (list for teacher), GET/:id/students
 
 **Sessions:** GET (list), POST (create), POST/:id/activate, POST/:id/close,
-POST/:id/regen-code, DELETE/:id
+POST/:id/reopen, POST/:id/regen-code, DELETE/:id
 
 **Scores:** GET/:id/scores, POST/:id/scores/review, POST/:id/scores/recalculate,
-POST/:id/scores/regrade-open, POST/:id/archive
+POST/:id/scores/regrade-open (202 — enqueues a job), POST/:id/archive
+
+**Score history:** GET/:id/score-history,
+POST/:id/score-history/:change_set_id/revert (400 on the submission baseline,
+409 when already reverted or when an answer moved on since the change set)
+
+**LLM jobs:** GET /llm-jobs/:job_id, GET /sessions/:id/llm-jobs/latest
 
 **Archives:** GET (list), GET/:id, GET/:id/export, DELETE/:id, POST/:id/rename
 
@@ -325,8 +384,10 @@ POST/:id/reset-password
 
 ### Pure modules (no Flask, no DB)
 
-4. **`services/grading.py`** — `grade()`, `score_open()`, `format_detailed_answers()`.
-   Pure functions. Testable without infrastructure.
+4. **`services/grading.py`** — `grade()`, `grade_open_answer()`, `format_detailed_answers()`.
+   Pure functions. Testable without infrastructure. `grade()` always defers open
+   questions to the worker; `grade_open_answer()` raises the typed errors in
+   `services/llm_errors.py` rather than returning a zero score.
 
 5. **`utils.py`** — String helpers + JSON parsing guards. Pure.
 
@@ -409,9 +470,14 @@ See [`SCORE-TRANSFORMS.md`](./SCORE-TRANSFORMS.md) for the full design.
 
 | Operation | What | When | Score entries touched | What happens to each answer |
 |-----------|------|------|-----------------------|-----------------------------|
-| **review** | Manual override | Teacher says "Q3 should get 4pts" | Only those listed in `overrides` | `points_awarded` = override value |
-| **recalculate** | Full regrade | Teacher edited the question bank | All | `grade()` against current snapshot |
-| **regrade-open** | Open Q regrade | LLM failed, keywords changed | All with `type == "open"` | `score_open()` against stored snapshot or current bank |
+| **review** | Manual override | Teacher says "Q3 should get 4pts" | Only those listed in `overrides` | `points_awarded` = override value, `manual_override = true` |
+| **recalculate** | Closed-question regrade | Teacher edited the question bank | All | `grade()` against current snapshot; open and manually overridden answers are carried over untouched |
+| **regrade-open** | Open Q regrade | LLM failed or was reconfigured | All with `type == "open"` | Asynchronous: enqueues a job, the worker grades against the stored snapshot |
+
+Only `review` and `recalculate` mutate scores in the request. `regrade-open`
+returns 202 and the worker performs the mutation later. Every mutation is
+recorded in a `score_change_set` plus one `score_history` row per changed
+answer, and can be reverted from the session's history panel.
 
 ## 10. Seams Map
 
@@ -422,7 +488,8 @@ Using the glossary from [`CONTEXT.md`](./CONTEXT.md):
 | JWT auth | `auth/` | `require_*` decorators | teacher token, student token, change-password token | Deep — 3 adapters, simple decorator |
 | Score mutation | `services/score_transforms.py` | `transform_scores(..., transform_fn)` | review, recalculate, regrade-open | Deep — 3 callers, ~80 lines each before extraction |
 | Quiz taking | `services/quiz_session.py` | `save_answer(quiz_id, answer, student_id)` | `routes/quiz.py` | Deep — FOR UPDATE lock + ownership + progression all in one txn |
-| Grading | `services/grading.py` | `grade()`, `score_open()` | quiz_session, score_transforms | Deep — pure functions, callers don't reimplement scoring |
+| Grading | `services/grading.py` | `grade()`, `grade_open_answer()` | quiz_session, llm_jobs, score_transforms | Deep — pure functions, callers don't reimplement scoring |
+| LLM grading | `services/llm_jobs.py` | job queue + `worker_loop()` | worker container, teacher regrade endpoint | Deep — the only place stored answers are graded |
 | Snapshot CRUD | `services/snapshots.py` | import/export JSONC ↔ DB | routes/teacher.py | Medium — import does validation + uniqueness |
 | Image management | `services/images.py` | upload/list/delete per snapshot | routes/teacher.py | Deep — manifest JSONB in snapshot row, filesystem behind it |
 | DB queries | `db/queries.py` | Named SQL constants | All modules | Shallow — just SQL strings, but deliberately so (easy to review) |

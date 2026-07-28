@@ -76,11 +76,11 @@ A document-style copy of scores stored in `score_archives`. It is not the primar
 _Avoid_: primary results, moved session, backup.
 
 **Recalculate**:
-Re-running the full `grade()` function on all Score entries in a Quiz session against the **current** Quiz version. Used after the Teacher edits questions (typos, weights, correct answers). Updates every entry.
+Re-running `grade()` on the **closed** questions of all Score entries in a Quiz session against the **current** Quiz version. Used after the Teacher edits questions (typos, weights, correct answers). Open answers and manually overridden answers are carried over untouched — recalculate refreshes what the snapshot determines, it never discards an evaluation or a correction.
 _Avoid_: regrade (ambiguous — see Regrade).
 
 **Regrade (open questions)**:
-Re-running `score_open()` (and optionally LLM evaluation) on only open-ended answers in a session or archive. Used after changing `acceptable`/`keywords` or after a failed LLM call. Touches only answers where `question.type == "open"`.
+Re-running the LLM evaluation on only open-ended answers in a session. Used after a failed or unconfigured LLM call, or after changing `acceptable`. Touches only answers where `question.type == "open"` and `manual_override` is not set. Asynchronous: the endpoint enqueues a job and the worker performs the grading.
 _Avoid_: rescore, re-evaluate.
 
 **Review (score review)**:

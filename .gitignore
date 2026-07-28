@@ -10,6 +10,10 @@ wheels/
 .venv
 
 .env
+# Variant env files (.env-1, .env.local, …); .env.example stays tracked.
+.env-*
+.env.*
+!.env.example
 secrets/
 
 # Local production backups; never commit database dumps or image archives.
