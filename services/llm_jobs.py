@@ -147,6 +147,7 @@ def process_next_job() -> bool:
         return False
 
     processed = int(job.get('processed_items') or 0)
+    failures: list[str] = []
     try:
         score_ids = _score_ids_for_job(job)
 
@@ -165,17 +166,19 @@ def process_next_job() -> bool:
         job['_change_set_id'] = change_set_id
 
         for score_id in score_ids:
-            changed = _process_next_answer_for_score(job, score_id)
+            changed = _process_next_answer_for_score(job, score_id, failures)
             if changed:
                 processed += 1
                 _update_job_progress(job['id'], processed)
 
+        # The job still completes when individual answers failed: the answers
+        # themselves carry the outcome. The error text is the teacher's summary.
         with db.get_conn() as conn:
             conn.execute(Q.FINISH_LLM_GRADING_JOB, {
                 'id': job['id'],
                 'status': 'completed',
                 'processed_items': processed,
-                'error': None,
+                'error': _format_failures(failures),
             })
             conn.commit()
     except Exception as exc:
@@ -235,7 +238,20 @@ def _score_ids_for_job(job: dict) -> list[int]:
     return [int(row[0]) for row in rows]
 
 
-def _process_next_answer_for_score(job: dict, score_id: int) -> bool:
+def _format_failures(failures: list[str], *, limit: int = 10) -> str | None:
+    """Render per-answer failures as the job's error summary."""
+    if not failures:
+        return None
+    head = failures[:limit]
+    suffix = f" (+{len(failures) - limit} altre)" if len(failures) > limit else ""
+    return f"{len(failures)} risposte non valutate: " + "; ".join(head) + suffix
+
+
+def _process_next_answer_for_score(
+    job: dict,
+    score_id: int,
+    failures: list[str] | None = None,
+) -> bool:
     from services.score_transforms import record_answer_changes, bump_answer_revision
 
     with db.get_conn() as conn:
@@ -251,7 +267,8 @@ def _process_next_answer_for_score(job: dict, score_id: int) -> bool:
         old_answers = [dict(a) for a in answers]  # deep copy for history
         changed = _process_one_pending_answer(
             answers,
-            is_regrade=(job.get('job_type') == 'regrade_session')
+            is_regrade=(job.get('job_type') == 'regrade_session'),
+            failures=failures,
         )
         if not changed:
             conn.commit()
@@ -259,7 +276,7 @@ def _process_next_answer_for_score(job: dict, score_id: int) -> bool:
 
         # Bump revision on every modified open answer
         for a in answers:
-            if _answer_type(a) == 'open' and a.get('llm_status') in ('graded', 'fallback', 'error'):
+            if _answer_type(a) == 'open' and a.get('llm_status') == 'graded':
                 bump_answer_revision(a)
 
         raw_points, max_points, percent = _score_totals(answers)
@@ -284,7 +301,21 @@ def _process_next_answer_for_score(job: dict, score_id: int) -> bool:
     return True
 
 
-def _process_one_pending_answer(answers: list[dict], *, is_regrade: bool = False) -> bool:
+def _process_one_pending_answer(
+    answers: list[dict],
+    *,
+    is_regrade: bool = False,
+    failures: list[str] | None = None,
+) -> bool:
+    """Grade the open answers in *answers* in place.
+
+    A failed evaluation is never recorded as a grade:
+      - an answer that was never graded stays 'pending' with llm_error set and
+        0 points, so the teacher can retry;
+      - an answer that already carries a grade is left completely untouched,
+        so a failing regrade cannot destroy a good evaluation.
+    Failures are appended to *failures* for the job-level error report.
+    """
     now = datetime.now(timezone.utc).isoformat()
     any_changed = False
 
@@ -310,21 +341,29 @@ def _process_one_pending_answer(answers: list[dict], *, is_regrade: bool = False
 
         try:
             result = grade_open_answer(answer.get('raw_student_answer') or '', q)
-            points = round(float(result.get('points', 0)), 2)
-            verdict = result.get('llm_verdict')
-            answer['points_awarded'] = points
-            answer['raw_points'] = points
-            answer['llm_feedback'] = result.get('llm_feedback')
-            answer['llm_verdict'] = verdict
-            answer['llm_status'] = 'fallback' if verdict == 'fallback' else 'graded'
-            answer['llm_error'] = None
-            answer['llm_updated_at'] = now
-            any_changed = True
         except Exception as exc:
-            answer['llm_status'] = 'error'
+            # Typed LlmError subclasses are the expected cases; anything else is
+            # caught too because a single bad answer must not kill the worker.
+            if failures is not None:
+                failures.append(f"q={answer.get('question_id')}: {exc}")
+            if answer.get('llm_status') == 'graded':
+                # Preserve the previous evaluation verbatim.
+                continue
+            answer['llm_status'] = 'pending'
             answer['llm_error'] = str(exc)
             answer['llm_updated_at'] = now
             any_changed = True
+            continue
+
+        points = round(float(result.get('points', 0)), 2)
+        answer['points_awarded'] = points
+        answer['raw_points'] = points
+        answer['llm_feedback'] = result.get('llm_feedback')
+        answer['llm_verdict'] = result.get('llm_verdict')
+        answer['llm_status'] = 'graded'
+        answer['llm_error'] = None
+        answer['llm_updated_at'] = now
+        any_changed = True
 
     return any_changed
 

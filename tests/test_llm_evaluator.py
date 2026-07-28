@@ -80,6 +80,54 @@ def test_parse_llm_response_clamps_score_and_normalises_verdict(
     assert result['verdict'] == expected_verdict
 
 
+@pytest.mark.parametrize('response_text', [None, '', 'nessun json qui', '[1, 2, 3]'])
+def test_parse_llm_response_rejects_unusable_output(response_text):
+    """Unparseable output is an error, never a silent zero-score verdict."""
+    import llm_evaluator
+    from services.llm_errors import LlmInvalidResponseError
+
+    with pytest.raises(LlmInvalidResponseError):
+        llm_evaluator._parse_llm_response(response_text)
+
+
+def test_evaluate_open_question_raises_configuration_error_for_bad_model(monkeypatch):
+    import llm_evaluator
+    from services.llm_errors import LlmConfigurationError
+
+    def unloadable(_model_id):
+        raise RuntimeError('no such plugin')
+
+    monkeypatch.setattr(llm_evaluator.llm, 'get_model', unloadable)
+
+    # A missing model is a configuration problem: fail fast, do not retry.
+    with pytest.raises(LlmConfigurationError):
+        llm_evaluator.evaluate_open_question('Q?', 'A', ['ok'])
+
+
+def test_evaluate_open_question_raises_temporary_error_after_retries(monkeypatch):
+    import llm_evaluator
+    from services.llm_errors import LlmTemporaryError
+
+    attempts = []
+
+    monkeypatch.setattr(llm_evaluator.llm, 'get_model', lambda _m: object())
+    monkeypatch.setattr(llm_evaluator, '_load_system_prompt', lambda: 'sys')
+    monkeypatch.setattr(llm_evaluator, '_build_prompt', lambda *a: 'prompt')
+
+    def always_timeout(*_args, **_kwargs):
+        attempts.append(1)
+        raise TimeoutError('too slow')
+
+    monkeypatch.setattr(llm_evaluator, '_prompt_with_timeout', always_timeout)
+    monkeypatch.setenv('LLM_RETRIES', '2')
+    monkeypatch.setenv('LLM_BACKOFF_FACTOR', '0')
+
+    with pytest.raises(LlmTemporaryError):
+        llm_evaluator.evaluate_open_question('Q?', 'A', ['ok'])
+
+    assert len(attempts) == 3  # initial attempt + 2 retries
+
+
 def test_prompt_with_timeout_raises_when_worker_hangs(monkeypatch):
     import llm_evaluator
 

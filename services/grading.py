@@ -6,81 +6,41 @@ Moved from utils.py; signatures are unchanged so existing callers keep working.
 # ── imports ───────────────────────────────────────────────────────────────────
 
 import copy as _copy
-import os
-import re
-import unicodedata
 
-
-def normalise(txt: str) -> str:
-    if not isinstance(txt, str):
-        return ""
-    txt = unicodedata.normalize('NFKD', txt).lower()
-    txt = re.sub(r'\s+', ' ', txt, flags=re.MULTILINE).strip()
-    return txt
-
-
-def score_open(user_ans: str, q: dict) -> float:
-    ua = normalise(user_ans)
-    if 'acceptable' in q:
-        for a in q['acceptable']:
-            if ua == normalise(a):
-                return 1.0
-    if 'keywords' in q:
-        kw = [normalise(k) for k in q['keywords']]
-        hits = sum(1 for k in kw if k in ua)
-        if 'min_keywords' in q:
-            return 1.0 if hits >= q['min_keywords'] else 0.0
-        elif kw:
-            return hits / len(kw)
-    return 0.0
+from services.llm_errors import LlmConfigurationError, llm_enabled
 
 
 def grade_open_answer(user_ans: str, q: dict) -> dict:
     """Grade one open answer using LLM evaluation.
 
-    When USE_LLM_EVAL is enabled it calls the configured LLM.
-    If the LLM is unavailable the answer is left pending (0 points)
-    so the teacher can regrade later — no opaque keyword fallback.
+    Raises the typed LLM errors rather than returning a zero score: a failed
+    evaluation must never be mistaken for a legitimate grade. The caller (the
+    grading worker) decides whether to keep the answer pending or to preserve
+    a previous evaluation.
     """
-    w = q.get('weight', 1)
-    use_llm = os.getenv('USE_LLM_EVAL', '0') == '1'
-    llm_feedback = None
-    llm_verdict = None
+    if not llm_enabled():
+        raise LlmConfigurationError("Valutazione LLM non configurata (USE_LLM_EVAL != 1).")
 
-    if use_llm:
-        try:
-            from llm_evaluator import evaluate_open_question  # type: ignore[import]
-            correct_answers = q.get('acceptable') or q.get('correct') or q.get('keywords') or []
-            llm_result = evaluate_open_question(q.get('text', ''), user_ans or '', correct_answers)
-            open_score_fraction = float(llm_result.get('score', 0))
-            open_score_fraction = max(0.0, min(1.0, open_score_fraction))
-            llm_feedback = llm_result.get('llm_feedback')
-            llm_verdict = llm_result.get('verdict')
-            return {
-                'points': w * open_score_fraction,
-                'llm_feedback': llm_feedback,
-                'llm_verdict': llm_verdict,
-            }
-        except Exception as e:
-            print(f"LLM evaluation failed: {e}. Leaving answer pending.")
-            return {
-                'points': 0.0,
-                'llm_feedback': f'LLM non disponibile durante la valutazione: {e}',
-                'llm_verdict': None,
-                'llm_pending': True,
-            }
+    from llm_evaluator import evaluate_open_question  # type: ignore[import]
 
+    correct_answers = q.get('acceptable') or q.get('correct') or q.get('keywords') or []
+    llm_result = evaluate_open_question(q.get('text', ''), user_ans or '', correct_answers)
+
+    open_score_fraction = max(0.0, min(1.0, float(llm_result.get('score', 0))))
     return {
-        'points': 0.0,
-        'llm_feedback': None,
-        'llm_verdict': None,
-        'llm_pending': True,
+        'points': q.get('weight', 1) * open_score_fraction,
+        'llm_feedback': llm_result.get('llm_feedback'),
+        'llm_verdict': llm_result.get('verdict'),
     }
 
 
-def grade(answers: list, plan: dict, qbank: dict, *, defer_open: bool = False) -> dict:
+def grade(answers: list, plan: dict, qbank: dict) -> dict:
     """
     Calculates score based on answers, the student's shuffled plan, and the question bank.
+
+    Open questions are always deferred: they get 0 points and llm_status
+    'pending'. Only the grading worker ever assigns them a score, so no
+    request path can block on — or be corrupted by — an LLM call.
 
     Args:
         answers:  list of raw student answers (indexed by plan position)
@@ -123,19 +83,8 @@ def grade(answers: list, plan: dict, qbank: dict, *, defer_open: bool = False) -
         llm_error = None
 
         if q_type == 'open':
-            if defer_open:
-                question_score = 0.0
-                llm_status = 'pending'
-            else:
-                open_result = grade_open_answer(user_ans or '', q)
-                question_score = open_result['points']
-                llm_feedback = open_result.get('llm_feedback')
-                llm_verdict = open_result.get('llm_verdict')
-                if open_result.get('llm_pending'):
-                    llm_status = 'pending'
-                    llm_error = open_result.get('llm_feedback')  # reason
-                elif os.getenv('USE_LLM_EVAL', '0') == '1':
-                    llm_status = 'graded'
+            question_score = 0.0
+            llm_status = 'pending'
 
         elif q_type == 'single':
             original_correct_index = q.get('correct')

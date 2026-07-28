@@ -6,7 +6,6 @@ All writes happen inside a single DB transaction per operation.
 from __future__ import annotations
 
 import json
-import os
 import random
 import secrets
 import string
@@ -300,8 +299,8 @@ def submit_plan(quiz_id: str, student_id: int) -> dict:
 
         grading_plan = {'plan': plan_steps}
         grading_qbank = {'questions': questions_list}
-        use_llm = os.getenv('USE_LLM_EVAL', '0') == '1'
-        grade_result = grade(answers_list, grading_plan, grading_qbank, defer_open=use_llm)
+        # Open questions are always deferred to the worker — see grade().
+        grade_result = grade(answers_list, grading_plan, grading_qbank)
 
         detailed = format_detailed_answers(
             grading_plan,

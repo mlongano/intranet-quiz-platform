@@ -8,6 +8,12 @@ from pathlib import Path
 
 import llm
 
+from services.llm_errors import (
+    LlmConfigurationError,
+    LlmInvalidResponseError,
+    LlmTemporaryError,
+)
+
 BASE_DIR = Path(__file__).resolve().parent
 PROMPT_DIR = BASE_DIR / 'prompts'
 DEFAULT_SYSTEM_PROMPT_PATH = PROMPT_DIR / 'open-question-system.md'
@@ -29,10 +35,12 @@ def evaluate_open_question(question_text, user_answer, correct_answers):
     backoff = float(os.getenv("LLM_BACKOFF_FACTOR", "0.5"))
     timeout_seconds = float(os.getenv("LLM_TIMEOUT_SECONDS", "25"))
 
+    # A model that cannot be loaded is a deployment problem, not a transient
+    # one: fail immediately rather than burning the retry budget.
     try:
-        model = llm.get_model(model_id)
+        llm.get_model(model_id)
     except Exception as e:
-        raise RuntimeError(
+        raise LlmConfigurationError(
             f"Cannot load model '{model_id}': {e}. "
             f"Make sure the llm plugin for this provider is installed "
             f"(e.g. 'uv add llm-anthropic' or 'uv add llm-ollama')."
@@ -42,18 +50,23 @@ def evaluate_open_question(question_text, user_answer, correct_answers):
     prompt = _build_prompt(question_text, user_answer, correct_answers)
 
     attempt = 0
-    last_exc = None
+    last_exc: Exception | None = None
     while attempt <= retries:
         try:
             response_text = _prompt_with_timeout(model_id, prompt, system_prompt, timeout_seconds)
             return _parse_llm_response(response_text)
+        except LlmInvalidResponseError as e:
+            last_exc = e
         except Exception as e:
             last_exc = e
-            sleep_time = backoff * (2 ** attempt) + random.uniform(0, 0.1)
-            time.sleep(sleep_time)
-            attempt += 1
+        attempt += 1
+        if attempt <= retries:
+            time.sleep(backoff * (2 ** (attempt - 1)) + random.uniform(0, 0.1))
 
-    raise RuntimeError(f"LLM request failed after {retries + 1} attempts: {last_exc}")
+    message = f"LLM request failed after {retries + 1} attempts: {last_exc}"
+    if isinstance(last_exc, LlmInvalidResponseError):
+        raise LlmInvalidResponseError(message)
+    raise LlmTemporaryError(message)
 
 
 def _prompt_with_timeout(
@@ -137,13 +150,15 @@ def _format_acceptable_answer(correct_answers) -> str:
 
 def _parse_llm_response(response_text):
     if response_text is None:
-        return _fallback_result("empty", "No response text from model.")
+        raise LlmInvalidResponseError("No response text from model.")
     if not isinstance(response_text, str):
         response_text = str(response_text)
 
     parsed = _parse_json_object(response_text)
     if parsed is None:
-        return _fallback_result("unparseable", response_text)
+        raise LlmInvalidResponseError(
+            f"Model response is not a JSON object: {response_text[:500]!r}"
+        )
 
     score = _coerce_score(parsed.get('score', 0.0))
     verdict = _normalise_verdict(parsed.get('verdict'), score)
@@ -188,12 +203,7 @@ def _coerce_score(value) -> float:
 
 def _normalise_verdict(value, score: float) -> str:
     verdict = str(value or '').strip().lower()
-    aliases = {
-        'wrong': 'incorrect',
-        'empty': 'incorrect',
-        'unparseable': 'incorrect',
-    }
-    verdict = aliases.get(verdict, verdict)
+    verdict = {'wrong': 'incorrect'}.get(verdict, verdict)
     if verdict in ('correct', 'partial', 'incorrect'):
         return verdict
     if score >= 0.9:
@@ -218,13 +228,3 @@ def _fallback_feedback(verdict: str, missing_points: list[str], wrong_points: li
     if wrong_points:
         return f"Risposta {verdict}: contiene errori su {', '.join(wrong_points)}."
     return f"Risposta valutata come {verdict}."
-
-
-def _fallback_result(verdict: str, feedback: str) -> dict:
-    return {
-        "score": 0.0,
-        "verdict": _normalise_verdict(verdict, 0.0),
-        "llm_feedback": feedback,
-        "missing_points": [],
-        "wrong_points": [],
-    }
