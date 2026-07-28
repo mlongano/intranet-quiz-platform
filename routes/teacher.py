@@ -489,6 +489,21 @@ def revert_change_set(session_id: int, change_set_id: str):
         if not cs:
             raise NotFound(description="Change set non trovato.")
 
+        if cs[2] == 'submission':
+            return jsonify({
+                'error': 'BAD_REQUEST',
+                'description': "Il change set di consegna non è annullabile.",
+            }), 400
+
+        already = conn.execute(Q.FIND_REVERT_OF_CHANGE_SET, (change_set_id,)).fetchone()
+        if already:
+            raise Conflict(
+                description=(
+                    "Questo change set è già stato annullato. "
+                    "Per ripristinarlo annulla il change set di annullamento."
+                )
+            )
+
         # 2. Load all entries from the change set
         entries = conn.execute(Q.GET_CHANGE_SET_ENTRIES, (change_set_id,)).fetchall()
         if not entries:
@@ -517,9 +532,10 @@ def revert_change_set(session_id: int, change_set_id: str):
         for e in entries:
             sid = e[0]
             q_id = e[1]
-            hist_new_rev = e[4]  # new_revision from history
-            old_answer = e[6] if isinstance(e[6], dict) else _json.loads(e[6])
-            new_answer_snap = e[7] if isinstance(e[7], dict) else _json.loads(e[7])
+            # Column order: 0 score_entry_id, 1 question_id, 2 answer_index,
+            # 3 old_revision, 4 new_revision, 5 old_answer, 6 new_answer.
+            hist_new_rev = e[4]
+            old_answer = e[5] if isinstance(e[5], dict) else _json.loads(e[5])
 
             current_answers = locked_rows[sid]['answers']
             # Find the matching answer by question_id
@@ -540,21 +556,20 @@ def revert_change_set(session_id: int, change_set_id: str):
             if sid not in revert_map:
                 revert_map[sid] = [dict(a) for a in current_answers]
 
-            # Replace the answer in the array
+            # Restore the old content but keep the revision counter where it is:
+            # record_answer_changes() advances it to current + 1, so a revert
+            # moves the audit chain forward and never rewinds a revision.
+            restored = dict(old_answer)
+            restored['answer_revision'] = hist_new_rev
+
             replaced = False
             for idx, cur_a in enumerate(revert_map[sid]):
                 if str(cur_a.get('question_id')) == q_id:
-                    restored = dict(old_answer)
-                    from services.score_transforms import bump_answer_revision
-                    bump_answer_revision(restored)
                     revert_map[sid][idx] = restored
                     replaced = True
                     break
             if not replaced:
                 # Question not in current array — append it
-                restored = dict(old_answer)
-                from services.score_transforms import bump_answer_revision
-                bump_answer_revision(restored)
                 revert_map[sid].append(restored)
 
         # 5. Update all modified score entries and record new change set
@@ -575,14 +590,7 @@ def revert_change_set(session_id: int, change_set_id: str):
             new_max = round(sum(a.get('weight', 0) for a in new_answers), 2)
             new_pct = round(new_raw / new_max * 100, 2) if new_max else 0
 
-            conn.execute(Q.UPDATE_SCORE_ANSWERS, {
-                'answers': _json.dumps(new_answers),
-                'raw_points': new_raw,
-                'max_points': new_max,
-                'percent': new_pct,
-                'id': sid,
-                'teacher_id': teacher_id,
-            })
+            # Assigns the restored answers' new revisions — before serialising.
             record_answer_changes(
                 conn,
                 change_set_id=revert_cs_id,
@@ -592,6 +600,14 @@ def revert_change_set(session_id: int, change_set_id: str):
                 old_percent=old_data['percent'],
                 new_percent=new_pct,
             )
+            conn.execute(Q.UPDATE_SCORE_ANSWERS, {
+                'answers': _json.dumps(new_answers),
+                'raw_points': new_raw,
+                'max_points': new_max,
+                'percent': new_pct,
+                'id': sid,
+                'teacher_id': teacher_id,
+            })
 
         conn.commit()
 

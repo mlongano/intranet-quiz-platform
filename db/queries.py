@@ -623,3 +623,9 @@ GET_CHANGE_SET_ENTRIES = """
     WHERE sh.change_set_id = %s
     ORDER BY sh.score_entry_id, sh.answer_index
 """
+
+# A change set may only be reverted once: the audit chain records the revert
+# itself as a new change set, which is what a second undo must target.
+FIND_REVERT_OF_CHANGE_SET = """
+    SELECT id FROM score_change_sets WHERE reverted_change_id = %s LIMIT 1
+"""

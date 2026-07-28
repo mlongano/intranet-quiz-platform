@@ -362,7 +362,7 @@ def submit_plan(quiz_id: str, student_id: int) -> dict:
             session_id=session_id,
             reason='submission',
             actor_type='system',
-            changed_by=teacher_id,
+            changed_by=None,   # the student's submission, not a teacher action
         )
         record_answer_changes(
             conn,

@@ -151,19 +151,27 @@ def process_next_job() -> bool:
     try:
         score_ids = _score_ids_for_job(job)
 
-        # Open one change set for the entire job
+        # One change set for the whole job, opened on the first recorded change
+        # so a job that grades nothing leaves no empty entry in the history.
         from services.score_transforms import open_change_set
-        with db.get_conn() as conn:
-            change_set_id = open_change_set(
-                conn,
-                session_id=job['session_id'],
-                reason='llm_regrade',
-                actor_type='system',
-                changed_by=job['teacher_id'],
-                llm_job_id=job['id'],
-            )
-            conn.commit()
-        job['_change_set_id'] = change_set_id
+        reason = 'llm_grade' if job['job_type'] == 'submission' else 'llm_regrade'
+        change_set_cache: dict[str, str] = {}
+
+        def change_set() -> str:
+            if 'id' not in change_set_cache:
+                with db.get_conn() as cs_conn:
+                    change_set_cache['id'] = open_change_set(
+                        cs_conn,
+                        session_id=job['session_id'],
+                        reason=reason,
+                        actor_type='system',
+                        changed_by=None,
+                        llm_job_id=job['id'],
+                    )
+                    cs_conn.commit()
+            return change_set_cache['id']
+
+        job['_change_set'] = change_set
 
         for score_id in score_ids:
             changed = _process_next_answer_for_score(job, score_id, failures)
@@ -252,7 +260,7 @@ def _process_next_answer_for_score(
     score_id: int,
     failures: list[str] | None = None,
 ) -> bool:
-    from services.score_transforms import record_answer_changes, bump_answer_revision
+    from services.score_transforms import record_answer_changes
 
     with db.get_conn() as conn:
         row = conn.execute(
@@ -274,12 +282,22 @@ def _process_next_answer_for_score(
             conn.commit()
             return False
 
-        # Bump revision on every modified open answer
-        for a in answers:
-            if _answer_type(a) == 'open' and a.get('llm_status') == 'graded':
-                bump_answer_revision(a)
-
         raw_points, max_points, percent = _score_totals(answers)
+
+        # Assigns the new revisions — must run before the answers are stored.
+        recorded = record_answer_changes(
+            conn,
+            change_set_id=job['_change_set'],
+            score_entry_id=score_id,
+            old_answers=old_answers,
+            new_answers=answers,
+            old_percent=old_percent,
+            new_percent=percent,
+        )
+        if not recorded:
+            conn.commit()
+            return False
+
         conn.execute(Q.UPDATE_SCORE_ANSWERS, {
             'answers': json.dumps(answers),
             'raw_points': raw_points,
@@ -288,15 +306,6 @@ def _process_next_answer_for_score(
             'id': score_id,
             'teacher_id': job['teacher_id'],
         })
-        record_answer_changes(
-            conn,
-            change_set_id=job.get('_change_set_id', ''),
-            score_entry_id=score_id,
-            old_answers=old_answers,
-            new_answers=answers,
-            old_percent=old_percent,
-            new_percent=percent,
-        )
         conn.commit()
     return True
 
