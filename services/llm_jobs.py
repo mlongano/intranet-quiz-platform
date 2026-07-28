@@ -260,29 +260,87 @@ def _process_next_answer_for_score(
     score_id: int,
     failures: list[str] | None = None,
 ) -> bool:
+    """Grade one score entry, optimistically.
+
+    An LLM call can take minutes, so it must not run inside a transaction
+    holding row locks. The entry is read unlocked, graded in memory, and only
+    then written under FOR UPDATE — re-checking that each answer still carries
+    the revision it was graded against and has not since been manually
+    overridden. Answers that moved on are skipped rather than overwritten,
+    which is what actually protects a teacher's manual review from a regrade
+    that was already in flight.
+    """
     from services.score_transforms import record_answer_changes
 
+    # ── 1. read without locking ─────────────────────────────────────────────
     with db.get_conn() as conn:
         row = conn.execute(
             Q.GET_SCORE_ENTRY_FOR_LLM_JOB,
             (score_id, job['teacher_id'], job['session_id']),
         ).fetchone()
-        if not row:
-            conn.commit()
-            return False
-        answers = ensure_list(row[7])
-        old_percent = float(row[6]) if row[6] is not None else None
-        old_answers = [dict(a) for a in answers]  # deep copy for history
-        changed = _process_one_pending_answer(
-            answers,
-            is_regrade=(job.get('job_type') == 'regrade_session'),
-            failures=failures,
-        )
-        if not changed:
+        conn.commit()
+    if not row:
+        return False
+
+    read_answers = ensure_list(row[7])
+
+    # ── 2. grade in memory, holding no connection ───────────────────────────
+    graded = [dict(a) for a in read_answers]
+    changed = _process_one_pending_answer(
+        graded,
+        is_regrade=(job.get('job_type') == 'regrade_session'),
+        failures=failures,
+    )
+    if not changed:
+        return False
+
+    # What we intend to write, and the revision each was graded against.
+    proposals: dict[str, dict] = {}
+    for before, after in zip(read_answers, graded):
+        if before != after:
+            proposals[str(after.get('question_id'))] = {
+                'answer': after,
+                'revision': before.get('answer_revision') or 0,
+            }
+    if not proposals:
+        return False
+
+    # ── 3. write under lock, re-verifying every target answer ───────────────
+    with db.get_conn() as conn:
+        locked = conn.execute(
+            Q.LOCK_SCORE_ENTRY_FOR_LLM_JOB,
+            (score_id, job['teacher_id'], job['session_id']),
+        ).fetchone()
+        if not locked:
             conn.commit()
             return False
 
-        raw_points, max_points, percent = _score_totals(answers)
+        current = ensure_list(locked[2])
+        old_percent = float(locked[1]) if locked[1] is not None else None
+        old_answers = [dict(a) for a in current]
+        new_answers = [dict(a) for a in current]
+
+        applied = 0
+        for idx, cur in enumerate(new_answers):
+            proposal = proposals.get(str(cur.get('question_id')))
+            if proposal is None:
+                continue
+            stale = (cur.get('answer_revision') or 0) != proposal['revision']
+            if stale or cur.get('manual_override'):
+                if failures is not None:
+                    failures.append(
+                        f"q={cur.get('question_id')}: modificata durante la valutazione, "
+                        f"risultato LLM ignorato"
+                    )
+                continue
+            new_answers[idx] = proposal['answer']
+            applied += 1
+
+        if not applied:
+            conn.commit()
+            return False
+
+        raw_points, max_points, percent = _score_totals(new_answers)
 
         # Assigns the new revisions — must run before the answers are stored.
         recorded = record_answer_changes(
@@ -290,7 +348,7 @@ def _process_next_answer_for_score(
             change_set_id=job['_change_set'],
             score_entry_id=score_id,
             old_answers=old_answers,
-            new_answers=answers,
+            new_answers=new_answers,
             old_percent=old_percent,
             new_percent=percent,
         )
@@ -299,7 +357,7 @@ def _process_next_answer_for_score(
             return False
 
         conn.execute(Q.UPDATE_SCORE_ANSWERS, {
-            'answers': json.dumps(answers),
+            'answers': json.dumps(new_answers),
             'raw_points': raw_points,
             'max_points': max_points,
             'percent': percent,

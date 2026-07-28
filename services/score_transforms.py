@@ -79,6 +79,11 @@ def transform_scores(
                 )
             return change_set_cache['id']
 
+        # Lock the session's score rows for the duration of this transaction:
+        # review, recalculate and revert must not interleave with each other or
+        # with the grading worker. These are short transactions with no LLM call.
+        conn.execute(Q.LOCK_SCORES_FOR_SESSION, (session_id,))
+
         qbank_map = load_qbank_for_session(conn, session_id)
         rows = conn.execute(Q.LIST_SCORES_FOR_SESSION, (session_id,)).fetchall()
 

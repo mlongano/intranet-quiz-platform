@@ -311,6 +311,65 @@ def test_submission_change_set_cannot_be_reverted(client, db_conn, session_with_
     assert resp.status_code == 400
 
 
+# ── worker vs. teacher races ─────────────────────────────────────────────────
+
+def test_manual_review_during_grading_survives(db_conn, session_with_open_answer):
+    """A review that lands while the LLM is running must not be overwritten."""
+    import services.llm_jobs as llm_jobs
+    from services import score_transforms
+
+    ctx = session_with_open_answer
+
+    # The answer starts pending so a submission job will pick it up.
+    answers = _answers(db_conn, ctx['score_id'])
+    answers[0]['llm_status'] = 'pending'
+    answers[0]['points_awarded'] = 0
+    answers[0]['raw_points'] = 0
+    db_conn.execute(
+        "UPDATE score_entries SET answers = %s::jsonb, raw_points = 0, percent = 0 WHERE id = %s",
+        (json.dumps(answers), ctx['score_id']),
+    )
+    job = llm_jobs.create_llm_job(
+        db_conn, teacher_id=ctx['teacher_id'], session_id=ctx['session_id'],
+        score_entry_id=ctx['score_id'], job_type='submission', total_items=1,
+    )
+    db_conn.commit()
+
+    def grade_then_teacher_reviews(_user_ans, _q):
+        """Simulates the teacher reviewing while this call is in flight."""
+        def override(_sid, current, _qbank):
+            current[0]['points_awarded'] = 2.0
+            current[0]['raw_points'] = 2.0
+            current[0]['manual_override'] = True
+            current[0]['llm_status'] = 'graded'
+            current[0]['llm_feedback'] = 'Corretto a mano'
+            return current
+
+        score_transforms.transform_scores(
+            ctx['session_id'], ctx['teacher_id'],
+            transform_fn=override, reason='manual_review',
+        )
+        return {'points': 0.25, 'llm_feedback': 'Valutazione LLM', 'llm_verdict': 'incorrect'}
+
+    original = llm_jobs.grade_open_answer
+    llm_jobs.grade_open_answer = grade_then_teacher_reviews
+    try:
+        assert llm_jobs.process_next_job() is True
+    finally:
+        llm_jobs.grade_open_answer = original
+
+    stored = _answers(db_conn, ctx['score_id'])[0]
+    assert stored['manual_override'] is True
+    assert stored['points_awarded'] == 2.0
+    assert stored['llm_feedback'] == 'Corretto a mano'
+
+    job_row = db_conn.execute(
+        "SELECT status, error FROM llm_grading_jobs WHERE id = %s", (job['id'],)
+    ).fetchone()
+    assert job_row[0] == 'completed'
+    assert 'modificata durante la valutazione' in (job_row[1] or '')
+
+
 # ── submission records a system change set ───────────────────────────────────
 
 def test_submission_change_set_has_no_teacher_actor(client, db_conn):

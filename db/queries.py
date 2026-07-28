@@ -378,6 +378,16 @@ LIST_SCORES_FOR_SESSION = """
     ORDER BY se.submitted_at DESC
 """
 
+# Row-level lock for score mutations. Separate from LIST_SCORES_FOR_SESSION
+# because FOR UPDATE cannot be applied through that query's join on students.
+# Ordered by id so concurrent operations take the rows in the same order.
+LOCK_SCORES_FOR_SESSION = """
+    SELECT id FROM score_entries
+    WHERE session_id = %s
+    ORDER BY id
+    FOR UPDATE
+"""
+
 LIST_SCORES_FOR_TEACHER = """
     SELECT se.id, se.session_id, se.raw_points, se.max_points, se.percent,
            se.answers, se.submitted_at,
@@ -472,6 +482,15 @@ GET_SCORE_ENTRY_FOR_LLM_JOB = """
            percent, answers
     FROM score_entries
     WHERE id = %s AND teacher_id = %s AND session_id = %s
+"""
+
+# Taken by the worker only for the short write transaction, never while an LLM
+# call is in flight.
+LOCK_SCORE_ENTRY_FOR_LLM_JOB = """
+    SELECT id, percent, answers
+    FROM score_entries
+    WHERE id = %s AND teacher_id = %s AND session_id = %s
+    FOR UPDATE
 """
 
 LIST_SCORE_ENTRIES_FOR_LLM_SESSION = """
