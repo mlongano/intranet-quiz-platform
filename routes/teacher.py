@@ -405,6 +405,13 @@ def recalculate_scores(session_id: int):
     teacher_id = _teacher_id()
 
     def _recalc_fn(_score_id: int, answers: list[dict], qbank_map: dict) -> list[dict] | None:
+        """Rescore closed questions against the current snapshot.
+
+        Open answers and manually overridden answers are carried over
+        untouched: recalculate refreshes what can be derived from the snapshot,
+        it never discards an LLM evaluation or a teacher's correction. Since
+        grade() always defers open questions, this makes no LLM calls.
+        """
         plan_steps = [
             {'id': str(a['question_id']), 'option_order': a.get('option_order', [])}
             for a in answers
@@ -412,7 +419,7 @@ def recalculate_scores(session_id: int):
         raw_answers = [a.get('raw_student_answer') for a in answers]
         questions_list = list(qbank_map.values())
         result = grade(raw_answers, {'plan': plan_steps}, {'questions': questions_list})
-        return format_detailed_answers(
+        rebuilt = format_detailed_answers(
             {'plan': plan_steps}, qbank_map, raw_answers,
             result['scores_per_question'],
             result['feedbacks_per_question'],
@@ -420,6 +427,21 @@ def recalculate_scores(session_id: int):
             result['statuses_per_question'],
             result['errors_per_question'],
         )
+
+        merged: list[dict] = []
+        for idx, new_a in enumerate(rebuilt):
+            old_a = answers[idx] if idx < len(answers) else None
+            if old_a is None:
+                merged.append(new_a)
+                continue
+            if old_a.get('type') == 'open' or old_a.get('manual_override'):
+                merged.append(dict(old_a))
+                continue
+            # Freshly formatted answers carry no revision; keep the stored one
+            # so the diff-and-bump seam sees the real before/after.
+            new_a['answer_revision'] = old_a.get('answer_revision', 0)
+            merged.append(new_a)
+        return merged
 
     updated = score_transforms.transform_scores(
         session_id, teacher_id, transform_fn=_recalc_fn,

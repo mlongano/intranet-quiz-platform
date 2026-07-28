@@ -370,6 +370,66 @@ def test_manual_review_during_grading_survives(db_conn, session_with_open_answer
     assert 'modificata durante la valutazione' in (job_row[1] or '')
 
 
+# ── recalculate ──────────────────────────────────────────────────────────────
+
+def test_recalculate_preserves_open_and_overridden_answers(
+    client, db_conn, session_with_open_answer,
+):
+    """Recalculate rescores closed questions without touching the rest."""
+    ctx = session_with_open_answer
+
+    closed_graded = _answer('q1', 'single', points=0, status='not_applicable', revision=2)
+    closed_graded['raw_student_answer'] = 1        # the now-correct option
+    closed_graded['option_order'] = [0, 1]
+    overridden = _answer('q2', 'open', points=2.0, status='graded', weight=2,
+                         feedback='Corretto a mano', revision=5)
+    overridden['manual_override'] = True
+    overridden['type'] = 'open'
+
+    db_conn.execute(
+        "UPDATE score_entries SET answers = %s::jsonb WHERE id = %s",
+        (json.dumps([closed_graded, overridden]), ctx['score_id']),
+    )
+    db_conn.commit()
+
+    resp = client.post(
+        f"/api/teacher/sessions/{ctx['session_id']}/scores/recalculate",
+        headers=_headers(ctx),
+    )
+    assert resp.status_code == 200
+
+    stored = _answers(db_conn, ctx['score_id'])
+    closed, kept = stored[0], stored[1]
+
+    # the closed question was rescored against the current snapshot
+    assert closed['points_awarded'] == 1
+    assert closed['answer_revision'] == 3          # 2 -> 3, only because it changed
+
+    # the manually overridden open answer is byte-for-byte intact
+    assert kept['points_awarded'] == 2.0
+    assert kept['llm_feedback'] == 'Corretto a mano'
+    assert kept['manual_override'] is True
+    assert kept['answer_revision'] == 5            # untouched
+
+
+def test_recalculate_makes_no_llm_calls(client, db_conn, session_with_open_answer, monkeypatch):
+    """grade() always defers, so recalculate can never reach the provider."""
+    import services.grading as grading
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError('recalculate must not call the LLM')
+
+    monkeypatch.setattr(grading, 'grade_open_answer', fail_if_called)
+    monkeypatch.setenv('USE_LLM_EVAL', '1')
+
+    ctx = session_with_open_answer
+    resp = client.post(
+        f"/api/teacher/sessions/{ctx['session_id']}/scores/recalculate",
+        headers=_headers(ctx),
+    )
+    assert resp.status_code == 200
+
+
 # ── submission records a system change set ───────────────────────────────────
 
 def test_submission_change_set_has_no_teacher_actor(client, db_conn):
