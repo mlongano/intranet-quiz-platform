@@ -82,6 +82,9 @@ function QuizPage() {
   const [currentAnswer, setCurrentAnswer] = useState<Answer>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [showReJoin, setShowReJoin] = useState(false);
+  // Set when the teacher closes the session mid-quiz: no further answers are
+  // accepted, but the student can still hand in what they answered.
+  const [sessionClosed, setSessionClosed] = useState(false);
 
   const {
     data: quizData,
@@ -128,6 +131,9 @@ function QuizPage() {
     onError: (err: any) => {
       if (err instanceof ApiError && err.code === 'TOKEN_EXPIRED') {
         setShowReJoin(true);
+      } else if (err instanceof ApiError && err.code === 'SESSION_CLOSED') {
+        setSessionClosed(true);
+        setLocalError('La sessione è stata chiusa dall’insegnante.');
       } else {
         setLocalError(`Errore nel salvataggio: ${err.message}`);
       }
@@ -146,6 +152,8 @@ function QuizPage() {
     onError: (err: any) => {
       if (err instanceof ApiError && err.code === 'TOKEN_EXPIRED') {
         setShowReJoin(true);
+      } else if (err instanceof ApiError && err.code === 'SESSION_CLOSED') {
+        setLocalError(err.message);
       } else if (err instanceof ApiError && err.isConflict) {
         setLocalError('Hai già consegnato questo quiz.');
       } else {
@@ -207,11 +215,17 @@ function QuizPage() {
         </div>
         <div className="container mx-auto p-4 max-w-3xl quiz-no-select">
 
-          {isComplete ? (
+          {isComplete || sessionClosed ? (
             <div className="min-h-screen flex items-center justify-center">
               <div className="bg-surface-container rounded-lg border border-outline-variant/30 p-8 max-w-md w-full text-center">
-                <h2 className="text-2xl font-bold text-on-surface mb-4">Quiz Completato!</h2>
-                <p className="text-on-surface-variant mb-6">Hai risposto a tutte le domande. Clicca per consegnare.</p>
+                <h2 className="text-2xl font-bold text-on-surface mb-4">
+                  {sessionClosed ? 'Sessione chiusa' : 'Quiz Completato!'}
+                </h2>
+                <p className="text-on-surface-variant mb-6">
+                  {sessionClosed
+                    ? 'L’insegnante ha chiuso la sessione. Puoi comunque consegnare le risposte già date.'
+                    : 'Hai risposto a tutte le domande. Clicca per consegnare.'}
+                </p>
                 {localError && <p className="text-error text-sm mb-4">{localError}</p>}
                 <button
                   onClick={handleSubmit}

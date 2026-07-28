@@ -6,10 +6,11 @@ All writes happen inside a single DB transaction per operation.
 from __future__ import annotations
 
 import json
+import os
 import random
 import secrets
 import string
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import psycopg
@@ -23,6 +24,23 @@ from services.grading import format_detailed_answers, grade
 
 # Characters for join codes: unambiguous (no O/0, I/1, etc.)
 _CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+
+class SessionClosed(Conflict):
+    """The session no longer accepts this operation."""
+
+
+def _grace_seconds() -> int:
+    """Slack after closes_at, matching the student token's closes_at + 1h."""
+    return int(os.getenv('QUIZ_GRACE_SECONDS', '3600'))
+
+
+def _past_grace(closes_at: datetime | None) -> bool:
+    if closes_at is None:
+        return False
+    if closes_at.tzinfo is None:
+        closes_at = closes_at.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) > closes_at + timedelta(seconds=_grace_seconds())
 
 
 def generate_join_code() -> str:
@@ -209,14 +227,24 @@ def save_answer(quiz_id: str, answer: Any, student_id: int) -> dict:
     """
     with db.get_conn() as conn:
         row = conn.execute(
-            "SELECT quiz_id, session_id, student_id, plan, progression, completed_at "
-            "FROM quiz_plans WHERE quiz_id = %s FOR UPDATE",
+            "SELECT qp.quiz_id, qp.session_id, qp.student_id, qp.plan, qp.progression, "
+            "       qp.completed_at, qs.status, qs.closes_at "
+            "FROM quiz_plans qp "
+            "JOIN quiz_sessions qs ON qs.id = qp.session_id "
+            "WHERE qp.quiz_id = %s FOR UPDATE OF qp",
             (quiz_id,),
         ).fetchone()
         if not row:
             raise NotFound(description="Quiz plan not found.")
         if str(row[2]) != student_id:
             raise Forbidden(description="Not your plan.")
+
+        # A closed session accepts no new answers, but the student may still
+        # submit what they have already answered (see submit_plan).
+        if row[6] != 'active' or _past_grace(row[7]):
+            raise SessionClosed(
+                description="La sessione è stata chiusa dall'insegnante."
+            )
 
         plan_data = _parse_json_field(row[3])
         progression = _parse_json_field(row[4])
@@ -262,16 +290,23 @@ def submit_plan(quiz_id: str, student_id: int) -> dict:
     with db.get_conn() as conn:
         row = conn.execute(
             "SELECT qp.quiz_id, qp.session_id, qp.student_id, qp.plan, qp.progression, "
-            "       qp.completed_at, qs.teacher_id, qs.snapshot_id "
+            "       qp.completed_at, qs.teacher_id, qs.snapshot_id, qs.status, qs.closes_at "
             "FROM quiz_plans qp "
             "JOIN quiz_sessions qs ON qs.id = qp.session_id "
-            "WHERE qp.quiz_id = %s FOR UPDATE",
+            "WHERE qp.quiz_id = %s FOR UPDATE OF qp",
             (quiz_id,),
         ).fetchone()
         if not row:
             raise NotFound(description="Quiz plan not found.")
         if str(row[2]) != student_id:
             raise Forbidden(description="Not your plan.")
+
+        # Handing in still works after a manual close — a student who answered
+        # must not lose their work because the teacher closed the session.
+        if row[8] not in ('active', 'closed') or _past_grace(row[9]):
+            raise SessionClosed(
+                description="La sessione è chiusa: non è più possibile consegnare."
+            )
 
         session_id = row[1]
         student_id = row[2]

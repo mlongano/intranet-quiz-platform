@@ -11,14 +11,43 @@ POST /api/quiz/submit                (grade and record submission)
 import json
 
 from flask import Blueprint, g, jsonify, request
+from werkzeug.exceptions import Conflict, Forbidden, NotFound
 
 import db
 from db import queries as Q
 from auth.decorators import require_student
 from services import quiz_session as qs
+from services.quiz_session import SessionClosed
 from services.score_transforms import load_qbank_for_session
 
 quiz_bp = Blueprint('quiz', __name__, url_prefix='/api/quiz')
+
+
+# Services raise werkzeug exceptions; render them as the JSON error shape the
+# frontend expects (apiFetch reads body.error || body.description, and body.code).
+
+@quiz_bp.errorhandler(SessionClosed)
+def _json_session_closed(e):
+    return jsonify({
+        'error': 'CONFLICT',
+        'code': 'SESSION_CLOSED',
+        'description': e.description,
+    }), 409
+
+
+@quiz_bp.errorhandler(NotFound)
+def _json_not_found(e):
+    return jsonify({'error': 'NOT_FOUND', 'description': e.description}), 404
+
+
+@quiz_bp.errorhandler(Forbidden)
+def _json_forbidden(e):
+    return jsonify({'error': 'FORBIDDEN', 'description': e.description}), 403
+
+
+@quiz_bp.errorhandler(Conflict)
+def _json_conflict(e):
+    return jsonify({'error': 'CONFLICT', 'description': e.description}), 409
 
 
 @quiz_bp.get('/session-info')
