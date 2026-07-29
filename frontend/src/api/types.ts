@@ -46,6 +46,9 @@ export interface DetailedAnswer {
   llm_status?: 'not_applicable' | 'pending' | 'graded' | 'fallback' | 'error' | null;
   llm_error?: string | null;
   llm_updated_at?: string | null;
+  llm_provider?: string | null;
+  llm_model?: string | null;
+  prompt_version?: string | null;
   question_snapshot?: Record<string, any> | null;
   manual_override?: boolean;
   original_points_awarded?: number | null;
@@ -262,6 +265,7 @@ export interface ResultEmailOptions {
 
 export interface LlmInfoResponse {
   model: string | null;
+  provider?: string | null;
   enabled?: boolean;
   use_llm?: boolean;
 }

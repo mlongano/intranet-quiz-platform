@@ -759,13 +759,15 @@ def export_student_snapshot(snapshot_id: int):
 @teacher_bp.get('/llm-info')
 @require_teacher
 def llm_info():
-    use_llm = os.getenv('USE_LLM_EVAL', '0') == '1'
-    model = os.getenv('LLM_MODEL', '')
-    return jsonify({
-        'use_llm': use_llm,
-        'enabled': use_llm,
-        'model': model if use_llm else None,
-    }), 200
+    """Which provider and model open answers are currently graded with.
+
+    Reports disabled when the configuration is incomplete rather than
+    advertising a model that no grading run could actually use. Never returns
+    the API key.
+    """
+    from services.llm_config import public_llm_info
+
+    return jsonify(public_llm_info()), 200
 
 
 @teacher_bp.post('/email/send-result')

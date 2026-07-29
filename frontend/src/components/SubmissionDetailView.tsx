@@ -138,8 +138,26 @@ function AnswerRow({
           </span>
         </p>
       )}
+
+      {/* Provenance: without it a changed score after a regrade is unexplainable. */}
+      {answer.llm_model && (
+        <p className="text-xs mt-1 text-on-surface-variant" title={answer.prompt_version ?? undefined}>
+          Valutata con <span className="text-secondary">{answer.llm_model}</span>
+          {answer.llm_provider ? ` (${answer.llm_provider})` : ''}
+          {answer.llm_updated_at ? ` il ${formatEvaluatedAt(answer.llm_updated_at)}` : ''}
+        </p>
+      )}
     </div>
   );
+}
+
+function formatEvaluatedAt(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString('it-IT', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
 }
 
 function FormattedAnswer({ value }: { value: any }) {

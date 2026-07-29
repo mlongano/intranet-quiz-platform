@@ -225,6 +225,7 @@ function SessionScoresPage() {
                 <span className="text-sm text-on-surface-variant">LLM regrade:</span>
                 <span className="bg-secondary/10 border border-secondary/30 text-secondary text-xs px-2 py-0.5 rounded">
                   {llmInfo?.model ?? '...'}
+                  {llmInfo?.provider ? ` (${llmInfo.provider})` : ''}
                 </span>
                 <span className="text-xs text-on-surface-variant">
                   ({llmEnabled ? 'abilitato' : 'disabilitato'})
