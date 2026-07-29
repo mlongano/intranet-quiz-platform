@@ -2,6 +2,16 @@
 
 > Version 2.6.0 · MIT License
 
+> **Historical.** This describes the single-tenant, file-based v2.6.0 system,
+> before the multi-tenant PostgreSQL refactor. Several things it documents no
+> longer exist — `llm_evaluator.py` and the `llm` library (replaced by direct
+> provider SDKs in `services/llm_provider.py`), `git_sync.py`, `banks/`, and
+> keyword scoring for open answers, which was removed outright.
+>
+> For the current system see [`ARCHITECTURE.md`](./ARCHITECTURE.md), and
+> [`LLM_GRADING_DESIGN.md`](./LLM_GRADING_DESIGN.md) for how open questions are
+> graded now.
+
 ---
 
 ## Table of Contents
