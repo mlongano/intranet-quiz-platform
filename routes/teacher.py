@@ -57,7 +57,6 @@ Misc:
 from __future__ import annotations
 
 import json
-import os
 
 from flask import Blueprint, Response, g, jsonify, request
 from werkzeug.exceptions import Conflict, Forbidden, NotFound
