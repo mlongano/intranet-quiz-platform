@@ -64,8 +64,8 @@ scripts/run_tests_safe.sh tests/
 ```
 
 The runner also repairs stale source in the app container before running: the
-top-level modules (`server.py`, `utils.py`, `llm_evaluator.py`,
-`email_service.py`) are bind-mounted one file at a time, and because Docker
+top-level modules (`server.py`, `utils.py`, `email_service.py`) are
+bind-mounted one file at a time, and because Docker
 resolves a single-file mount to an inode, a `git pull` leaves the container
 serving pre-pull code while the working tree looks correct.
 
@@ -86,7 +86,11 @@ auth/
   google_sync.py         # Google Workspace Directory API sync (super-admin triggered)
 services/
   grading.py             # PURE: grade(), grade_open_answer(), format_detailed_answers()
+  llm_provider.py        # Direct OpenAI/Anthropic SDK calls (deepseek = OpenAI protocol)
+  llm_config.py          # Resolves provider/model/key — the seam Fase 4 replaces
   llm_errors.py          # Typed LLM failures + validate_llm_env()
+  llm_parsing.py         # Parses/normalises a model's grading response
+  prompts.py             # Immutable versioned prompts, prompts/<name>/v<N>-<sha8>.md
   quiz_session.py        # Plan + session lifecycle; FOR UPDATE + ownership in one transaction
   score_transforms.py    # transform_scores() — the single seam for review/recalculate/regrade
   snapshots.py           # JSONC import/export ↔ question_snapshots
@@ -98,7 +102,6 @@ db/
   queries.py             # ALL SQL as named constants, parameterized
   migrate.py             # migration runner; db/migrations/NNN_*.sql
 utils.py                 # pure string/JSON helpers only
-llm_evaluator.py         # LLM call wrapper (llm library; subprocess + timeout + retries)
 email_service.py         # SMTP result emails (live, optional)
 ```
 
@@ -124,6 +127,8 @@ Three JWT roles: `teacher`, `super_admin` (same login flow, elevated role), `stu
 
 8. **Session close has a grace window.** `save-answer` needs `status='active'`; `submit` also accepts `closed`, so a student caught by a manual close can still hand in. Both refuse past `closes_at + QUIZ_GRACE_SECONDS` (default 3600) with 409 `SESSION_CLOSED`.
 
+9. **A grading job is pinned at enqueue time.** Provider, model, `prompt_version` and `prompt_snapshot` are resolved when the job is created and stored on the `llm_grading_jobs` row; the worker reads them from there, never from the environment or the filesystem. Editing a prompt file or changing `LLM_MODEL` therefore cannot alter a job already queued. Credentials are the exception — they are secrets, always read live, never written to a job. Every graded answer records `llm_provider`/`llm_model`/`prompt_version` so a changed score can be explained. Published prompts (`prompts/<name>/v<N>-<sha8>.md`) are immutable: `services/prompts.py` refuses to load one whose content no longer matches the hash in its filename.
+
 ### Data model (PostgreSQL — see `db/migrations/`)
 
 `teachers`, `students`, `classes`, `class_teachers`, `class_students` (identity);
@@ -146,7 +151,7 @@ React 19 + Vite + TanStack Query + Tailwind v4, SPA served by Flask from `fronte
 ## Environment Variables
 
 Required: `DATABASE_URL`, `JWT_SECRET` (32+ chars; app refuses to start without them), `POSTGRES_PASSWORD` (compose).
-Optional groups (see `.env.example`): Google Workspace sync (`GOOGLE_SA_KEY_PATH`, `GOOGLE_DELEGATED_SUBJECT`, `GOOGLE_TEACHER_GROUP`, `GOOGLE_STUDENT_OU_PATHS`…), Google OAuth (`GOOGLE_OAUTH_CLIENT_ID` + `VITE_…`), email (`EMAIL_SENDER`/`EMAIL_PASSWORD`/SMTP), LLM grading (`USE_LLM_EVAL=1`, `LLM_MODEL`, provider API keys, `LLM_TIMEOUT_SECONDS`, `LLM_RETRIES`), backups (`BACKUP_INTERVAL_SECONDS`, `BACKUP_RETENTION_DAYS`).
+Optional groups (see `.env.example`): Google Workspace sync (`GOOGLE_SA_KEY_PATH`, `GOOGLE_DELEGATED_SUBJECT`, `GOOGLE_TEACHER_GROUP`, `GOOGLE_STUDENT_OU_PATHS`…), Google OAuth (`GOOGLE_OAUTH_CLIENT_ID` + `VITE_…`), email (`EMAIL_SENDER`/`EMAIL_PASSWORD`/SMTP), LLM grading (`USE_LLM_EVAL=1`, `LLM_PROVIDER`, `LLM_MODEL`, the matching provider API key, `LLM_TIMEOUT_SECONDS`, `LLM_RETRIES`), backups (`BACKUP_INTERVAL_SECONDS`, `BACKUP_RETENTION_DAYS`).
 
 Secrets live in `.env` and `secrets/` — both gitignored. Never commit them.
 

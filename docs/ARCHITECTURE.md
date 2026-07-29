@@ -198,7 +198,9 @@ llm_grading_jobs (id, teacher_id FK, session_id FK, score_entry_id FK,
                   job_type [submission | regrade_session | regrade_score],
                   status [pending | running | completed | failed],
                   total_items, processed_items, error,
-                  created_at, started_at, finished_at)
+                  created_at, started_at, finished_at,
+                  provider, model, prompt_version,
+                  prompt_snapshot JSONB, params JSONB)
                   UNIQUE (session_id) WHERE job_type='regrade_session'
                                         AND status IN ('pending','running')
 ```
@@ -271,11 +273,20 @@ sync_runs (id, started_at, finished_at, triggered_by FK, result JSONB,
 │       ├── 003_llm_grading_jobs.sql
 │       ├── 004_block_production_truncate.sql
 │       ├── 005_score_history.sql       # superseded by 006
-│       └── 006_score_change_sets.sql   # change sets + answer_revision
+│       ├── 006_score_change_sets.sql   # change sets + answer_revision
+│       └── 007_llm_job_provenance.sql  # provider/model/prompt pinned per job
+│
+├── prompts/
+│   ├── open-question-system/     # Immutable v<N>-<sha8>.md grading prompts
+│   └── open-question-user/
 │
 ├── services/
 │   ├── grading.py                # Pure grading functions
+│   ├── llm_provider.py           # Direct OpenAI/Anthropic SDK transport
+│   ├── llm_config.py             # Resolves provider/model/key (Fase 4 seam)
 │   ├── llm_errors.py             # Typed LLM failures + validate_llm_env()
+│   ├── llm_parsing.py            # Parses a model's grading response
+│   ├── prompts.py                # Versioned prompt resolution
 │   ├── llm_jobs.py               # Async grading queue + worker loop
 │   ├── score_transforms.py       # transform_scores() + record_answer_changes()
 │   ├── session_scores.py         # Session score listing / archiving
@@ -490,6 +501,9 @@ Using the glossary from [`CONTEXT.md`](./CONTEXT.md):
 | Quiz taking | `services/quiz_session.py` | `save_answer(quiz_id, answer, student_id)` | `routes/quiz.py` | Deep — FOR UPDATE lock + ownership + progression all in one txn |
 | Grading | `services/grading.py` | `grade()`, `grade_open_answer()` | quiz_session, llm_jobs, score_transforms | Deep — pure functions, callers don't reimplement scoring |
 | LLM grading | `services/llm_jobs.py` | job queue + `worker_loop()` | worker container, teacher regrade endpoint | Deep — the only place stored answers are graded |
+| LLM transport | `services/llm_provider.py` | `evaluate_open_question(...)` | `grade_open_answer()` | Deep — one interface over OpenAI/Anthropic/DeepSeek; returns a result or raises, never a zero |
+| LLM configuration | `services/llm_config.py` | `resolve_llm_config(teacher_id=None)` | worker, `llm-info` endpoint, startup validation | Deep — the only reader of LLM env; Fase 4 swaps its body for per-teacher credentials |
+| Grading prompts | `services/prompts.py` | `active_prompt_set()`, `load_active_prompt()` | job enqueue, worker fallback | Deep — immutable versioned files; a published prompt that changed fails to load |
 | Snapshot CRUD | `services/snapshots.py` | import/export JSONC ↔ DB | routes/teacher.py | Medium — import does validation + uniqueness |
 | Image management | `services/images.py` | upload/list/delete per snapshot | routes/teacher.py | Deep — manifest JSONB in snapshot row, filesystem behind it |
 | DB queries | `db/queries.py` | Named SQL constants | All modules | Shallow — just SQL strings, but deliberately so (easy to review) |

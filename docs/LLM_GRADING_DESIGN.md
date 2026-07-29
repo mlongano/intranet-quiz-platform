@@ -424,11 +424,41 @@ aperte, quindi nessun percorso di richiesta può chiamare il provider.
 - Test di job concorrenti, fallimento senza perdita del voto e conflitto sul
   revert.
 
-### Fase 3 — Provider diretti e tracciamento
+### Fase 3 — Provider diretti e tracciamento ✅ implementata
 
 Sostituisce la libreria `llm` con SDK diretti. Registra provider, modello,
 prompt version e parametri effettivi, mantenendo invariata l'interfaccia
 pubblica `grade_open_answer()`.
+
+Come è stata realizzata:
+
+- `services/llm_provider.py` chiama OpenAI e Anthropic tramite SDK ufficiale;
+  DeepSeek usa il protocollo OpenAI con `base_url` diverso. I provider sono una
+  allowlist fissa nel codice.
+- `services/llm_config.py` risolve provider, modello e chiave. È il solo punto
+  che legge l'ambiente: la Fase 4 ne sostituisce il corpo con le credenziali
+  cifrate per docente, senza toccare i chiamanti. `resolve_llm_config()` accetta
+  già un `teacher_id` che oggi ignora.
+- I prompt vivono in `prompts/<nome>/v<N>-<sha8>.md` e sono immutabili:
+  `services/prompts.py` rifiuta di caricare un prompt pubblicato il cui
+  contenuto non corrisponde più all'hash nel nome.
+- La migrazione `007` aggiunge a `llm_grading_jobs` le colonne `provider`,
+  `model`, `prompt_version`, `prompt_snapshot` e `params`. Sono risolte
+  all'accodamento; il worker legge solo dalla riga del job, quindi modificare un
+  file di prompt o `LLM_MODEL` dopo l'accodamento non altera un job già in coda.
+  Le credenziali non vengono mai scritte nel job: sono segreti e si rileggono
+  sempre dalla configurazione viva.
+- Ogni risposta valutata registra `llm_provider`, `llm_model` e
+  `prompt_version` dentro il JSONB `answers`, e il dettaglio risposta li mostra
+  al docente.
+- `llm_evaluator.py` è stato eliminato insieme al suo timeout basato su
+  subprocess; gli SDK hanno un timeout nativo. Il parsing delle risposte
+  sopravvive in `services/llm_parsing.py`.
+
+Rimandato: endpoint self-hosted o custom (Ollama, vLLM) e le relative
+protezioni SSRF descritte in **Decisioni ulteriori 2**. Finché i provider sono
+una allowlist fissa non esiste superficie SSRF; introdurli richiede il client
+HTTP validato descritto lì ed è una fase a sé.
 
 ### Fase 4 — Credenziali cifrate per docente
 
