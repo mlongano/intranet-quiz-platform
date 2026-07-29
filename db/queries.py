@@ -413,18 +413,28 @@ UPDATE_SCORE_ANSWERS = """
 
 # ── LLM grading jobs ─────────────────────────────────────────────────────────
 
-INSERT_LLM_GRADING_JOB = """
-    INSERT INTO llm_grading_jobs
-        (teacher_id, session_id, score_entry_id, job_type, total_items)
-    VALUES
-        (%(teacher_id)s, %(session_id)s, %(score_entry_id)s, %(job_type)s, %(total_items)s)
-    RETURNING id, teacher_id, session_id, score_entry_id, status, job_type,
-              total_items, processed_items, error, created_at, started_at, finished_at
+# Every job query selects exactly these columns, in this order, because
+# services/llm_jobs.py::_job_row_to_dict reads the row by position. Defined once
+# so a new column cannot be added to one query and forgotten in another, which
+# would silently mis-map every field after it.
+LLM_GRADING_JOB_COLUMNS = """
+    id, teacher_id, session_id, score_entry_id, status, job_type,
+    total_items, processed_items, error, created_at, started_at, finished_at,
+    provider, model, prompt_version, prompt_snapshot, params
 """
 
-CLAIM_LLM_GRADING_JOB = """
-    SELECT id, teacher_id, session_id, score_entry_id, status, job_type,
-           total_items, processed_items, error, created_at, started_at, finished_at
+INSERT_LLM_GRADING_JOB = f"""
+    INSERT INTO llm_grading_jobs
+        (teacher_id, session_id, score_entry_id, job_type, total_items,
+         provider, model, prompt_version, prompt_snapshot, params)
+    VALUES
+        (%(teacher_id)s, %(session_id)s, %(score_entry_id)s, %(job_type)s, %(total_items)s,
+         %(provider)s, %(model)s, %(prompt_version)s, %(prompt_snapshot)s, %(params)s)
+    RETURNING {LLM_GRADING_JOB_COLUMNS}
+"""
+
+CLAIM_LLM_GRADING_JOB = f"""
+    SELECT {LLM_GRADING_JOB_COLUMNS}
     FROM llm_grading_jobs
     WHERE status = 'pending'
     ORDER BY created_at
@@ -461,16 +471,14 @@ REQUEUE_RUNNING_LLM_GRADING_JOBS = """
     WHERE status = 'running'
 """
 
-GET_LLM_GRADING_JOB_FOR_TEACHER = """
-    SELECT id, teacher_id, session_id, score_entry_id, status, job_type,
-           total_items, processed_items, error, created_at, started_at, finished_at
+GET_LLM_GRADING_JOB_FOR_TEACHER = f"""
+    SELECT {LLM_GRADING_JOB_COLUMNS}
     FROM llm_grading_jobs
     WHERE id = %s AND teacher_id = %s
 """
 
-GET_LATEST_LLM_GRADING_JOB_FOR_SESSION = """
-    SELECT id, teacher_id, session_id, score_entry_id, status, job_type,
-           total_items, processed_items, error, created_at, started_at, finished_at
+GET_LATEST_LLM_GRADING_JOB_FOR_SESSION = f"""
+    SELECT {LLM_GRADING_JOB_COLUMNS}
     FROM llm_grading_jobs
     WHERE session_id = %s AND teacher_id = %s
     ORDER BY created_at DESC

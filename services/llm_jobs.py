@@ -31,15 +31,64 @@ def create_llm_job(
     score_entry_id: int | None,
     job_type: str,
     total_items: int,
+    provenance: dict | None = None,
 ) -> dict:
+    """Create a grading job, pinning how it must be evaluated.
+
+    Provider, model and prompt are resolved *now* and stored on the row. The
+    worker reads them from the job, so editing a prompt file or changing
+    LLM_MODEL after enqueueing cannot alter a job already in the queue.
+    """
+    prov = provenance if provenance is not None else resolve_job_provenance()
+    snapshot = prov.get('prompt_snapshot')
+    params = prov.get('params')
     row = conn.execute(Q.INSERT_LLM_GRADING_JOB, {
         'teacher_id': teacher_id,
         'session_id': session_id,
         'score_entry_id': score_entry_id,
         'job_type': job_type,
         'total_items': total_items,
+        'provider': prov.get('provider'),
+        'model': prov.get('model'),
+        'prompt_version': prov.get('prompt_version'),
+        'prompt_snapshot': json.dumps(snapshot) if snapshot is not None else None,
+        'params': json.dumps(params) if params is not None else None,
     }).fetchone()
     return _job_row_to_dict(row)
+
+
+def resolve_job_provenance() -> dict:
+    """Resolve the provider, model and prompt texts to pin onto a new job.
+
+    Returns empty provenance when LLM grading is disabled or the prompts cannot
+    be read: enqueueing must not fail here. The worker will raise the
+    configuration error and leave the answers pending, which is the one place
+    that failure is handled.
+    """
+    from services.llm_errors import llm_enabled
+
+    if not llm_enabled():
+        return {}
+    try:
+        from services import prompts
+        from services.llm_config import resolve_llm_config
+
+        config = resolve_llm_config()
+        prompt_set = prompts.active_prompt_set()
+    except Exception as exc:  # noqa: BLE001 - enqueueing must stay non-fatal
+        print(f"[LLM_JOBS] Could not resolve grading provenance: {exc}", flush=True)
+        return {}
+
+    return {
+        'provider': config['provider'],
+        'model': config['model'],
+        'prompt_version': prompt_set['version'],
+        'prompt_snapshot': {
+            'system': prompt_set['system'],
+            'user': prompt_set['user'],
+        },
+        'params': config.get('params'),
+    }
 
 
 def enqueue_regrade_session(session_id: int, teacher_id: int) -> dict:
@@ -483,6 +532,13 @@ def _score_totals(answers: list[dict]) -> tuple[float, float, float]:
 
 
 def _job_row_to_dict(row: Any) -> dict:
+    """Map a job row by position — the order is Q.LLM_GRADING_JOB_COLUMNS.
+
+    Every job query selects that shared column list, so adding a column there
+    and here is a single coordinated change. prompt_snapshot is intentionally
+    not returned: it is large, it is only for the worker, and job dicts are
+    serialised straight to the teacher API.
+    """
     return {
         'id': row[0],
         'teacher_id': row[1],
@@ -496,6 +552,11 @@ def _job_row_to_dict(row: Any) -> dict:
         'created_at': row[9].isoformat() if row[9] else None,
         'started_at': row[10].isoformat() if row[10] else None,
         'finished_at': row[11].isoformat() if row[11] else None,
+        'provider': row[12],
+        'model': row[13],
+        'prompt_version': row[14],
+        '_prompt_snapshot': row[15],
+        'params': row[16],
     }
 
 

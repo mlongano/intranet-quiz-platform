@@ -39,10 +39,12 @@ def validate_llm_env() -> None:
     Called at startup by both server.py and the grading worker so a
     misconfigured deployment is reported loudly instead of silently leaving
     every open answer pending.
+
+    The real check lives in services/llm_config.py, which knows about providers
+    and their keys; it is imported lazily because that module imports this one.
     """
     if not llm_enabled():
         return
-    if not (os.getenv('LLM_MODEL') or '').strip():
-        raise LlmConfigurationError(
-            "USE_LLM_EVAL=1 but LLM_MODEL is not set."
-        )
+    from services.llm_config import resolve_llm_config
+
+    resolve_llm_config()
