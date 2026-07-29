@@ -473,12 +473,19 @@ Aggiunge `llm_config`, `teacher_llm_credentials`, endpoint redatti e gestione
 della chiave master. In questa fase sono supportate le API key ufficiali; OAuth
 resta escluso finché il provider non documenta un flusso per applicazioni terze.
 
-Il docente configura **chiave e modello**, e può scegliere l'endpoint solo tra
-le voci di una lista gestita dall'amministratore, memorizzando
-l'identificatore e mai la URL. Il vincolo da non violare: `base_url` non
-diventa mai un campo di testo libero per il docente, altrimenti rientra dalla
-finestra tutta la validazione SSRF che questo modello rende inutile. I
-dettagli sono in **Decisioni ulteriori 2**.
+Il docente configura **chiave e modello**, e sceglie l'endpoint solo tra le
+voci della tabella `llm_endpoints` gestita dal super-admin, memorizzando
+`endpoint_id` e mai la URL. Il vincolo da non violare: `base_url` non diventa
+mai un campo di testo libero per il docente, altrimenti rientra dalla finestra
+tutta la validazione SSRF che questo modello rende inutile. Schema e vincoli in
+**Decisioni ulteriori 2**.
+
+Ordine sensato di implementazione, dato che le due metà sono indipendenti:
+prima `llm_endpoints` con il CRUD super-admin e la risoluzione per
+`endpoint_id` — utile già da sola, perché sposta la configurazione degli
+endpoint dal file `.env` a un'interfaccia amministrativa senza riavvio — poi
+`teacher_llm_credentials` con cifratura, chiave master e rotazione, che è la
+parte più delicata e non blocca la prima.
 
 `services/llm_config.py::resolve_llm_config(teacher_id)` è il punto in cui
 tutto questo entra: accetta già `teacher_id` e oggi lo ignora, quindi la fase
@@ -754,11 +761,45 @@ rivalutazione è già in corso». Il cooldown è configurabile via env
      chiave propria può così valutare tramite il server della scuola, invece
      di non poter valutare affatto.
 
-   Resta da decidere dove vive la lista: variabile d'ambiente JSON (nessuna
-   migrazione, ma modificarla richiede riavvio) oppure tabella `llm_endpoints`
-   con CRUD super-admin (`routes/super_admin.py` ha già il pattern per
-   docenti e classi). Con ~150 docenti la tabella evita che ogni cambiamento
-   passi da un'edit di `.env`.
+   **Decisione: la lista vive in una tabella `llm_endpoints`**, gestita dal
+   super-admin, non in una variabile d'ambiente. Con ~150 docenti un cambio di
+   endpoint non deve richiedere un'edit di `.env` e un riavvio, e
+   `routes/super_admin.py` ha già il pattern CRUD di docenti e classi.
+
+   ```sql
+   CREATE TABLE llm_endpoints (
+       id            BIGSERIAL PRIMARY KEY,
+       slug          TEXT NOT NULL UNIQUE,   -- identificatore stabile, usato negli audit
+       label         TEXT NOT NULL,          -- come appare al docente
+       protocol      TEXT NOT NULL CHECK (protocol IN ('openai','anthropic','deepseek')),
+       base_url      TEXT,                   -- NULL = endpoint ufficiale del provider
+       requires_key  BOOLEAN NOT NULL DEFAULT true,
+       models        JSONB NOT NULL DEFAULT '[]'::jsonb,  -- [] = modello libero
+       enabled       BOOLEAN NOT NULL DEFAULT true,
+       created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+       updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+   );
+   ```
+
+   Note che discendono dai vincoli sopra:
+
+   - `teachers.llm_config` memorizza `endpoint_id`, non la URL. La
+     risoluzione è `SELECT ... WHERE id = %s AND enabled`, quindi disabilitare
+     una voce revoca immediatamente anche i docenti che l'avevano già scelta.
+   - Si revoca con `enabled = false`, non cancellando: la riga resta
+     leggibile per spiegare valutazioni storiche.
+   - `llm_grading_jobs` non ha una FK verso questa tabella. Registra
+     `endpoint_id` e la `base_url` effettivamente usata come provenienza
+     testuale, così un endpoint rimosso non rende illeggibile lo storico, ma
+     il worker ri-risolve comunque dalla tabella prima di chiamare.
+   - `requires_key = false` è ciò che permette a un docente senza chiave di
+     valutare tramite il server della scuola.
+   - `models` vuoto significa che il docente può indicare qualsiasi modello:
+     utile per un server LAN che ne espone di arbitrari. Una lista non vuota
+     lo vincola a quelli, utile per contenere i costi sui provider a pagamento.
+
+   `LLM_BASE_URL` resta come configurazione di fallback a livello di
+   installazione, per chi non popola la tabella.
 
 3. **Temperature**: non viene esposta al docente. Il sistema usa il valore più
    deterministico supportato dal modello e registra i parametri effettivi.
