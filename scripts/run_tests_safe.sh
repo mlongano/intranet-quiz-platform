@@ -22,6 +22,49 @@ cd "$ROOT_DIR"
 # Ensure the database container is available.
 "${COMPOSE[@]}" up -d db >/dev/null
 
+# ── stale-source guard ───────────────────────────────────────────────────────
+# compose-debug.yaml bind-mounts the repo's top-level modules one file at a
+# time. Docker resolves a single-file mount to an inode, and `git pull` replaces
+# the file rather than rewriting it, so the container keeps serving the
+# pre-pull content while the working tree looks correct. Tests then run against
+# stale code and fail — or, far worse, pass. Directory mounts (services/, db/,
+# routes/, tests/) do not have this problem.
+ROOT_MODULES=(server.py utils.py llm_evaluator.py email_service.py)
+stale=()
+if "${COMPOSE[@]}" ps --status running --services 2>/dev/null | grep -qx app; then
+  for f in "${ROOT_MODULES[@]}"; do
+    host_sum="$(sha1sum "$f" | cut -d' ' -f1)"
+    cont_sum="$("${COMPOSE[@]}" exec -T app sha1sum "$f" 2>/dev/null | cut -d' ' -f1 || true)"
+    if [[ -n "$cont_sum" && "$host_sum" != "$cont_sum" ]]; then
+      stale+=("$f")
+    fi
+  done
+fi
+
+if (( ${#stale[@]} > 0 )); then
+  echo "Stale source in the app container: ${stale[*]}"
+  echo "Recreating app and worker so tests run against the working tree..."
+  "${COMPOSE[@]}" up -d --force-recreate app worker >/dev/null
+  # The container accepts exec well before its entrypoint has finished
+  # installing dev dependencies, so wait for pytest itself, not just the
+  # container. Without this the run dies with "pytest: not found".
+  echo -n "Waiting for the app container to finish starting"
+  ready=0
+  for _ in $(seq 1 90); do
+    if "${COMPOSE[@]}" exec -T app sh -c 'command -v pytest >/dev/null 2>&1'; then
+      ready=1
+      break
+    fi
+    echo -n "."
+    sleep 2
+  done
+  echo
+  if (( ready == 0 )); then
+    echo "app container never became ready (pytest unavailable after 180s)." >&2
+    exit 1
+  fi
+fi
+
 # Create the test DB if it does not exist. Do not drop or recreate anything here.
 if ! "${COMPOSE[@]}" exec -T db psql -U quizparty -d postgres -Atc \
   "SELECT 1 FROM pg_database WHERE datname = '$TEST_DB'" | grep -qx '1'; then
