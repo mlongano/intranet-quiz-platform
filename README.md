@@ -62,11 +62,15 @@ apparmor_parser: Access denied
 
 An unprivileged LXC cannot load AppArmor profiles. The `security_opt: apparmor:unconfined` entries in Compose fix *running* containers, but Dockerfile build steps get no such escape. Builds are therefore delegated to a privileged BuildKit daemon, defined in [`infra/buildkit/`](infra/buildkit/).
 
-Start it once per host, then select it:
+Start the daemon and register it as a builder — once per host:
 
 ```bash
 cd infra/buildkit && docker compose up -d && cd -
-docker buildx use lxc-remote2        # persistent; only needed once per user
+
+# Only needed the first time; skip if `docker buildx ls` already lists it.
+docker buildx create --name lxc-remote2 --driver remote tcp://127.0.0.1:1235
+
+docker buildx use lxc-remote2        # persistent selection, per user
 ```
 
 Check the builder reports `running` (not `inactive`) before building:
@@ -113,6 +117,8 @@ docker compose up -d --build
 ```
 
 The entrypoint runs `db.migrate up` automatically on every start, so new migrations are applied without manual steps.
+
+> On the school Proxmox LXC host this needs the BuildKit daemon running — see [Proxmox LXC / debug build note](#proxmox-lxc--debug-build-note). It restarts with Docker, so normally there is nothing to do; a build that fails immediately with `context deadline exceeded` means it is down.
 
 ---
 
