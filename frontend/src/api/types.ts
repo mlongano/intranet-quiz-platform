@@ -342,3 +342,25 @@ export interface LlmEndpoint {
 export type LlmEndpointPayload = Partial<
   Omit<LlmEndpoint, 'id' | 'created_at' | 'updated_at'>
 >;
+
+/** A teacher's own LLM configuration. The API key is never returned — only
+ *  whether one is stored and a fingerprint identifying which. */
+export interface TeacherLlmSettings {
+  endpoint_id: number | null;
+  endpoint_label: string | null;
+  model: string | null;
+  available_endpoints: Array<{
+    id: number;
+    label: string;
+    protocol: string;
+    requires_key: boolean;
+    models: string[];
+    is_default: boolean;
+  }>;
+  key: {
+    configured: boolean;
+    fingerprint: string | null;
+    updated_at?: string | null;
+  };
+  encryption_available: boolean;
+}

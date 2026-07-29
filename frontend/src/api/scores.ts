@@ -1,6 +1,7 @@
 import { apiFetch } from './client';
 import type {
   LlmInfoResponse,
+  TeacherLlmSettings,
   LlmJobStatus,
   ResultEmailOptions,
   ScoreChangeSet,
@@ -89,4 +90,30 @@ export async function getLatestSessionLlmJob(sessionId: number): Promise<LlmJobS
   const result = await apiFetch<LlmJobStatus | { job: null }>(`/teacher/sessions/${sessionId}/llm-jobs/latest`);
   if ('job' in result && result.job === null) return null;
   return result as LlmJobStatus;
+}
+
+// ── teacher LLM settings ────────────────────────────────────────────────────
+
+export async function getTeacherLlmSettings(): Promise<TeacherLlmSettings> {
+  return apiFetch<TeacherLlmSettings>('/teacher/llm-settings');
+}
+
+export async function updateTeacherLlmSettings(
+  payload: { endpoint_id?: number | null; model?: string | null },
+): Promise<TeacherLlmSettings> {
+  return apiFetch<TeacherLlmSettings>('/teacher/llm-settings', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function setTeacherLlmKey(apiKey: string): Promise<TeacherLlmSettings> {
+  return apiFetch<TeacherLlmSettings>('/teacher/llm-settings/key', {
+    method: 'PUT',
+    body: JSON.stringify({ api_key: apiKey }),
+  });
+}
+
+export async function clearTeacherLlmKey(): Promise<TeacherLlmSettings> {
+  return apiFetch<TeacherLlmSettings>('/teacher/llm-settings/key', { method: 'DELETE' });
 }

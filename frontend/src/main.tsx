@@ -29,6 +29,7 @@ import SnapshotImagesPage from './pages/SnapshotImagesPage';
 import ClassesPage from './pages/ClassesPage';
 import ArchivesPage from './pages/ArchivesPage';
 import ArchiveDetailPage from './pages/ArchiveDetailPage';
+import LlmSettingsPage from './pages/LlmSettingsPage';
 import StudentSnapshotsPage from './pages/StudentSnapshotsPage';
 
 // Super-admin
@@ -61,6 +62,7 @@ const router = createBrowserRouter([
   { path: '/teacher/archives', element: <RequireAuth><ArchivesPage /></RequireAuth>, errorElement: <ErrorPage /> },
   { path: '/teacher/archives/:archiveId', element: <RequireAuth><ArchiveDetailPage /></RequireAuth>, errorElement: <ErrorPage /> },
   { path: '/teacher/student-snapshots', element: <RequireAuth><StudentSnapshotsPage /></RequireAuth>, errorElement: <ErrorPage /> },
+  { path: '/teacher/llm-settings', element: <RequireAuth><LlmSettingsPage /></RequireAuth>, errorElement: <ErrorPage /> },
 
   // ── super-admin (auth required) ─────────────────────────────────────
   { path: '/super-admin', element: <RequireAuth><SuperAdminPage /></RequireAuth>, errorElement: <ErrorPage /> },

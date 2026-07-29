@@ -71,6 +71,7 @@ from services import images as img_service
 from services import quiz_session as qs_service
 from services import session_scores as ss_service
 from services import snapshots as snap_service
+from services import teacher_llm_settings
 from services import student_snapshots as sls_service
 from services.classroom_sync import list_courses_for_teacher, sync_courses_for_teacher
 from services.grading import format_detailed_answers, grade
@@ -752,6 +753,37 @@ def export_student_snapshot(snapshot_id: int):
         mimetype='application/json',
         headers={'Content-Disposition': f'attachment; filename="{filename}"'},
     )
+
+
+# ── teacher LLM settings ──────────────────────────────────────────────────────
+#
+# A teacher configures their own endpoint, model and API key. Reads never
+# return the key: only whether one is set, and a fingerprint identifying which.
+
+@teacher_bp.get('/llm-settings')
+@require_teacher
+def get_llm_settings():
+    return jsonify(teacher_llm_settings.get_settings(_teacher_id())), 200
+
+
+@teacher_bp.put('/llm-settings')
+@require_teacher
+def update_llm_settings():
+    data = request.get_json(silent=True) or {}
+    return jsonify(teacher_llm_settings.update_settings(_teacher_id(), data)), 200
+
+
+@teacher_bp.put('/llm-settings/key')
+@require_teacher
+def set_llm_key():
+    data = request.get_json(silent=True) or {}
+    return jsonify(teacher_llm_settings.set_key(_teacher_id(), data.get('api_key', ''))), 200
+
+
+@teacher_bp.delete('/llm-settings/key')
+@require_teacher
+def clear_llm_key():
+    return jsonify(teacher_llm_settings.clear_key(_teacher_id())), 200
 
 
 # ── misc ──────────────────────────────────────────────────────────────────────

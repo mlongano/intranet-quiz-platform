@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import os
 
+import db
+from db import queries as Q
 from services.llm_errors import LlmConfigurationError, llm_enabled
 from services.llm_provider import SUPPORTED_PROVIDERS
 
@@ -35,14 +37,20 @@ LOCAL_ENDPOINT_PLACEHOLDER_KEY = 'no-key-required'
 def resolve_llm_config(teacher_id: int | None = None, conn=None) -> dict:
     """Return {provider, model, api_key, base_url, params} for a grading call.
 
-    *teacher_id* is accepted and ignored: it marks the call sites Fase 4 will
-    need, so adding per-teacher credentials does not become a signature change
-    rippling through the worker.
+    Precedence, most specific first: the teacher's own choice of endpoint and
+    model, then the endpoint marked default, then the environment. A teacher's
+    stored API key is preferred over the shared one from the environment, so a
+    school-wide key keeps working for everyone who has not set their own.
+
+    A teacher's configuration names an endpoint *by id*, and the URL is looked
+    up here every time. That is what makes disabling an endpoint take effect
+    immediately, including for teachers who had already selected it.
 
     Raises LlmConfigurationError when the setup is incomplete — the worker turns
     that into a preserved `pending`, never a zero.
     """
-    endpoint = _default_endpoint(conn)
+    teacher = _teacher_preferences(teacher_id, conn)
+    endpoint = _teacher_endpoint(teacher, conn) or _default_endpoint(conn)
 
     if endpoint is not None:
         provider = endpoint['protocol']
@@ -61,7 +69,7 @@ def resolve_llm_config(teacher_id: int | None = None, conn=None) -> dict:
             f"Choose one of: {', '.join(SUPPORTED_PROVIDERS)}."
         )
 
-    model = _resolve_model(endpoint)
+    model = _resolve_model(endpoint, teacher)
     if not model:
         raise LlmConfigurationError("LLM_MODEL is not set.")
 
@@ -71,11 +79,12 @@ def resolve_llm_config(teacher_id: int | None = None, conn=None) -> dict:
     # junk in a variable named API_KEY. Both SDKs still need *some* string, so a
     # placeholder is sent. Set the key anyway if the endpoint checks it.
     key_env = PROVIDER_KEY_ENV[provider]
-    api_key = (os.getenv(key_env) or '').strip()
+    api_key = _teacher_api_key(teacher_id, conn) or (os.getenv(key_env) or '').strip()
     if not api_key:
         if requires_key:
             raise LlmConfigurationError(
-                f"{key_env} is not set (required for provider {provider!r})."
+                f"Nessuna chiave API configurata per il provider {provider!r}: "
+                f"impostala nelle tue impostazioni oppure definisci {key_env}."
             )
         api_key = LOCAL_ENDPOINT_PLACEHOLDER_KEY
 
@@ -109,12 +118,65 @@ def _default_endpoint(conn=None) -> dict | None:
     return get_default_endpoint(conn)
 
 
-def _resolve_model(endpoint: dict | None) -> str:
-    """LLM_MODEL wins; a single-model endpoint supplies its own default.
+def _teacher_preferences(teacher_id: int | None, conn=None) -> dict:
+    """Non-secret LLM preferences stored on the teacher row.
+
+    Returns {} on any failure — a teacher with no configuration, or a database
+    that cannot be read right now, must fall back to the shared setup rather
+    than stop grading.
+    """
+    if not teacher_id:
+        return {}
+    try:
+        if conn is not None:
+            row = conn.execute(Q.GET_TEACHER_LLM_CONFIG, (teacher_id,)).fetchone()
+        else:
+            with db.get_conn() as owned:
+                row = owned.execute(Q.GET_TEACHER_LLM_CONFIG, (teacher_id,)).fetchone()
+    except Exception:
+        return {}
+    if not row or not isinstance(row[0], dict):
+        return {}
+    return row[0]
+
+
+def _teacher_endpoint(teacher: dict, conn=None) -> dict | None:
+    """The endpoint a teacher selected, if it is still enabled.
+
+    A selection that no longer resolves — endpoint disabled or deleted — falls
+    through to the default rather than failing: revocation should redirect
+    grading, not break it.
+    """
+    endpoint_id = teacher.get('endpoint_id')
+    if not endpoint_id:
+        return None
+    from services.llm_endpoints import resolve_enabled_endpoint
+
+    return resolve_enabled_endpoint(int(endpoint_id), conn)
+
+
+def _teacher_api_key(teacher_id: int | None, conn=None) -> str:
+    if not teacher_id:
+        return ''
+    try:
+        from services.credentials import get_teacher_key
+
+        return get_teacher_key(teacher_id, conn) or ''
+    except Exception:
+        # A key that cannot be decrypted must not stop the shared configuration
+        # from working; the teacher is told to re-enter it in their settings.
+        return ''
+
+
+def _resolve_model(endpoint: dict | None, teacher: dict | None = None) -> str:
+    """Teacher's choice, then LLM_MODEL, then a single-model endpoint.
 
     An endpoint that lists exactly one model needs no further configuration,
     which is the common case for a LAN server serving one weight.
     """
+    chosen = str((teacher or {}).get('model') or '').strip()
+    if chosen:
+        return chosen
     model = (os.getenv('LLM_MODEL') or '').strip()
     if model:
         return model

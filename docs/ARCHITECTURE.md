@@ -254,6 +254,18 @@ The closed set of services grading may contact. Only `enabled` rows resolve, so
 disabling one revokes it immediately. Teachers will select by id and never
 supply a URL (Fase 4), which is what removes the request-forgery surface.
 
+### Teacher LLM credentials
+
+```sql
+teachers.llm_config JSONB     -- {endpoint_id, model} — non-secret, no URLs
+teacher_llm_credentials (teacher_id PK FK [CASCADE], ciphertext, fingerprint,
+                         key_version, created_at, updated_at)
+```
+
+Keys are encrypted with `CREDENTIAL_ENCRYPTION_KEY`, held outside the database,
+so a dump does not leak them. `fingerprint` is a hash prefix kept in clear so
+the UI can say *which* key is set without being able to reveal it.
+
 ### Sync audit
 
 ```sql
@@ -289,7 +301,8 @@ sync_runs (id, started_at, finished_at, triggered_by FK, result JSONB,
 │       ├── 005_score_history.sql       # superseded by 006
 │       ├── 006_score_change_sets.sql   # change sets + answer_revision
 │       ├── 007_llm_job_provenance.sql  # provider/model/prompt pinned per job
-│       └── 008_llm_endpoints.sql       # admin-managed endpoint allowlist
+│       ├── 008_llm_endpoints.sql       # admin-managed endpoint allowlist
+│       └── 009_teacher_llm_credentials.sql  # per-teacher config + encrypted keys
 │
 ├── prompts/
 │   ├── open-question-system/     # Immutable v<N>-<sha8>.md grading prompts
@@ -300,6 +313,8 @@ sync_runs (id, started_at, finished_at, triggered_by FK, result JSONB,
 │   ├── llm_provider.py           # Direct OpenAI/Anthropic SDK transport
 │   ├── llm_config.py             # Resolves provider/model/key (Fase 4 seam)
 │   ├── llm_endpoints.py          # Admin-managed endpoint allowlist + CRUD
+│   ├── credentials.py            # Fernet encryption for teacher API keys
+│   ├── teacher_llm_settings.py   # Teacher's own endpoint/model/key
 │   ├── llm_errors.py             # Typed LLM failures + validate_llm_env()
 │   ├── llm_parsing.py            # Parses a model's grading response
 │   ├── prompts.py                # Versioned prompt resolution
@@ -522,6 +537,7 @@ Using the glossary from [`CONTEXT.md`](./CONTEXT.md):
 | LLM transport | `services/llm_provider.py` | `evaluate_open_question(...)` | `grade_open_answer()` | Deep — one interface over OpenAI/Anthropic/DeepSeek; returns a result or raises, never a zero |
 | LLM configuration | `services/llm_config.py` | `resolve_llm_config(teacher_id=None)` | worker, `llm-info` endpoint, startup validation | Deep — the only reader of LLM env; Fase 4 swaps its body for per-teacher credentials |
 | LLM endpoints | `services/llm_endpoints.py` | list/create/update/delete + `get_default_endpoint()` | super-admin routes, `llm_config` | Deep — only enabled rows resolve, so disabling revokes immediately |
+| Teacher credentials | `services/credentials.py` | encrypt/decrypt/fingerprint + `re_encrypt_all()` | teacher settings, `llm_config` | Deep — the only place a key is in clear, and it is never returned by an API |
 | Grading prompts | `services/prompts.py` | `active_prompt_set()`, `load_active_prompt()` | job enqueue, worker fallback | Deep — immutable versioned files; a published prompt that changed fails to load |
 | Snapshot CRUD | `services/snapshots.py` | import/export JSONC ↔ DB | routes/teacher.py | Medium — import does validation + uniqueness |
 | Image management | `services/images.py` | upload/list/delete per snapshot | routes/teacher.py | Deep — manifest JSONB in snapshot row, filesystem behind it |

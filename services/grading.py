@@ -66,12 +66,13 @@ def resolve_evaluation_context(job: dict | None = None) -> dict:
     When *job* is given, its pinned provider, model and prompt snapshot win over
     the current environment — that is what makes a queued job reproducible.
     Credentials always come from the live configuration: they are secrets and
-    are never stored on a job.
+    are never stored on a job. The job's teacher decides *whose* key is used,
+    so a teacher's own credential applies to their own grading.
     """
     from services import prompts
     from services.llm_config import resolve_llm_config
 
-    config = resolve_llm_config()
+    config = resolve_llm_config(teacher_id=(job or {}).get('teacher_id'))
     context = {
         'provider': config['provider'],
         'model': config['model'],

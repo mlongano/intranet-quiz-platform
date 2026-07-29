@@ -42,7 +42,10 @@ def create_llm_job(
     # Reuse the caller's connection: this runs inside the transaction that
     # records a submission, and taking a second connection from the pool while
     # that one is held deadlocks under concurrent submissions.
-    prov = provenance if provenance is not None else resolve_job_provenance(conn)
+    prov = (
+        provenance if provenance is not None
+        else resolve_job_provenance(teacher_id=teacher_id, conn=conn)
+    )
     snapshot = prov.get('prompt_snapshot')
     params = prov.get('params')
     row = conn.execute(Q.INSERT_LLM_GRADING_JOB, {
@@ -60,8 +63,12 @@ def create_llm_job(
     return _job_row_to_dict(row)
 
 
-def resolve_job_provenance(conn=None) -> dict:
+def resolve_job_provenance(teacher_id: int | None = None, conn=None) -> dict:
     """Resolve the provider, model and prompt texts to pin onto a new job.
+
+    *teacher_id* selects whose configuration applies, so a job records the
+    endpoint and model that teacher actually grades with rather than the
+    installation defaults.
 
     *conn* is the caller's connection when it already holds one, so this never
     acquires a second from the pool.
@@ -79,7 +86,7 @@ def resolve_job_provenance(conn=None) -> dict:
         from services import prompts
         from services.llm_config import resolve_llm_config
 
-        config = resolve_llm_config(conn=conn)
+        config = resolve_llm_config(teacher_id=teacher_id, conn=conn)
         prompt_set = prompts.active_prompt_set()
     except Exception as exc:  # noqa: BLE001 - enqueueing must stay non-fatal
         print(f"[LLM_JOBS] Could not resolve grading provenance: {exc}", flush=True)

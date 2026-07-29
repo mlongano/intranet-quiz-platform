@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Archive, BarChart3, ChevronDown, ChevronRight, LayoutDashboard, Menu, Users, LogOut, Shield } from 'lucide-react';
+import { Archive, BarChart3, ChevronDown, ChevronRight, LayoutDashboard, Menu, Users, LogOut, Shield, Sparkles } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
 import { clearTeacherSession, getTeacherSession, isSuperAdmin } from '../lib/session';
 
@@ -36,6 +36,7 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   { label: 'Classi', Icon: Users, path: '/teacher/classes', accent: 'tertiary' },
+  { label: 'Valutazione', Icon: Sparkles, path: '/teacher/llm-settings', accent: 'secondary' },
   { label: 'Super Admin', Icon: Shield, path: '/super-admin', superAdminOnly: true, accent: 'primary' },
 ];
 

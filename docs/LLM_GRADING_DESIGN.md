@@ -160,6 +160,15 @@ refresh e condizioni d'uso documentate. Sarà una fase separata.
 `llm_config`, semplicemente non può usare la valutazione LLM. Le risposte
 aperte restano pending finché non configura le chiavi o valuta manualmente.
 
+> **Modificato in implementazione.** Le chiavi d'ambiente restano un fallback
+> condiviso: la chiave personale del docente vince, ma chi non ne ha una usa
+> quella d'istituto. Il divieto originale avrebbe spento la valutazione per
+> ~150 docenti nel momento in cui la funzionalità è stata introdotta, e la
+> motivazione della fase — evitare che la quota esaurita di un docente blocchi
+> tutti — è già soddisfatta dal fatto che chi configura la propria chiave usa
+> quella. Un istituto che vuole il comportamento originale semplicemente non
+> imposta le chiavi in `.env`.
+
 ### Impatto
 
 - Migrazione: `ALTER TABLE teachers ADD COLUMN llm_config JSONB` e nuova
@@ -467,7 +476,7 @@ server che parli il protocollo scelto, con la chiave facoltativa perché quei
 server spesso non autenticano. È configurazione amministrativa, quindi non
 esiste superficie SSRF da difendere — vedere **Decisioni ulteriori 2**.
 
-### Fase 4 — Credenziali cifrate per docente
+### Fase 4 — Credenziali cifrate per docente ✅ implementata
 
 Aggiunge `llm_config`, `teacher_llm_credentials`, endpoint redatti e gestione
 della chiave master. In questa fase sono supportate le API key ufficiali; OAuth
@@ -480,12 +489,34 @@ mai un campo di testo libero per il docente, altrimenti rientra dalla finestra
 tutta la validazione SSRF che questo modello rende inutile. Schema e vincoli in
 **Decisioni ulteriori 2**.
 
-Ordine sensato di implementazione, dato che le due metà sono indipendenti:
-prima `llm_endpoints` con il CRUD super-admin e la risoluzione per
-`endpoint_id` — utile già da sola, perché sposta la configurazione degli
-endpoint dal file `.env` a un'interfaccia amministrativa senza riavvio — poi
-`teacher_llm_credentials` con cifratura, chiave master e rotazione, che è la
-parte più delicata e non blocca la prima.
+Come è stata realizzata:
+
+- Migrazione `008`: tabella `llm_endpoints` con CRUD super-admin. La riga
+  `is_default` (unica, garantita da un indice parziale) vince su
+  `LLM_BASE_URL`; una tabella vuota fa ricadere tutto sull'ambiente.
+- Migrazione `009`: `teachers.llm_config` per le preferenze non sensibili e
+  `teacher_llm_credentials` per le chiavi cifrate.
+- `services/credentials.py` cifra con Fernet — autenticato, e gestisce da sé il
+  nonce, che è il modo più facile di sbagliare AES-GCM. La chiave master vive
+  in `CREDENTIAL_ENCRYPTION_KEY`, fuori dal database: un dump non espone nulla.
+- Nessun endpoint restituisce mai una chiave. Le letture riportano soltanto
+  `configured` e una *fingerprint* (prefisso di hash) che dice **quale** chiave
+  è impostata senza poterla rivelare.
+- Precedenza in `resolve_llm_config(teacher_id)`: scelta del docente, poi
+  endpoint predefinito, poi ambiente. La chiave del docente vince su quella
+  condivisa, così una chiave d'istituto continua a servire chi non ne ha una.
+- Rotazione: `scripts/rotate_credential_key.py` ri-cifra tutto in una sola
+  transazione prima che la chiave master venga sostituita. Una rotazione
+  parziale lascerebbe righe che nessuna chiave sa più leggere.
+
+Due comportamenti scelti per non trasformare un problema di configurazione in
+un blocco della valutazione: un endpoint selezionato che viene disabilitato fa
+ricadere quel docente sul predefinito, e una chiave che non si riesce a
+decifrare (tipicamente dopo una rotazione senza ri-cifratura) fa ricadere sulla
+configurazione condivisa invece di fermare tutto.
+
+OAuth resta escluso finché un provider non documenta un flusso per
+applicazioni terze.
 
 `services/llm_config.py::resolve_llm_config(teacher_id)` è il punto in cui
 tutto questo entra: accetta già `teacher_id` e oggi lo ignora, quindi la fase

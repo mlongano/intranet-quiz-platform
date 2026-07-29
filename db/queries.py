@@ -724,3 +724,45 @@ CLEAR_DEFAULT_LLM_ENDPOINT = """
 DELETE_LLM_ENDPOINT = """
     DELETE FROM llm_endpoints WHERE id = %s RETURNING id
 """
+
+# ── teacher LLM configuration and credentials ────────────────────────────────
+
+GET_TEACHER_LLM_CONFIG = """
+    SELECT llm_config FROM teachers WHERE id = %s
+"""
+
+UPDATE_TEACHER_LLM_CONFIG = """
+    UPDATE teachers SET llm_config = %(llm_config)s WHERE id = %(teacher_id)s
+"""
+
+# Secrets live apart from configuration: this row is useless without the master
+# key, which is not in the database.
+UPSERT_TEACHER_LLM_CREDENTIAL = """
+    INSERT INTO teacher_llm_credentials (teacher_id, ciphertext, fingerprint, key_version)
+    VALUES (%(teacher_id)s, %(ciphertext)s, %(fingerprint)s, %(key_version)s)
+    ON CONFLICT (teacher_id) DO UPDATE
+        SET ciphertext  = EXCLUDED.ciphertext,
+            fingerprint = EXCLUDED.fingerprint,
+            key_version = EXCLUDED.key_version,
+            updated_at  = now()
+"""
+
+GET_TEACHER_LLM_CREDENTIAL = """
+    SELECT ciphertext, fingerprint, key_version, updated_at
+    FROM teacher_llm_credentials
+    WHERE teacher_id = %s
+"""
+
+DELETE_TEACHER_LLM_CREDENTIAL = """
+    DELETE FROM teacher_llm_credentials WHERE teacher_id = %s
+"""
+
+LIST_TEACHER_LLM_CREDENTIALS = """
+    SELECT teacher_id, ciphertext FROM teacher_llm_credentials ORDER BY teacher_id
+"""
+
+UPDATE_TEACHER_LLM_CREDENTIAL_CIPHERTEXT = """
+    UPDATE teacher_llm_credentials
+    SET ciphertext = %(ciphertext)s, key_version = %(key_version)s, updated_at = now()
+    WHERE teacher_id = %(teacher_id)s
+"""

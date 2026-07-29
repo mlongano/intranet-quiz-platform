@@ -143,6 +143,62 @@ outcome lives on the answers themselves. Its `error` column summarises which
 questions were not evaluated, including answers skipped because a teacher
 edited them while the evaluation was in flight.
 
+## Teacher API keys and the encryption master key
+
+Teachers may store their own provider API key (Valutazione in the teacher menu).
+Keys are encrypted with `CREDENTIAL_ENCRYPTION_KEY` before being written, and
+that key is **not** in the database — a `pg_dump` therefore contains no usable
+credentials.
+
+### First setup
+
+```bash
+docker compose exec app python scripts/rotate_credential_key.py --generate
+# put the printed value in .env as CREDENTIAL_ENCRYPTION_KEY, then:
+docker compose up -d --force-recreate app worker
+```
+
+Without it, teachers simply cannot save a personal key and the shared
+`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` from `.env` is used for everyone. Nothing
+breaks; the settings page says so.
+
+### Rotating the master key
+
+Re-encrypt **before** replacing the value. Replacing it first makes every stored
+key unreadable and each teacher has to enter theirs again.
+
+```bash
+# 1. new key
+docker compose exec app python scripts/rotate_credential_key.py --generate
+
+# 2. check every stored key decrypts, without writing anything
+docker compose exec app python scripts/rotate_credential_key.py \
+    --new-key '<new>' --dry-run
+
+# 3. re-encrypt (single transaction: all or nothing)
+docker compose exec app python scripts/rotate_credential_key.py --new-key '<new>'
+
+# 4. update CREDENTIAL_ENCRYPTION_KEY in .env, then
+docker compose up -d --force-recreate app worker
+```
+
+If step 3 fails nothing is written, so it is safe to retry.
+
+### If a key was rotated without re-encrypting
+
+Grading does not stop: a credential that cannot be decrypted is ignored and
+that teacher falls back to the shared configuration. Restore the old value of
+`CREDENTIAL_ENCRYPTION_KEY` and run the rotation properly, or ask the affected
+teachers to re-enter their key. Which teachers are affected:
+
+```sql
+SELECT t.email, c.fingerprint, c.key_version, c.updated_at
+FROM teacher_llm_credentials c JOIN teachers t ON t.id = c.teacher_id;
+```
+
+`key_version` is the fingerprint of the master key that encrypted each row; rows
+whose `key_version` differs from the current key are the ones to fix.
+
 ## Legacy image paths
 
 Images are stored at `images/{teacher_id}/{snapshot_id}/{file}`. Rows created
