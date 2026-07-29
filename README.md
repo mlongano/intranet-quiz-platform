@@ -384,10 +384,18 @@ The test configuration has a hard guard: `tests/conftest.py` refuses to run unle
 | Images | `images/{teacher_id}/{snapshot_id}/` · served by Nginx |
 | Backups | `pg_dump` + `tar` · 30-day retention |
 | Google sync | Admin SDK Directory API · service account · online-only |
+| LLM grading | OpenAI / Anthropic SDKs (or any compatible LAN endpoint) · background worker · per-teacher encrypted keys |
 
-14-table schema: `teachers`, `students`, `classes`, `class_teachers`, `class_students`, `question_snapshots`, `quiz_sessions`, `session_classes`, `quiz_plans`, `score_entries`, `score_archives`, `student_list_snapshots`, `sync_runs`, `schema_migrations`.
+19-table schema:
 
-See `docs/REFACTOR-PLAN-PROMPT.md` for full architecture decisions and `docs/DESIGN.md` for the Neon Noir design system.
+- **Identity** — `teachers`, `students`, `classes`, `class_teachers`, `class_students`
+- **Content** — `question_snapshots`
+- **Quiz run** — `quiz_sessions`, `session_classes`, `quiz_plans`, `score_entries`
+- **Audit & history** — `score_change_sets`, `score_history`, `score_archives`, `student_list_snapshots`
+- **LLM grading** — `llm_grading_jobs`, `llm_endpoints`, `teacher_llm_credentials`
+- **Operations** — `sync_runs`, `schema_migrations`
+
+See `docs/ARCHITECTURE.md` for the full data model and service layer, `docs/LLM_GRADING_DESIGN.md` for how open questions are graded, and `docs/DESIGN.md` for the Neon Noir design system.
 
 ---
 
