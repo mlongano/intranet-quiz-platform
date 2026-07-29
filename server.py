@@ -90,24 +90,11 @@ def serve_assets(filename):
 @APP.route('/images/<path:filename>')
 def serve_images(filename):
     # Unauthenticated on purpose: students load images with no teacher token,
-    # on a school intranet.
-    #
-    # The block below resolves legacy /images/{snapshot_id}/{file} paths by
-    # scanning every teacher directory, so one teacher's image can be served
-    # from another teacher's folder. It is scheduled for removal once
-    # scripts/check_legacy_image_paths.py reports zero legacy references
-    # against the production database.
+    # on a school intranet. Paths are always /images/{teacher_id}/{snapshot_id}/{file}
+    # (see services/images.py::image_url), so a request only ever resolves inside
+    # the owning teacher's directory.
     if not IMAGES_FOLDER.exists():
         abort(404, description="Images directory not found.")
-    requested = IMAGES_FOLDER / filename
-    if not requested.exists():
-        parts = filename.split('/', 1)
-        if len(parts) == 2:
-            snapshot_id, image_filename = parts
-            for teacher_dir in sorted(p for p in IMAGES_FOLDER.iterdir() if p.is_dir()):
-                legacy_target = teacher_dir / snapshot_id / image_filename
-                if legacy_target.exists() and legacy_target.is_file():
-                    return send_from_directory(teacher_dir / snapshot_id, image_filename)
     return send_from_directory(IMAGES_FOLDER, filename)
 
 
