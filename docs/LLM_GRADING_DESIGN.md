@@ -205,6 +205,13 @@ Vantaggi:
 
 ### Interfaccia proposta
 
+> Realizzata nella Fase 3 con una differenza: non esiste un provider
+> `"custom"`. Il provider indica il **protocollo** (`openai`, `anthropic`,
+> `deepseek`) e `base_url` sposta la destinazione, quindi un endpoint LAN è
+> `provider="openai"` più `base_url`. La firma effettiva prende anche i prompt
+> e i parametri di retry, perché il worker deve poter passare quelli fissati
+> sul job invece di rileggerli. Vedere `services/llm_provider.py`.
+
 ```python
 # services/llm_provider.py
 
@@ -213,7 +220,7 @@ def evaluate_open_question(
     question_text: str,
     student_answer: str,
     correct_answers: list[str],
-    provider: str,        # "openai" | "anthropic" | "deepseek" | "custom"
+    provider: str,        # "openai" | "anthropic" | "deepseek"
     model: str,           # "gpt-4o-mini" | "claude-sonnet-4-20250514" | ...
     api_key: str,
     base_url: str | None = None,
@@ -455,16 +462,27 @@ Come è stata realizzata:
   subprocess; gli SDK hanno un timeout nativo. Il parsing delle risposte
   sopravvive in `services/llm_parsing.py`.
 
-Rimandato: endpoint self-hosted o custom (Ollama, vLLM) e le relative
-protezioni SSRF descritte in **Decisioni ulteriori 2**. Finché i provider sono
-una allowlist fissa non esiste superficie SSRF; introdurli richiede il client
-HTTP validato descritto lì ed è una fase a sé.
+Gli endpoint LAN funzionano già: `LLM_BASE_URL` punta grading a qualsiasi
+server che parli il protocollo scelto, con la chiave facoltativa perché quei
+server spesso non autenticano. È configurazione amministrativa, quindi non
+esiste superficie SSRF da difendere — vedere **Decisioni ulteriori 2**.
 
 ### Fase 4 — Credenziali cifrate per docente
 
 Aggiunge `llm_config`, `teacher_llm_credentials`, endpoint redatti e gestione
 della chiave master. In questa fase sono supportate le API key ufficiali; OAuth
 resta escluso finché il provider non documenta un flusso per applicazioni terze.
+
+Il docente configura **chiave e modello**, e può scegliere l'endpoint solo tra
+le voci di una lista gestita dall'amministratore, memorizzando
+l'identificatore e mai la URL. Il vincolo da non violare: `base_url` non
+diventa mai un campo di testo libero per il docente, altrimenti rientra dalla
+finestra tutta la validazione SSRF che questo modello rende inutile. I
+dettagli sono in **Decisioni ulteriori 2**.
+
+`services/llm_config.py::resolve_llm_config(teacher_id)` è il punto in cui
+tutto questo entra: accetta già `teacher_id` e oggi lo ignora, quindi la fase
+sostituisce il corpo di una funzione invece di propagarsi nel worker.
 
 ### Fase 5 — UI rivalutazione con scelta modello
 
@@ -686,30 +704,61 @@ rivalutazione è già in corso». Il cooldown è configurabile via env
    registrano token di input/output e costo, quando il provider li restituisce;
    una stima preventiva può essere aggiunta in seguito.
 
-2. **Modelli locali (Ollama)**: **Inclusi nella Fase 3**. Provider `custom`
-   con `base_url: "http://host:11434/v1"`. La protezione SSRF non si limita
-   alla validazione preliminare del nome host:
-   - Schema: solo `https://` per endpoint remoti; `http://` consentito solo
-     per `localhost` / `127.0.0.1` / `::1` se abilitato da configurazione
-     amministrativa (`ALLOW_HTTP_LLM_ENDPOINTS=true`).
-   - Blocco esplicito dei range privati non consentiti: `10.0.0.0/8`,
-     `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` (link-local /
-     AWS metadata), `::1/128`, a meno che non siano in una allowlist
-     amministrativa esplicita.
-   - La risoluzione DNS avviene server-side prima della chiamata e tutti gli IP
-     restituiti vengono validati contro gli stessi range.
-   - La connessione HTTP viene effettuata verso uno degli IP già validati,
-     mantenendo hostname originale per TLS SNI e header `Host`. Non viene
-     eseguita una seconda risoluzione DNS implicita da parte del client: questo
-     impedisce DNS rebinding tra validazione e connessione.
-   - I redirect automatici sono disabilitati. Se il provider restituisce un
-     redirect, ogni destinazione viene nuovamente analizzata, risolta,
-     validata e connessa con le stesse regole, con un massimo configurato di
-     redirect. Redirect verso schema, host o IP non consentiti vengono
-     rifiutati.
-   - Il client blocca anche credenziali nella URL, porte non consentite e
-     risposte che tentano di cambiare protocollo. I test coprono IPv4, IPv6,
-     DNS rebinding simulato, redirect e indirizzi metadata cloud.
+2. **Endpoint LAN e modelli locali**: supportati fin dalla Fase 3, senza un
+   provider `custom` e senza validazione SSRF. Un endpoint che parla il
+   protocollo OpenAI o Anthropic (vLLM, llama.cpp, LiteLLM, l'API compatibile
+   di Ollama) si configura scegliendo il protocollo in `LLM_PROVIDER` e
+   l'indirizzo in `LLM_BASE_URL`:
+
+   ```bash
+   LLM_PROVIDER=openai
+   LLM_BASE_URL=http://10.0.0.5:8000/v1
+   LLM_MODEL=qwen2.5:14b
+   ```
+
+   `http://` è ammesso: su LAN è la norma. La chiave API diventa facoltativa
+   quando `LLM_BASE_URL` è impostata, perché questi server spesso non
+   autenticano; alle SDK viene passato un segnaposto. Se il gateway controlla
+   un token, basta valorizzare la chiave del provider.
+
+   **Perché non serve la protezione SSRF.** `LLM_BASE_URL` è una
+   configurazione amministrativa: chi può scriverla controlla già il processo,
+   quindi puntarla a un indirizzo interno non concede nulla di nuovo. La
+   difesa SSRF descritta in precedenza serviva a validare una URL *arbitraria
+   fornita da un utente*, ed è quel caso che non esiste.
+
+   ### Endpoint selezionabili dal docente (Fase 4)
+
+   Se in futuro il docente potrà scegliere l'endpoint, la scelta avviene
+   **solo dentro una lista gestita dall'amministratore**. Il docente non
+   fornisce mai una URL: fornisce un identificatore di una voce approvata.
+   L'insieme degli indirizzi raggiungibili resta chiuso e definito da chi già
+   controlla la configurazione, quindi non c'è nulla da validare — che è
+   sostanzialmente più sicuro che tentare di validare una URL arbitraria.
+
+   Vincoli implementativi, da rispettare perché la garanzia regga:
+
+   - Nella configurazione del docente si memorizza **l'identificatore**, mai
+     la URL. Salvare la URL renderebbe la lista non più autoritativa: un
+     endpoint rimosso o ripuntato dall'amministratore continuerebbe a valere
+     per chi l'aveva già scelto.
+   - La URL si risolve **server-side al momento della chiamata**. Un
+     identificatore che non esiste più solleva `LlmConfigurationError`, quindi
+     le risposte restano `pending` — la direzione sicura.
+   - Sul job, `base_url` segue la regola delle **credenziali**, non quella dei
+     prompt: si registra per audit (endpoint e URL effettivamente usati
+     finiscono nella provenienza della risposta) ma si ri-risolve dalla lista
+     corrente prima di chiamare. Altrimenti un job in coda sopravvivrebbe alla
+     revoca di un endpoint.
+   - Ogni voce della lista dichiara se richiede una chiave. Un docente senza
+     chiave propria può così valutare tramite il server della scuola, invece
+     di non poter valutare affatto.
+
+   Resta da decidere dove vive la lista: variabile d'ambiente JSON (nessuna
+   migrazione, ma modificarla richiede riavvio) oppure tabella `llm_endpoints`
+   con CRUD super-admin (`routes/super_admin.py` ha già il pattern per
+   docenti e classi). Con ~150 docenti la tabella evita che ogni cambiamento
+   passi da un'edit di `.env`.
 
 3. **Temperature**: non viene esposta al docente. Il sistema usa il valore più
    deterministico supportato dal modello e registra i parametri effettivi.
