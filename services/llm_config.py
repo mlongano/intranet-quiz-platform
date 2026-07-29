@@ -25,6 +25,12 @@ PROVIDER_KEY_ENV = {
 
 DEFAULT_PROVIDER = 'openai'
 
+# Sent to endpoints that need no authentication. The SDKs refuse to build a
+# client without a key, so something has to be there; naming it makes an
+# unauthenticated endpoint obvious in a stack trace instead of looking like a
+# real credential.
+LOCAL_ENDPOINT_PLACEHOLDER_KEY = 'no-key-required'
+
 
 def resolve_llm_config(teacher_id: int | None = None) -> dict:
     """Return {provider, model, api_key, base_url, params} for a grading call.
@@ -47,12 +53,21 @@ def resolve_llm_config(teacher_id: int | None = None) -> dict:
     if not model:
         raise LlmConfigurationError("LLM_MODEL is not set.")
 
+    base_url = (os.getenv('LLM_BASE_URL') or '').strip() or None
+
+    # A key is what the hosted providers authenticate with, so it is required
+    # when talking to them. A LAN endpoint (vLLM, llama.cpp, LiteLLM) commonly
+    # has no auth at all; demanding a key there would only teach admins to put
+    # junk in a variable named API_KEY. Both SDKs still need *some* string, so a
+    # placeholder is sent. Set the key anyway if the LAN endpoint checks it.
     key_env = PROVIDER_KEY_ENV[provider]
     api_key = (os.getenv(key_env) or '').strip()
     if not api_key:
-        raise LlmConfigurationError(f"{key_env} is not set (required for provider {provider!r}).")
-
-    base_url = (os.getenv('LLM_BASE_URL') or '').strip() or None
+        if base_url is None:
+            raise LlmConfigurationError(
+                f"{key_env} is not set (required for provider {provider!r})."
+            )
+        api_key = LOCAL_ENDPOINT_PLACEHOLDER_KEY
 
     return {
         'provider': provider,
