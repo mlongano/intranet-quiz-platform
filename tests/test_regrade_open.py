@@ -5,6 +5,20 @@ import pytest
 from tests.conftest import make_session, make_snapshot, make_student, make_teacher, teacher_token
 
 
+def _fake_evaluation():
+    """An already-resolved evaluation context, so tests need no real credentials."""
+    return {
+        'provider': 'openai',
+        'model': 'gpt-4o-mini',
+        'api_key': 'sk-test',
+        'base_url': None,
+        'params': {'timeout_seconds': 5, 'retries': 0},
+        'system_prompt': 'system',
+        'user_prompt_template': '{{QUESTION}} {{ACCEPTABLE_ANSWER}} {{STUDENT_ANSWER}}',
+        'prompt_version': 'v1-test0000',
+    }
+
+
 def test_grade_never_calls_the_open_grader(monkeypatch):
     """grade() always defers open questions — no request path may call the LLM."""
     import services.grading as grading
@@ -29,17 +43,14 @@ def test_grade_never_calls_the_open_grader(monkeypatch):
 
 def test_grade_open_answer_propagates_llm_failure(monkeypatch):
     import services.grading as grading
+    import services.llm_provider as llm_provider
     from services.llm_errors import LlmTemporaryError
 
-    def failing_evaluator(*_args, **_kwargs):
+    def failing_evaluator(**_kwargs):
         raise LlmTemporaryError('model unavailable')
 
     monkeypatch.setenv('USE_LLM_EVAL', '1')
-    monkeypatch.setitem(__import__('sys').modules, 'llm_evaluator', type(
-        'FakeLlmEvaluator',
-        (),
-        {'evaluate_open_question': staticmethod(failing_evaluator)},
-    ))
+    monkeypatch.setattr(llm_provider, 'evaluate_open_question', failing_evaluator)
 
     # A failure must surface as an exception, never as a zero-point result that
     # could be mistaken for a real grade.
@@ -47,6 +58,7 @@ def test_grade_open_answer_propagates_llm_failure(monkeypatch):
         grading.grade_open_answer(
             'contiene parola',
             {'id': 'q1', 'type': 'open', 'text': 'Spiega.', 'keywords': ['parola'], 'weight': 2},
+            evaluation=_fake_evaluation(),
         )
 
 
@@ -119,12 +131,15 @@ def test_regrade_open_enqueues_job_and_worker_uses_shared_grader(
 
     calls = []
 
-    def fake_grade_open_answer(user_ans, q):
+    def fake_grade_open_answer(user_ans, q, **_kwargs):
         calls.append((user_ans, q['id']))
         return {
             'points': 0.5,
             'llm_feedback': 'Feedback nuovo',
             'llm_verdict': 'partial',
+            'llm_provider': 'openai',
+            'llm_model': 'gpt-4o-mini',
+            'prompt_version': 'v1-test0000',
         }
 
     monkeypatch.setattr(llm_jobs, 'grade_open_answer', fake_grade_open_answer)
@@ -311,10 +326,13 @@ def test_regrade_open_recognizes_legacy_answers_without_top_level_type(
     )
     db_conn.commit()
 
-    monkeypatch.setattr(llm_jobs, 'grade_open_answer', lambda *_args: {
+    monkeypatch.setattr(llm_jobs, 'grade_open_answer', lambda *_args, **_kwargs: {
         'points': 1.5,
         'llm_feedback': 'Feedback legacy',
         'llm_verdict': 'partial',
+        'llm_provider': 'openai',
+        'llm_model': 'gpt-4o-mini',
+        'prompt_version': 'v1-test0000',
     })
 
     response = client.post(

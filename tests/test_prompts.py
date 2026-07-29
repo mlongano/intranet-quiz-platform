@@ -73,3 +73,19 @@ def test_load_prompt_version_reads_a_specific_release():
 def test_load_prompt_version_raises_for_unknown_version():
     with pytest.raises(FileNotFoundError):
         prompts.load_prompt_version(prompts.SYSTEM_PROMPT_NAME, 'v99-abcdef12')
+
+
+def test_system_prompt_requires_a_reason_for_non_perfect_scores():
+    """Teachers rely on feedback explaining why full credit was withheld."""
+    _version, system_prompt = prompts.load_active_prompt(prompts.SYSTEM_PROMPT_NAME)
+
+    assert 'If `score` is lower than `1.0`' in system_prompt
+    assert 'Do not write only positive feedback for a score lower than `1.0`' in system_prompt
+    assert 'Hypervisor di Tipo 1' in system_prompt
+
+
+def test_user_prompt_has_the_placeholders_the_builder_fills():
+    _version, user_prompt = prompts.load_active_prompt(prompts.USER_PROMPT_NAME)
+
+    for placeholder in ('{{QUESTION}}', '{{ACCEPTABLE_ANSWER}}', '{{STUDENT_ANSWER}}'):
+        assert placeholder in user_prompt

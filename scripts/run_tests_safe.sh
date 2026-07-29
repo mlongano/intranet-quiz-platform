@@ -29,13 +29,21 @@ cd "$ROOT_DIR"
 # pre-pull content while the working tree looks correct. Tests then run against
 # stale code and fail — or, far worse, pass. Directory mounts (services/, db/,
 # routes/, tests/) do not have this problem.
-ROOT_MODULES=(server.py utils.py llm_evaluator.py email_service.py)
+# Derived from compose-debug.yaml rather than hardcoded, so adding or deleting
+# a top-level module cannot leave this list wrong.
+mapfile -t ROOT_MODULES < <(
+  grep -oE '^\s*-\s*\./[A-Za-z0-9_]+\.py:' compose-debug.yaml \
+    | sed -E 's#^\s*-\s*\./##; s#:$##' | sort -u
+)
+
 stale=()
 if "${COMPOSE[@]}" ps --status running --services 2>/dev/null | grep -qx app; then
   for f in "${ROOT_MODULES[@]}"; do
-    host_sum="$(sha1sum "$f" | cut -d' ' -f1)"
+    # A module may have been deleted on the host but still exist in the
+    # container, or vice versa; either way the container is out of date.
+    host_sum="$(sha1sum "$f" 2>/dev/null | cut -d' ' -f1 || true)"
     cont_sum="$("${COMPOSE[@]}" exec -T app sha1sum "$f" 2>/dev/null | cut -d' ' -f1 || true)"
-    if [[ -n "$cont_sum" && "$host_sum" != "$cont_sum" ]]; then
+    if [[ "$host_sum" != "$cont_sum" ]]; then
       stale+=("$f")
     fi
   done

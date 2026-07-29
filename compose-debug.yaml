@@ -26,7 +26,6 @@ services:
       - ./prompts:/app/prompts:ro
       - ./scripts:/app/scripts:ro
       - ./email_service.py:/app/email_service.py:ro
-      - ./llm_evaluator.py:/app/llm_evaluator.py:ro
       - ./server.py:/app/server.py:ro
       - ./utils.py:/app/utils.py:ro
       - ./tests:/app/tests:ro
@@ -46,7 +45,6 @@ services:
       - ./prompts:/app/prompts:ro
       - ./scripts:/app/scripts:ro
       - ./email_service.py:/app/email_service.py:ro
-      - ./llm_evaluator.py:/app/llm_evaluator.py:ro
       - ./server.py:/app/server.py:ro
       - ./utils.py:/app/utils.py:ro
       - ./tests:/app/tests:ro

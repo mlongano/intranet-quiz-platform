@@ -5,7 +5,7 @@ grade: a failure leaves the answer pending, and only the worker decides what
 to record. These exceptions are how the evaluator tells the worker *why* an
 evaluation did not produce a score.
 
-Shared by llm_evaluator.py, services/grading.py and services/llm_jobs.py.
+Shared by services/llm_provider.py, services/grading.py and services/llm_jobs.py.
 """
 
 from __future__ import annotations

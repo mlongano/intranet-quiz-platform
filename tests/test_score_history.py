@@ -335,7 +335,7 @@ def test_manual_review_during_grading_survives(db_conn, session_with_open_answer
     )
     db_conn.commit()
 
-    def grade_then_teacher_reviews(_user_ans, _q):
+    def grade_then_teacher_reviews(_user_ans, _q, **_kwargs):
         """Simulates the teacher reviewing while this call is in flight."""
         def override(_sid, current, _qbank):
             current[0]['points_awarded'] = 2.0

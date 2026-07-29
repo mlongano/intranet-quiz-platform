@@ -226,6 +226,18 @@ def process_next_job() -> bool:
 
         job['_change_set'] = change_set
 
+        # Resolve the evaluation context once per job, not once per answer:
+        # every answer in a job must be graded with the same provider, model and
+        # prompt, otherwise a single regrade could mix two models silently.
+        # A configuration failure here is left to the per-answer handler, which
+        # knows to keep answers pending instead of scoring them zero.
+        try:
+            from services.grading import resolve_evaluation_context
+            job['_evaluation'] = resolve_evaluation_context(job)
+        except Exception as exc:  # noqa: BLE001 - reported per answer below
+            job['_evaluation'] = None
+            failures.append(f"configurazione LLM non valida: {exc}")
+
         for score_id in score_ids:
             changed = _process_next_answer_for_score(job, score_id, failures)
             if changed:
@@ -363,6 +375,7 @@ def _process_next_answer_for_score(
         graded,
         is_regrade=(job.get('job_type') == 'regrade_session'),
         failures=failures,
+        evaluation=job.get('_evaluation'),
     )
     if not changed:
         return False
@@ -446,6 +459,7 @@ def _process_one_pending_answer(
     *,
     is_regrade: bool = False,
     failures: list[str] | None = None,
+    evaluation: dict | None = None,
 ) -> bool:
     """Grade the open answers in *answers* in place.
 
@@ -480,7 +494,9 @@ def _process_one_pending_answer(
             }
 
         try:
-            result = grade_open_answer(answer.get('raw_student_answer') or '', q)
+            result = grade_open_answer(
+                answer.get('raw_student_answer') or '', q, evaluation=evaluation
+            )
         except Exception as exc:
             # Typed LlmError subclasses are the expected cases; anything else is
             # caught too because a single bad answer must not kill the worker.
@@ -503,6 +519,11 @@ def _process_one_pending_answer(
         answer['llm_status'] = 'graded'
         answer['llm_error'] = None
         answer['llm_updated_at'] = now
+        # Provenance: which provider, model and prompt produced this grade.
+        # Without it a teacher cannot be told why a regrade moved a score.
+        answer['llm_provider'] = result.get('llm_provider')
+        answer['llm_model'] = result.get('llm_model')
+        answer['prompt_version'] = result.get('prompt_version')
         any_changed = True
 
     return any_changed

@@ -10,28 +10,95 @@ import copy as _copy
 from services.llm_errors import LlmConfigurationError, llm_enabled
 
 
-def grade_open_answer(user_ans: str, q: dict) -> dict:
+def grade_open_answer(user_ans: str, q: dict, *, evaluation: dict | None = None) -> dict:
     """Grade one open answer using LLM evaluation.
 
     Raises the typed LLM errors rather than returning a zero score: a failed
     evaluation must never be mistaken for a legitimate grade. The caller (the
     grading worker) decides whether to keep the answer pending or to preserve
     a previous evaluation.
+
+    *evaluation* carries the provider, model and prompts pinned on the grading
+    job, so the worker grades with what the job was enqueued with rather than
+    with whatever the environment happens to say now. It is optional only so
+    that callers outside a job still work; they resolve the current config.
+
+    Returns the awarded points plus the provenance of the evaluation, which the
+    worker records on the answer.
     """
     if not llm_enabled():
         raise LlmConfigurationError("Valutazione LLM non configurata (USE_LLM_EVAL != 1).")
 
-    from llm_evaluator import evaluate_open_question  # type: ignore[import]
+    from services.llm_provider import evaluate_open_question
+
+    resolved = evaluation or resolve_evaluation_context()
+    params = resolved.get('params') or {}
 
     correct_answers = q.get('acceptable') or q.get('correct') or q.get('keywords') or []
-    llm_result = evaluate_open_question(q.get('text', ''), user_ans or '', correct_answers)
+    llm_result = evaluate_open_question(
+        question_text=q.get('text', ''),
+        student_answer=user_ans or '',
+        correct_answers=correct_answers,
+        provider=resolved['provider'],
+        model=resolved['model'],
+        api_key=resolved['api_key'],
+        base_url=resolved.get('base_url'),
+        system_prompt=resolved['system_prompt'],
+        user_prompt_template=resolved['user_prompt_template'],
+        timeout_seconds=float(params.get('timeout_seconds', 25)),
+        retries=int(params.get('retries', 0)),
+    )
 
     open_score_fraction = max(0.0, min(1.0, float(llm_result.get('score', 0))))
     return {
         'points': q.get('weight', 1) * open_score_fraction,
         'llm_feedback': llm_result.get('llm_feedback'),
         'llm_verdict': llm_result.get('verdict'),
+        'llm_provider': llm_result.get('provider'),
+        'llm_model': llm_result.get('model'),
+        'prompt_version': resolved.get('prompt_version'),
     }
+
+
+def resolve_evaluation_context(job: dict | None = None) -> dict:
+    """Build the full evaluation context: credentials plus prompt texts.
+
+    When *job* is given, its pinned provider, model and prompt snapshot win over
+    the current environment — that is what makes a queued job reproducible.
+    Credentials always come from the live configuration: they are secrets and
+    are never stored on a job.
+    """
+    from services import prompts
+    from services.llm_config import resolve_llm_config
+
+    config = resolve_llm_config()
+    context = {
+        'provider': config['provider'],
+        'model': config['model'],
+        'api_key': config['api_key'],
+        'base_url': config.get('base_url'),
+        'params': config.get('params'),
+    }
+
+    snapshot = (job or {}).get('_prompt_snapshot') if job else None
+    if job and job.get('provider'):
+        context['provider'] = job['provider']
+    if job and job.get('model'):
+        context['model'] = job['model']
+    if job and job.get('params'):
+        context['params'] = job['params']
+
+    if isinstance(snapshot, dict) and snapshot.get('system') and snapshot.get('user'):
+        context['system_prompt'] = snapshot['system']
+        context['user_prompt_template'] = snapshot['user']
+        context['prompt_version'] = job.get('prompt_version')
+    else:
+        prompt_set = prompts.active_prompt_set()
+        context['system_prompt'] = prompt_set['system']
+        context['user_prompt_template'] = prompt_set['user']
+        context['prompt_version'] = prompt_set['version']
+
+    return context
 
 
 def grade(answers: list, plan: dict, qbank: dict) -> dict:
