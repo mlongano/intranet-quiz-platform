@@ -522,11 +522,29 @@ applicazioni terze.
 tutto questo entra: accetta già `teacher_id` e oggi lo ignora, quindi la fase
 sostituisce il corpo di una funzione invece di propagarsi nel worker.
 
-### Fase 5 — UI rivalutazione con scelta modello
+### Fase 5 — UI rivalutazione con scelta modello ✅ implementata
 
-Dipende dalle fasi precedenti. Aggiunge il pannello di rivalutazione avanzato,
-la conferma per sovrascrivere valutazioni esistenti e la consultazione dello
-storico con revert.
+Il pulsante "Rivaluta risposte aperte" è diventato un pannello che dice cosa
+sta per succedere prima che succeda.
+
+- Migrazione `010`: `llm_grading_jobs.scope` (`pending_only` | `all`) e
+  `force_override_manual`. Il worker li legge dalla riga del job, quindi un job
+  in coda mantiene il comportamento con cui è stato accodato.
+- `GET /sessions/<id>/regrade-preview` conta risposte non valutate, già
+  valutate e corrette a mano con lo **stesso predicato** che usa il worker:
+  l'avviso non può divergere da ciò che accade davvero.
+- Il pannello preseleziona il modello che ha prodotto le valutazioni attuali,
+  così una rivalutazione "semplice" le riproduce invece di cambiare modello di
+  nascosto. Un modello diverso vale solo per quel job, senza toccare le
+  impostazioni del docente.
+- Rivalutare risposte già valutate, o forzare la sovrascrittura di correzioni
+  manuali, richiede una conferma esplicita con il numero di risposte coinvolte.
+
+La protezione delle valutazioni manuali resta su tre livelli, come da
+**Invariante di sistema**: il predicato del worker (`_should_grade`), il flag
+persistito sul job, e il revert che ripristina anche `manual_override`. Il
+worker ricontrolla l'override anche al momento della scrittura sotto lock,
+perché un docente può correggere una risposta mentre la valutazione è in volo.
 
 ---
 

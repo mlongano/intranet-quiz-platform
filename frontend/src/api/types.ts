@@ -364,3 +364,21 @@ export interface TeacherLlmSettings {
   };
   encryption_available: boolean;
 }
+
+/** What a regrade would touch, so the panel can warn with real numbers. */
+export interface RegradePreview {
+  pending: number;
+  graded: number;
+  manual_override: number;
+  /** Models that produced the current evaluations, most used first. */
+  models_in_use: string[];
+}
+
+export interface RegradeOptions {
+  /** 'pending_only' retries what was never graded; 'all' re-grades everything. */
+  scope?: 'pending_only' | 'all';
+  /** Overwrites the teacher's own corrections. Requires explicit confirmation. */
+  force_override_manual?: boolean;
+  /** One-off model for this job, without changing the teacher's settings. */
+  model?: string | null;
+}

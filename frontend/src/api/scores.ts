@@ -1,6 +1,8 @@
 import { apiFetch } from './client';
 import type {
   LlmInfoResponse,
+  RegradeOptions,
+  RegradePreview,
   TeacherLlmSettings,
   LlmJobStatus,
   ResultEmailOptions,
@@ -26,10 +28,22 @@ export async function reviewScores(sessionId: number, overrides: ScoreOverride[]
   });
 }
 
-export async function regradeOpenScores(sessionId: number): Promise<LlmJobStatus> {
+export async function regradeOpenScores(
+  sessionId: number,
+  options: RegradeOptions = {},
+): Promise<LlmJobStatus> {
   return apiFetch<LlmJobStatus>(`/teacher/sessions/${sessionId}/scores/regrade-open`, {
     method: 'POST',
+    body: JSON.stringify({
+      scope: options.scope ?? 'all',
+      force_override_manual: options.force_override_manual ?? false,
+      model: options.model ?? null,
+    }),
   });
+}
+
+export async function getRegradePreview(sessionId: number): Promise<RegradePreview> {
+  return apiFetch<RegradePreview>(`/teacher/sessions/${sessionId}/regrade-preview`);
 }
 
 export async function getScoreHistory(sessionId: number): Promise<ScoreChangeSet[]> {

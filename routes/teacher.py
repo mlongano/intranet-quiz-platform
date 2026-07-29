@@ -75,6 +75,7 @@ from services import teacher_llm_settings
 from services import student_snapshots as sls_service
 from services.classroom_sync import list_courses_for_teacher, sync_courses_for_teacher
 from services.grading import format_detailed_answers, grade
+from services import llm_jobs as llm_jobs_service
 from services.llm_jobs import enqueue_regrade_session, get_job_for_teacher, get_latest_job_for_session
 from services import score_transforms
 from services.session_scores import assert_session_owner as _assert_session_owner
@@ -463,11 +464,30 @@ def archive_session_scores(session_id: int):
     return jsonify(result), 201
 
 
+@teacher_bp.get('/sessions/<int:session_id>/regrade-preview')
+@require_teacher
+def regrade_preview(session_id: int):
+    """Counts the regrade panel warns with, before anything is queued."""
+    return jsonify(llm_jobs_service.regrade_preview(session_id, _teacher_id())), 200
+
+
 @teacher_bp.post('/sessions/<int:session_id>/scores/regrade-open')
 @require_teacher
 def regrade_open_questions(session_id: int):
-    """Queue open-question regrading without blocking on the LLM provider."""
-    job = enqueue_regrade_session(session_id, _teacher_id())
+    """Queue open-question regrading without blocking on the LLM provider.
+
+    `scope` and `force_override_manual` are stored on the job, so the worker
+    applies what was requested at enqueue time rather than whatever the
+    configuration says when it eventually runs.
+    """
+    data = request.get_json(silent=True) or {}
+    job = enqueue_regrade_session(
+        session_id,
+        _teacher_id(),
+        scope=data.get('scope', 'all'),
+        force_override_manual=bool(data.get('force_override_manual', False)),
+        model=data.get('model') or None,
+    )
     return jsonify(job), 202
 
 

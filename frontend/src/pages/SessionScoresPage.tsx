@@ -7,14 +7,15 @@ import SubmissionDetailView from '../components/SubmissionDetailView';
 import ScoreRow from '../components/scores/ScoreRow';
 import ScoreStatsPanel from '../components/scores/ScoreStatsPanel';
 import ScoreHistoryPanel from '../components/scores/ScoreHistoryPanel';
+import RegradePanel from '../components/scores/RegradePanel';
 import EmailResultsDialog from '../components/scores/EmailResultsDialog';
 import QuestionBreakdownView from '../components/scores/QuestionBreakdownView';
 import { buildQuestionSummary } from '../lib/questionSummary';
 import {
   getSessionScores, recalculateScores, archiveSessionScores, sendAllResultEmails,
   getSession, type ScoreEntry, type ScoreOverride, type ResultEmailOptions, reviewScores,
-  regradeOpenScores, getLlmInfo, getLatestSessionLlmJob,
-  getScoreHistory, revertChangeSet,
+  getLlmInfo, getLatestSessionLlmJob,
+  getScoreHistory, revertChangeSet, type LlmJobStatus,
 } from '../api';
 import { useConfirmModal } from '../lib/useConfirmModal';
 import { computeStats } from '../lib/scoreStats';
@@ -29,6 +30,7 @@ function SessionScoresPage() {
   const [viewBy, setViewBy] = useState<'student' | 'question'>('student');
   const [savingStudent, setSavingStudent] = useState<string | null>(null);
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [queuedJob, setQueuedJob] = useState<LlmJobStatus | null>(null);
 
   // ── server state ────────────────────────────────────────────────────────────
 
@@ -80,14 +82,6 @@ function SessionScoresPage() {
   const emailMutation = useMutation({
     mutationFn: (options: ResultEmailOptions) => sendAllResultEmails(id, options),
     onSuccess: () => setEmailDialogOpen(false),
-  });
-
-  const regradeMutation = useMutation({
-    mutationFn: () => regradeOpenScores(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['llm-job-latest', id] });
-      queryClient.invalidateQueries({ queryKey: ['session-scores', id] });
-    },
   });
 
   const revertMutation = useMutation({
@@ -220,7 +214,7 @@ function SessionScoresPage() {
         {/* Action bar: view toggle + LLM info */}
         <div className="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
-            {(llmInfo || regradeMutation.isPending) && (
+            {llmInfo && (
               <>
                 <span className="text-sm text-on-surface-variant">LLM regrade:</span>
                 <span className="bg-secondary/10 border border-secondary/30 text-secondary text-xs px-2 py-0.5 rounded">
@@ -232,17 +226,11 @@ function SessionScoresPage() {
                 </span>
               </>
             )}
-            <button
-              onClick={() => regradeMutation.mutate()}
-              disabled={regradeMutation.isPending || llmJobRunning}
-              className={`px-4 py-2 rounded-md text-sm font-bold transition-colors ${
-                regradeMutation.isPending || llmJobRunning
-                  ? 'bg-surface-container-high text-on-surface-variant cursor-not-allowed'
-                  : 'bg-surface-container-high border border-secondary/30 text-secondary hover:bg-secondary/10'
-              }`}
-            >
-              {regradeMutation.isPending || llmJobRunning ? 'Rivalutazione...' : 'Rivaluta risposte aperte'}
-            </button>
+            <RegradePanel
+              sessionId={id}
+              disabled={llmJobRunning}
+              onQueued={(job) => setQueuedJob(job)}
+            />
           </div>
           <div className="flex gap-1 bg-surface-container-low border border-outline-variant/20 rounded-lg p-1 self-start">
             <button
@@ -271,9 +259,9 @@ function SessionScoresPage() {
         </div>
       )}
 
-      {regradeMutation.isSuccess && (
+      {queuedJob && (
         <div className="mb-4 p-3 bg-secondary/10 border border-secondary/30 text-secondary rounded-lg text-sm">
-          Rivalutazione messa in coda. Risposte aperte: {regradeMutation.data?.total_items ?? 0}.
+          Rivalutazione messa in coda. Risposte da valutare: {queuedJob.total_items}.
         </div>
       )}
 
@@ -289,12 +277,6 @@ function SessionScoresPage() {
           {latestLlmJob.status === 'running' && `Rivalutazione in corso: ${latestLlmJob.processed_items}/${latestLlmJob.total_items}.`}
           {latestLlmJob.status === 'completed' && `Rivalutazione completata: ${latestLlmJob.processed_items}/${latestLlmJob.total_items}.`}
           {latestLlmJob.status === 'failed' && `Rivalutazione non riuscita: ${latestLlmJob.error ?? 'errore sconosciuto'}`}
-        </div>
-      )}
-
-      {regradeMutation.isError && (
-        <div className="mb-4 p-3 bg-error/10 border border-error/30 text-error rounded-lg text-sm">
-          Rivalutazione non riuscita: {String((regradeMutation.error as Error).message)}
         </div>
       )}
 

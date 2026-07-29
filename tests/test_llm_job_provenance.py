@@ -47,15 +47,17 @@ def test_job_row_mapping_matches_the_shared_column_list(db_conn):
         'id', 'teacher_id', 'session_id', 'score_entry_id', 'status', 'job_type',
         'total_items', 'processed_items', 'error', 'created_at', 'started_at',
         'finished_at', 'provider', 'model', 'prompt_version', '_prompt_snapshot',
-        'params',
+        'params', 'scope', 'force_override_manual',
     ]
     assert columns == [
         'id', 'teacher_id', 'session_id', 'score_entry_id', 'status', 'job_type',
         'total_items', 'processed_items', 'error', 'created_at', 'started_at',
         'finished_at', 'provider', 'model', 'prompt_version', 'prompt_snapshot',
-        'params',
+        'params', 'scope', 'force_override_manual',
     ], "column list changed -- update _job_row_to_dict in the same commit"
     assert len(expected_keys) == len(columns)
+    # Every mapped key must be present, so a shifted mapping cannot pass.
+    assert set(expected_keys) <= set(job) | {'_prompt_snapshot'}
 
     # Sanity: values landed in the right fields rather than being shifted.
     assert isinstance(job['id'], int)

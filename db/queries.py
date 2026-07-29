@@ -420,16 +420,19 @@ UPDATE_SCORE_ANSWERS = """
 LLM_GRADING_JOB_COLUMNS = """
     id, teacher_id, session_id, score_entry_id, status, job_type,
     total_items, processed_items, error, created_at, started_at, finished_at,
-    provider, model, prompt_version, prompt_snapshot, params
+    provider, model, prompt_version, prompt_snapshot, params,
+    scope, force_override_manual
 """
 
 INSERT_LLM_GRADING_JOB = f"""
     INSERT INTO llm_grading_jobs
         (teacher_id, session_id, score_entry_id, job_type, total_items,
-         provider, model, prompt_version, prompt_snapshot, params)
+         provider, model, prompt_version, prompt_snapshot, params,
+         scope, force_override_manual)
     VALUES
         (%(teacher_id)s, %(session_id)s, %(score_entry_id)s, %(job_type)s, %(total_items)s,
-         %(provider)s, %(model)s, %(prompt_version)s, %(prompt_snapshot)s, %(params)s)
+         %(provider)s, %(model)s, %(prompt_version)s, %(prompt_snapshot)s, %(params)s,
+         %(scope)s, %(force_override_manual)s)
     RETURNING {LLM_GRADING_JOB_COLUMNS}
 """
 

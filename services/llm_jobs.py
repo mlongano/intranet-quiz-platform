@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from psycopg import errors as pg_errors
-from werkzeug.exceptions import Forbidden, NotFound
+from werkzeug.exceptions import BadRequest, Forbidden, NotFound
 
 import db
 from db import queries as Q
@@ -32,6 +32,8 @@ def create_llm_job(
     job_type: str,
     total_items: int,
     provenance: dict | None = None,
+    scope: str = 'all',
+    force_override_manual: bool = False,
 ) -> dict:
     """Create a grading job, pinning how it must be evaluated.
 
@@ -59,6 +61,10 @@ def create_llm_job(
         'prompt_version': prov.get('prompt_version'),
         'prompt_snapshot': json.dumps(snapshot) if snapshot is not None else None,
         'params': json.dumps(params) if params is not None else None,
+        # Submissions only ever grade what was never graded; there is nothing
+        # else on a brand-new score entry.
+        'scope': 'pending_only' if job_type == 'submission' else scope,
+        'force_override_manual': force_override_manual,
     }).fetchone()
     return _job_row_to_dict(row)
 
@@ -104,13 +110,28 @@ def resolve_job_provenance(teacher_id: int | None = None, conn=None) -> dict:
     }
 
 
-def enqueue_regrade_session(session_id: int, teacher_id: int) -> dict:
+def enqueue_regrade_session(
+    session_id: int,
+    teacher_id: int,
+    *,
+    scope: str = 'all',
+    force_override_manual: bool = False,
+    model: str | None = None,
+) -> dict:
     """Create a regrade job WITHOUT modifying current evaluations.
 
     The worker is solely responsible for changing scores, feedback, and
     status.  Enqueuing preserves the current state so a running regrade
     never leaves answers in an inconsistent intermediate condition.
+
+    *scope* is 'pending_only' to retry only what was never graded, or 'all' to
+    re-grade everything. *force_override_manual* lets a regrade overwrite a
+    teacher's manual corrections, and is false unless explicitly requested.
+    *model* overrides the model for this job alone, so a teacher can try a
+    different one without changing their settings.
     """
+    if scope not in ('pending_only', 'all'):
+        raise BadRequest(description="Ambito di rivalutazione non valido.")
     import os as _os
     _cooldown = int(_os.getenv('LLM_REGRADE_COOLDOWN_SECONDS', '60'))
 
@@ -139,16 +160,20 @@ def enqueue_regrade_session(session_id: int, teacher_id: int) -> dict:
                 f"Attendi {remaining} secondi prima di una nuova rivalutazione."
             )
 
-        # Count open answers that need regrade WITHOUT modifying them
+        # Count what this job will actually touch, WITHOUT modifying anything.
+        # Same predicate the worker uses, so total_items is not a guess.
         rows = conn.execute(Q.LIST_SCORES_FOR_SESSION, (session_id,)).fetchall()
         for row in rows:
-            answers = ensure_list(row[4])
-            for answer in answers:
-                if _answer_type(answer) != 'open':
-                    continue
-                if answer.get('manual_override'):
-                    continue
-                total_items += 1
+            for answer in ensure_list(row[4]):
+                if _should_grade(
+                    answer, scope=scope, force_override_manual=force_override_manual
+                ):
+                    total_items += 1
+
+        # Pin how this job must be evaluated, honouring a one-off model choice.
+        provenance = resolve_job_provenance(teacher_id=teacher_id, conn=conn)
+        if model and provenance:
+            provenance = {**provenance, 'model': model.strip()}
 
         if total_items > 0:
             # Concurrency: uq_llm_active_regrade_per_session rejects a second
@@ -162,6 +187,9 @@ def enqueue_regrade_session(session_id: int, teacher_id: int) -> dict:
                     score_entry_id=None,
                     job_type='regrade_session',
                     total_items=total_items,
+                    provenance=provenance,
+                    scope=scope,
+                    force_override_manual=force_override_manual,
                 )
             except pg_errors.UniqueViolation:
                 conn.rollback()
@@ -175,6 +203,9 @@ def enqueue_regrade_session(session_id: int, teacher_id: int) -> dict:
                 score_entry_id=None,
                 job_type='regrade_session',
                 total_items=0,
+                provenance=provenance,
+                scope=scope,
+                force_override_manual=force_override_manual,
             )
             conn.execute(Q.FINISH_LLM_GRADING_JOB, {
                 'id': job['id'],
@@ -389,6 +420,8 @@ def _process_next_answer_for_score(
         is_regrade=(job.get('job_type') == 'regrade_session'),
         failures=failures,
         evaluation=job.get('_evaluation'),
+        scope=job.get('scope') or 'all',
+        force_override_manual=bool(job.get('force_override_manual')),
     )
     if not changed:
         return False
@@ -425,7 +458,13 @@ def _process_next_answer_for_score(
             if proposal is None:
                 continue
             stale = (cur.get('answer_revision') or 0) != proposal['revision']
-            if stale or cur.get('manual_override'):
+            # Re-check the override here too: it may have been set by a teacher
+            # between the read and this write, which is precisely the race the
+            # optimistic pattern exists to catch.
+            overridden = (
+                cur.get('manual_override') and not job.get('force_override_manual')
+            )
+            if stale or overridden:
                 if failures is not None:
                     failures.append(
                         f"q={cur.get('question_id')}: modificata durante la valutazione, "
@@ -467,12 +506,32 @@ def _process_next_answer_for_score(
     return True
 
 
+def _should_grade(answer: dict, *, scope: str, force_override_manual: bool) -> bool:
+    """Whether this job is allowed to touch this answer.
+
+    Both inputs come from the job row, so a job keeps the behaviour it was
+    enqueued with even if the teacher changes their mind while it runs. This
+    check is also the primary protection for a manual evaluation: it holds even
+    if a job was queued with the wrong parameters or the UI skipped its own
+    confirmation.
+    """
+    if _answer_type(answer) != 'open':
+        return False
+    if scope == 'pending_only' and answer.get('llm_status') != 'pending':
+        return False
+    if answer.get('manual_override') and not force_override_manual:
+        return False
+    return True
+
+
 def _process_one_pending_answer(
     answers: list[dict],
     *,
     is_regrade: bool = False,
     failures: list[str] | None = None,
     evaluation: dict | None = None,
+    scope: str = 'all',
+    force_override_manual: bool = False,
 ) -> bool:
     """Grade the open answers in *answers* in place.
 
@@ -486,13 +545,12 @@ def _process_one_pending_answer(
     now = datetime.now(timezone.utc).isoformat()
     any_changed = False
 
+    effective_scope = scope if is_regrade else 'pending_only'
+
     for answer in answers:
-        if _answer_type(answer) != 'open':
-            continue
-        # Submission jobs: only process pending answers.
-        if not is_regrade and answer.get('llm_status') != 'pending':
-            continue
-        if answer.get('manual_override'):
+        if not _should_grade(
+            answer, scope=effective_scope, force_override_manual=force_override_manual
+        ):
             continue
         answer.setdefault('type', 'open')
 
@@ -537,6 +595,12 @@ def _process_one_pending_answer(
         answer['llm_provider'] = result.get('llm_provider')
         answer['llm_model'] = result.get('llm_model')
         answer['prompt_version'] = result.get('prompt_version')
+        # Reaching here for an overridden answer means the teacher forced it.
+        # The value is now the model's, not theirs, so the flag has to go:
+        # leaving it would make the next ordinary regrade skip an answer that
+        # is no longer a manual correction, and misreport it in the preview.
+        if answer.pop('manual_override', None):
+            answer.pop('original_points_awarded', None)
         any_changed = True
 
     return any_changed
@@ -591,6 +655,8 @@ def _job_row_to_dict(row: Any) -> dict:
         'prompt_version': row[14],
         '_prompt_snapshot': row[15],
         'params': row[16],
+        'scope': row[17],
+        'force_override_manual': row[18],
     }
 
 
@@ -622,3 +688,49 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
+
+
+def regrade_preview(session_id: int, teacher_id: int) -> dict:
+    """What a regrade would touch, before the teacher commits to it.
+
+    The panel needs real numbers to warn with: how many evaluations would be
+    replaced, and how many manual corrections would be overwritten if the
+    teacher forces it. Counted with the same predicate the worker applies, so
+    the warning cannot disagree with what actually happens.
+    """
+    with db.get_conn() as conn:
+        owner = conn.execute(
+            "SELECT teacher_id FROM quiz_sessions WHERE id = %s", (session_id,)
+        ).fetchone()
+        if not owner:
+            raise NotFound(description="Session not found.")
+        if owner[0] != teacher_id:
+            raise Forbidden(description="Not your session.")
+
+        rows = conn.execute(Q.LIST_SCORES_FOR_SESSION, (session_id,)).fetchall()
+
+    pending = graded = manual = 0
+    models: dict[str, int] = {}
+    for row in rows:
+        for answer in ensure_list(row[4]):
+            if _answer_type(answer) != 'open':
+                continue
+            if answer.get('manual_override'):
+                manual += 1
+                continue
+            if answer.get('llm_status') == 'pending':
+                pending += 1
+            else:
+                graded += 1
+                used = answer.get('llm_model')
+                if used:
+                    models[used] = models.get(used, 0) + 1
+
+    return {
+        'pending': pending,
+        'graded': graded,
+        'manual_override': manual,
+        # Most-used first: the panel preselects it, so a regrade defaults to
+        # the model the existing evaluations were produced with.
+        'models_in_use': [m for m, _ in sorted(models.items(), key=lambda kv: -kv[1])],
+    }
