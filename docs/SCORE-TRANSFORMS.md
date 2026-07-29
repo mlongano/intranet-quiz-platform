@@ -17,7 +17,7 @@ All three operations share the same scaffold:
 What varies:
 - **Which entries**: all entries, or a subset identified by score entry IDs
 - **Which answers within an entry**: all, only `type == "open"`, or only specific `question_id`s
-- **The transform**: manual point override, `grade()`, or `score_open()`
+- **The transform**: manual point override, or `grade()` against the current snapshot
 - **Data source for the question**: stored `question_snapshot` in the answer, or current snapshot from DB
 
 ## Interface
@@ -91,26 +91,21 @@ def recalc_fn(answers, qbank_map):
 updated = transform_scores(session_id, teacher_id, transform_fn=recalc_fn)
 ```
 
-**regrade_open_questions** route:
+**regrade_open_questions** route — *not* a `transform_scores()` caller.
+
+Open-question regrading is asynchronous and does not go through this seam: an
+LLM call can take minutes, so it must not run inside the transaction that holds
+the score rows. The route only enqueues a job:
+
 ```python
-from services.grading import score_open
-
-def regrade_open_fn(answers, qbank_map):
-    changed = False
-    for ans in answers:
-        q = ans.get('question_snapshot')
-        if not isinstance(q, dict):
-            q = qbank_map.get(str(ans.get('question_id')))
-        if not q or q.get('type') != 'open':
-            continue
-        new_pts = score_open(ans.get('raw_student_answer') or '', q) * q.get('weight', 1)
-        if abs(new_pts - ans.get('raw_points', 0)) > 0.001:
-            ans['points_awarded'] = ans['raw_points'] = round(new_pts, 2)
-            changed = True
-    return answers if changed else None
-
-updated = transform_scores(session_id, teacher_id, transform_fn=regrade_open_fn)
+job = enqueue_regrade_session(session_id, teacher_id)   # 202 Accepted
 ```
+
+`services/llm_jobs.py` then reads each entry unlocked, grades in memory, and
+writes under `FOR UPDATE` — applying only the answers whose `answer_revision`
+is unchanged and which were not manually overridden meanwhile. It records its
+changes through the same `record_answer_changes()` seam, so regrades appear in
+the history and can be reverted like any other operation.
 
 ## Future: per-question regrade
 

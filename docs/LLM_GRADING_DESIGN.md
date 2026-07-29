@@ -17,7 +17,7 @@ scrivere altro codice su valutazione/rivalutazione.
 
 ## Problema 1 — Fallback a parole chiave (keyword scoring)
 
-### Cosa succede oggi
+### Cosa succedeva (risolto nella Fase 1)
 
 - L'env `USE_LLM_EVAL=1` abilita la valutazione LLM.
 - Se la chiamata LLM fallisce (timeout, credenziali errate, quota esaurita),
@@ -38,7 +38,7 @@ essere usato come fallback né come modalità alternativa.
 Quando la valutazione LLM non è disponibile, la risposta aperta deve restare
 **pending** con 0 punti fino a quando non viene valutata dall'LLM o dal docente:
 
-- `grade_open_answer()` non chiama mai `score_open()`.
+- `grade_open_answer()` non ha alcun fallback: `score_open()` è stata eliminata.
 - Un errore LLM produce uno stato `pending` con `points_awarded=0` e
   `llm_error` valorizzato. Non produce mai un voto definitivo.
 - Il worker distingue errori temporanei, eventualmente ritentabili, da errori
@@ -67,11 +67,10 @@ Quando la valutazione LLM non è disponibile, la risposta aperta deve restare
 
 ### Impatto
 
-- `services/grading.py`: `grade_open_answer()` — rimuovere completamente il
-  fallback keyword dal flusso delle domande aperte. `score_open()` viene
-  deprecata per i percorsi di produzione (non chiamata né da
-  `grade_open_answer()` né da `regrade_open_fn` in `score_transforms.py`);
-  resta disponibile nei test unitari fino alla Fase 3.
+- `services/grading.py`: `grade_open_answer()` — fallback keyword rimosso.
+  `score_open()` e `normalise()` sono state eliminate del tutto, non
+  deprecate: nessun percorso, nemmeno di test, deve poter produrre un
+  punteggio keyword.
 - `services/llm_jobs.py`: preservare `pending` e `llm_error` quando il provider
   fallisce, senza convertire il risultato in `graded`.
 - `services/quiz_session.py`: `submit_quiz()` — mostrare conteggio pending.
@@ -391,7 +390,7 @@ manual_override=true  →  protetta da qualsiasi job LLM automatico (default)
 
 ## Piano di implementazione
 
-### Fase 1 — Semantica pending e punteggio provvisorio (priorità: immediata)
+### Fase 1 — Semantica pending e punteggio provvisorio ✅ implementata
 
 - `grade_open_answer()`: rimuove ogni fallback keyword.
 - Il worker lascia `pending` con 0 punti quando una prima valutazione LLM
@@ -402,10 +401,16 @@ manual_override=true  →  protetta da qualsiasi job LLM automatico (default)
   finché esistono risposte pending.
 - Test verticali del contratto LLM riuscito, LLM fallito e review manuale.
 
-### Fase 2 — Rivalutazione non distruttiva, storico e concorrenza
+La tassonomia di eccezioni tipizzate descritta sopra è entrata in questa fase
+(non nella Fase 3): `services/llm_errors.py` è già usato da `llm_evaluator.py`,
+`grade_open_answer()` e dal worker. `grade()` rinvia **sempre** le domande
+aperte, quindi nessun percorso di richiesta può chiamare il provider.
+
+### Fase 2 — Rivalutazione non distruttiva, storico e concorrenza ✅ implementata
 
 - Accodare una rivalutazione non modifica la valutazione corrente.
-- Migrazione `005`: tabelle `score_change_sets` e `score_history` + colonna
+- Migrazione `006` (non `005`, che è stata sostituita): tabelle
+  `score_change_sets` e `score_history` + colonna
   `quiz_sessions.last_regrade_at`.
 - La stessa migrazione aggiunge `answer_revision=0` alle risposte esistenti che
   non hanno ancora il campo; in lettura il campo assente viene comunque
@@ -452,17 +457,26 @@ per le risposte effettivamente cambiate.
 
 Ogni `DetailedAnswer` contiene inoltre `answer_revision`, intero monotono che
 parte da `0` e viene incrementato di `1` per qualsiasi modifica persistita
-all'oggetto, inclusi feedback, modello, timestamp e flag. Tutti i percorsi di
-scrittura (`worker`, review manuale, recalculate e revert) devono aggiornare la
-revisione nella stessa transazione della modifica.
+all'oggetto, inclusi feedback, modello e flag. Tutti i percorsi di scrittura
+(`worker`, review manuale, recalculate e revert) aggiornano la revisione nella
+stessa transazione della modifica, attraverso l'unico punto che decide che cosa
+sia una modifica: `record_answer_changes()`.
+
+Il confronto esclude `answer_revision` (è il valore che si sta calcolando) e
+`llm_updated_at`: se il solo timestamp contasse come modifica, una
+rivalutazione con esito identico incrementerebbe ogni revisione e renderebbe
+permanentemente non annullabili tutti i change set precedenti.
 
 ### Tabelle `score_change_sets` e `score_history`
 
+DDL come effettivamente rilasciato dalla migrazione `006`.
+
 ```sql
 CREATE TABLE score_change_sets (
-    id                  UUID PRIMARY KEY,
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id          BIGINT NOT NULL REFERENCES quiz_sessions(id) ON DELETE CASCADE,
     reason              TEXT NOT NULL CHECK (reason IN (
+                            'submission',
                             'llm_grade',
                             'llm_regrade',
                             'manual_review',
@@ -477,13 +491,6 @@ CREATE TABLE score_change_sets (
     CHECK (
         (actor_type = 'teacher' AND changed_by IS NOT NULL)
         OR actor_type = 'system'
-    ),
-    CHECK (
-        NOT (
-            actor_type = 'system'
-            AND reason IN ('llm_grade', 'llm_regrade')
-            AND llm_job_id IS NULL
-        )
     )
 );
 CREATE INDEX idx_score_change_sets_session
@@ -504,7 +511,7 @@ CREATE TABLE score_history (
     old_percent     NUMERIC(6,2) NOT NULL,
     new_percent     NUMERIC(6,2) NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CHECK (new_revision = old_revision + 1),
+    CHECK ((old_revision = 0 AND new_revision = 0) OR (new_revision = old_revision + 1)),
     UNIQUE (change_set_id, score_entry_id, question_id)
 );
 CREATE INDEX idx_score_history_entry
@@ -518,6 +525,11 @@ conservato per ripristinare efficientemente l'array JSONB e per compatibilità
 con i dati storici. `old_answer.answer_revision` e
 `new_answer.answer_revision` devono corrispondere alle colonne
 `old_revision`/`new_revision`.
+
+Il ramo `(0, 0)` del CHECK esiste per il change set `submission`: alla consegna
+le risposte non hanno un valore precedente, quindi vengono registrate alla
+revisione `0` senza incremento. Il change set di consegna è la base della
+catena di audit e non è annullabile (`400`).
 
 ### Semantica del revert
 
@@ -541,6 +553,9 @@ Il revert non cancella né modifica lo storico originale:
    originale, mentre le revisioni continuano a crescere. Se `old_answer` aveva
    `manual_override=true`, il revert ripristina anche il flag — non solo i
    punti.
+8. Un change set già annullato non è annullabile una seconda volta (`409`):
+   per ripristinarlo si annulla il change set di annullamento, così la catena
+   di audit resta lineare.
 
 Il revert è atomico per l'intero change set: o tutte le risposte vengono
 ripristinate e registrate, oppure nessuna viene modificata.

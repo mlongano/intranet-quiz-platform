@@ -26,12 +26,16 @@ function ScoreHistoryPanel({ history, onRevert, reverting, revertSuccess, revert
       <div className="space-y-2">
         {history.map(cs => {
           const isReverted = !!cs.reverted_change_id;
+          // System change sets carry no teacher name; the submission entry is
+          // the baseline of the audit chain and cannot be undone.
+          const actorLabel = cs.actor_name ?? (cs.actor_type === 'system' ? 'Sistema' : null);
+          const canRevert = !isReverted && cs.reason !== 'submission';
           return (
             <div key={cs.id} className="flex items-center justify-between gap-3 rounded-lg border border-outline-variant/20 bg-surface px-3 py-2">
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-on-surface truncate">
                   <span className="font-medium">{REASON_LABELS[cs.reason] ?? cs.reason}</span>
-                  {cs.actor_name && <span className="text-on-surface-variant"> da {cs.actor_name}</span>}
+                  {actorLabel && <span className="text-on-surface-variant"> da {actorLabel}</span>}
                 </p>
                 <p className="text-xs text-on-surface-variant">
                   {cs.changed_answers} risposte modificate ·{' '}
@@ -39,7 +43,7 @@ function ScoreHistoryPanel({ history, onRevert, reverting, revertSuccess, revert
                   {isReverted && ' · ripristinato'}
                 </p>
               </div>
-              {!isReverted && (
+              {canRevert && (
                 <button
                   onClick={() => {
                     if (window.confirm(`Ripristinare questa modifica? Le ${cs.changed_answers} risposte torneranno al valore precedente.`)) {

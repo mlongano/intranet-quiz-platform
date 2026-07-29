@@ -1,22 +1,19 @@
 import json
 
+import pytest
+
 from tests.conftest import make_session, make_snapshot, make_student, make_teacher, teacher_token
 
 
-def test_grade_uses_shared_open_answer_grader(monkeypatch):
+def test_grade_never_calls_the_open_grader(monkeypatch):
+    """grade() always defers open questions — no request path may call the LLM."""
     import services.grading as grading
 
-    calls = []
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError('open grader must not run inside grade()')
 
-    def fake_grade_open_answer(user_ans, q):
-        calls.append((user_ans, q['id']))
-        return {
-            'points': 0.75,
-            'llm_feedback': 'Feedback condiviso',
-            'llm_verdict': 'partial',
-        }
-
-    monkeypatch.setattr(grading, 'grade_open_answer', fake_grade_open_answer)
+    monkeypatch.setattr(grading, 'grade_open_answer', fail_if_called)
+    monkeypatch.setenv('USE_LLM_EVAL', '1')
 
     result = grading.grade(
         ['risposta studente'],
@@ -24,17 +21,18 @@ def test_grade_uses_shared_open_answer_grader(monkeypatch):
         {'questions': [{'id': 'q1', 'type': 'open', 'text': 'Spiega.', 'weight': 1}]},
     )
 
-    assert calls == [('risposta studente', 'q1')]
-    assert result['scores_per_question'] == [0.75]
-    assert result['feedbacks_per_question'] == ['Feedback condiviso']
-    assert result['verdicts_per_question'] == ['partial']
+    assert result['scores_per_question'] == [0.0]
+    assert result['statuses_per_question'] == ['pending']
+    assert result['raw_points'] == 0
+    assert result['max_points'] == 1
 
 
-def test_grade_open_answer_returns_feedback_when_llm_fails(monkeypatch):
+def test_grade_open_answer_propagates_llm_failure(monkeypatch):
     import services.grading as grading
+    from services.llm_errors import LlmTemporaryError
 
     def failing_evaluator(*_args, **_kwargs):
-        raise RuntimeError('model unavailable')
+        raise LlmTemporaryError('model unavailable')
 
     monkeypatch.setenv('USE_LLM_EVAL', '1')
     monkeypatch.setitem(__import__('sys').modules, 'llm_evaluator', type(
@@ -43,15 +41,26 @@ def test_grade_open_answer_returns_feedback_when_llm_fails(monkeypatch):
         {'evaluate_open_question': staticmethod(failing_evaluator)},
     ))
 
-    result = grading.grade_open_answer(
-        'contiene parola',
-        {'id': 'q1', 'type': 'open', 'text': 'Spiega.', 'keywords': ['parola'], 'weight': 2},
-    )
+    # A failure must surface as an exception, never as a zero-point result that
+    # could be mistaken for a real grade.
+    with pytest.raises(LlmTemporaryError):
+        grading.grade_open_answer(
+            'contiene parola',
+            {'id': 'q1', 'type': 'open', 'text': 'Spiega.', 'keywords': ['parola'], 'weight': 2},
+        )
 
-    # When LLM fails the answer is left pending (0 points) — no opaque keyword fallback.
-    assert result['points'] == 0.0
-    assert result['llm_pending'] is True
-    assert 'model unavailable' in str(result.get('llm_feedback', ''))
+
+def test_grade_open_answer_requires_llm_to_be_configured(monkeypatch):
+    import services.grading as grading
+    from services.llm_errors import LlmConfigurationError
+
+    monkeypatch.setenv('USE_LLM_EVAL', '0')
+
+    with pytest.raises(LlmConfigurationError):
+        grading.grade_open_answer(
+            'qualcosa',
+            {'id': 'q1', 'type': 'open', 'text': 'Spiega.', 'weight': 1},
+        )
 
 
 def test_regrade_open_enqueues_job_and_worker_uses_shared_grader(
@@ -160,24 +169,97 @@ def test_regrade_open_enqueues_job_and_worker_uses_shared_grader(
     assert job_row == ('completed', 1)
 
 
-def test_deferred_open_grading_does_not_call_llm(monkeypatch):
-    import services.grading as grading
+def test_worker_failure_leaves_never_graded_answer_pending():
+    """A failed evaluation must never become a definitive 0-point grade."""
+    from services.llm_errors import LlmTemporaryError
+    import services.llm_jobs as llm_jobs
 
-    def fail_if_called(*_args, **_kwargs):
-        raise AssertionError('open grader should not run in the submit request')
+    answers = [{
+        'question_id': 'open-1',
+        'type': 'open',
+        'weight': 2,
+        'points_awarded': 0,
+        'raw_points': 0,
+        'llm_status': 'pending',
+        'llm_feedback': None,
+        'raw_student_answer': 'Una risposta.',
+    }]
+    failures: list[str] = []
 
-    monkeypatch.setattr(grading, 'grade_open_answer', fail_if_called)
+    def boom(*_args, **_kwargs):
+        raise LlmTemporaryError('provider down')
 
-    result = grading.grade(
-        ['risposta studente'],
-        {'plan': [{'id': 'q1', 'option_order': []}]},
-        {'questions': [{'id': 'q1', 'type': 'open', 'text': 'Spiega.', 'weight': 1}]},
-        defer_open=True,
-    )
+    original = llm_jobs.grade_open_answer
+    llm_jobs.grade_open_answer = boom
+    try:
+        changed = llm_jobs._process_one_pending_answer(answers, failures=failures)
+    finally:
+        llm_jobs.grade_open_answer = original
 
-    assert result['raw_points'] == 0
-    assert result['max_points'] == 1
-    assert result['statuses_per_question'] == ['pending']
+    assert changed is True
+    assert answers[0]['llm_status'] == 'pending'      # never 'graded' / 'error'
+    assert answers[0]['points_awarded'] == 0
+    assert 'provider down' in answers[0]['llm_error']
+    assert failures and 'open-1' in failures[0]
+
+
+def test_worker_failure_preserves_an_existing_grade():
+    """A failing regrade must leave the previous evaluation untouched."""
+    from services.llm_errors import LlmTemporaryError
+    import services.llm_jobs as llm_jobs
+
+    answers = [{
+        'question_id': 'open-1',
+        'type': 'open',
+        'weight': 2,
+        'points_awarded': 1.5,
+        'raw_points': 1.5,
+        'llm_status': 'graded',
+        'llm_feedback': 'Buona risposta',
+        'llm_verdict': 'partial',
+        'raw_student_answer': 'Una risposta.',
+    }]
+    before = dict(answers[0])
+    failures: list[str] = []
+
+    def boom(*_args, **_kwargs):
+        raise LlmTemporaryError('provider down')
+
+    original = llm_jobs.grade_open_answer
+    llm_jobs.grade_open_answer = boom
+    try:
+        changed = llm_jobs._process_one_pending_answer(
+            answers, is_regrade=True, failures=failures,
+        )
+    finally:
+        llm_jobs.grade_open_answer = original
+
+    assert changed is False
+    assert answers[0] == before          # byte-for-byte untouched
+    assert failures                       # but the failure is still reported
+
+
+def test_worker_without_llm_configured_leaves_answers_pending(monkeypatch):
+    """The misconfigured-container scenario: nothing is graded, nothing is lost."""
+    import services.llm_jobs as llm_jobs
+
+    monkeypatch.setenv('USE_LLM_EVAL', '0')
+    answers = [{
+        'question_id': 'open-1',
+        'type': 'open',
+        'weight': 1,
+        'points_awarded': 0,
+        'raw_points': 0,
+        'llm_status': 'pending',
+        'raw_student_answer': 'Risposta.',
+    }]
+    failures: list[str] = []
+
+    llm_jobs._process_one_pending_answer(answers, failures=failures)
+
+    assert answers[0]['llm_status'] == 'pending'
+    assert answers[0]['points_awarded'] == 0
+    assert failures
 
 
 def test_regrade_open_recognizes_legacy_answers_without_top_level_type(

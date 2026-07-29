@@ -378,6 +378,16 @@ LIST_SCORES_FOR_SESSION = """
     ORDER BY se.submitted_at DESC
 """
 
+# Row-level lock for score mutations. Separate from LIST_SCORES_FOR_SESSION
+# because FOR UPDATE cannot be applied through that query's join on students.
+# Ordered by id so concurrent operations take the rows in the same order.
+LOCK_SCORES_FOR_SESSION = """
+    SELECT id FROM score_entries
+    WHERE session_id = %s
+    ORDER BY id
+    FOR UPDATE
+"""
+
 LIST_SCORES_FOR_TEACHER = """
     SELECT se.id, se.session_id, se.raw_points, se.max_points, se.percent,
            se.answers, se.submitted_at,
@@ -472,6 +482,15 @@ GET_SCORE_ENTRY_FOR_LLM_JOB = """
            percent, answers
     FROM score_entries
     WHERE id = %s AND teacher_id = %s AND session_id = %s
+"""
+
+# Taken by the worker only for the short write transaction, never while an LLM
+# call is in flight.
+LOCK_SCORE_ENTRY_FOR_LLM_JOB = """
+    SELECT id, percent, answers
+    FROM score_entries
+    WHERE id = %s AND teacher_id = %s AND session_id = %s
+    FOR UPDATE
 """
 
 LIST_SCORE_ENTRIES_FOR_LLM_SESSION = """
@@ -622,4 +641,10 @@ GET_CHANGE_SET_ENTRIES = """
     FROM score_history sh
     WHERE sh.change_set_id = %s
     ORDER BY sh.score_entry_id, sh.answer_index
+"""
+
+# A change set may only be reverted once: the audit chain records the revert
+# itself as a new change set, which is what a second undo must target.
+FIND_REVERT_OF_CHANGE_SET = """
+    SELECT id FROM score_change_sets WHERE reverted_change_id = %s LIMIT 1
 """

@@ -75,7 +75,8 @@ auth/
   decorators.py          # require_teacher / require_student / require_super_admin → g.current_user
   google_sync.py         # Google Workspace Directory API sync (super-admin triggered)
 services/
-  grading.py             # PURE: grade(), score_open(), format_detailed_answers()
+  grading.py             # PURE: grade(), grade_open_answer(), format_detailed_answers()
+  llm_errors.py          # Typed LLM failures + validate_llm_env()
   quiz_session.py        # Plan + session lifecycle; FOR UPDATE + ownership in one transaction
   score_transforms.py    # transform_scores() — the single seam for review/recalculate/regrade
   snapshots.py           # JSONC import/export ↔ question_snapshots
@@ -109,6 +110,10 @@ Three JWT roles: `teacher`, `super_admin` (same login flow, elevated role), `stu
 
 6. **JSONC at the boundary only.** Import parses with `commentjson` (never stdlib `json` for question files), validates, and stores plain JSONB. Export emits clean JSON.
 
+7. **Pending is never a grade.** `grade()` always defers open questions (0 points, `llm_status='pending'`); only the worker grades them. A failed evaluation leaves a never-graded answer `pending` with `llm_error`, and leaves an already-graded answer untouched — it is never written back as a `graded` zero. `grade_open_answer()` raises the typed errors from `services/llm_errors.py`.
+
+8. **Session close has a grace window.** `save-answer` needs `status='active'`; `submit` also accepts `closed`, so a student caught by a manual close can still hand in. Both refuse past `closes_at + QUIZ_GRACE_SECONDS` (default 3600) with 409 `SESSION_CLOSED`.
+
 ### Data model (PostgreSQL — see `db/migrations/`)
 
 `teachers`, `students`, `classes`, `class_teachers`, `class_students` (identity);
@@ -121,7 +126,7 @@ Three JWT roles: `teacher`, `super_admin` (same login flow, elevated role), `stu
 
 React 19 + Vite + TanStack Query + Tailwind v4, SPA served by Flask from `frontend/dist/`.
 
-- `src/api.ts` — all API functions + hand-written types; `apiFetch()` injects the Bearer token
+- `src/api.ts` — barrel re-exporting `src/api/*` (`client.ts`, `scores.ts`, `sessions.ts`, `types.ts`, …); `apiFetch()` injects the Bearer token
 - `src/lib/session.ts` — JWTs in `sessionStorage` (`qp_teacher` / `qp_student`)
 - `src/main.tsx` — routes: `/teacher/*` (login, dashboard, sessions, snapshots, classes, archives…), `/super-admin`, student flow `/` → `/quiz/:id` → `/finish`; legacy `/admin/*` redirects
 - Server state via TanStack Query only; client state via `useState`; no Redux/Zustand

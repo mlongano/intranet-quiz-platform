@@ -36,7 +36,9 @@ if 'test' not in _database_url.rsplit('/', 1)[-1].lower():
         "Set TEST_DATABASE_URL or DATABASE_URL to a database whose name contains 'test'."
     )
 
-os.environ.setdefault('JWT_SECRET', 'test-secret-not-for-production')
+# Forced, not setdefault: the suite must never depend on a JWT_SECRET inherited
+# from a real .env, and jwt_utils._secret() rejects anything under 32 characters.
+os.environ['JWT_SECRET'] = 'test-secret-not-for-production-0123456789abcdef'
 os.environ.setdefault('JWT_TEACHER_TTL_HOURS', '12')
 os.environ.setdefault('IMAGES_BASE', '/tmp/quizparty_test_images')
 

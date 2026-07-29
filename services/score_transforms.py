@@ -64,13 +64,25 @@ def transform_scores(
         if owner[0] != teacher_id:
             raise Forbidden(description="Not your session.")
 
-        change_set_id = open_change_set(
-            conn,
-            session_id=session_id,
-            reason=reason,
-            actor_type='teacher',
-            changed_by=teacher_id,
-        )
+        # Opened lazily: an operation that changes nothing must not leave an
+        # empty change set in the teacher's history.
+        change_set_cache: dict[str, str] = {}
+
+        def change_set() -> str:
+            if 'id' not in change_set_cache:
+                change_set_cache['id'] = open_change_set(
+                    conn,
+                    session_id=session_id,
+                    reason=reason,
+                    actor_type='teacher',
+                    changed_by=teacher_id,
+                )
+            return change_set_cache['id']
+
+        # Lock the session's score rows for the duration of this transaction:
+        # review, recalculate and revert must not interleave with each other or
+        # with the grading worker. These are short transactions with no LLM call.
+        conn.execute(Q.LOCK_SCORES_FOR_SESSION, (session_id,))
 
         qbank_map = load_qbank_for_session(conn, session_id)
         rows = conn.execute(Q.LIST_SCORES_FOR_SESSION, (session_id,)).fetchall()
@@ -81,6 +93,7 @@ def transform_scores(
                 continue
 
             answers = ensure_list(r[4])
+            old_answers = [dict(a) for a in answers]
             new_answers = transform_fn(score_id, answers, qbank_map)
             if new_answers is None:
                 continue
@@ -89,13 +102,22 @@ def transform_scores(
             new_max = round(sum(a.get("weight", 0) for a in new_answers), 2)
             new_pct = round(new_raw / new_max * 100, 2) if new_max else 0
 
-            old_raw = round(sum(a.get("points_awarded", 0) for a in answers), 2)
-            old_max = round(sum(a.get("weight", 0) for a in answers), 2)
+            old_raw = round(sum(a.get("points_awarded", 0) for a in old_answers), 2)
+            old_max = round(sum(a.get("weight", 0) for a in old_answers), 2)
             old_pct = round(old_raw / old_max * 100, 2) if old_max else 0
 
-            # Bump revision on every modified answer
-            for new_a in new_answers:
-                bump_answer_revision(new_a)
+            # Must run before serialising: it assigns the new revisions.
+            changed = record_answer_changes(
+                conn,
+                change_set_id=change_set,
+                score_entry_id=score_id,
+                old_answers=old_answers,
+                new_answers=new_answers,
+                old_percent=old_pct,
+                new_percent=new_pct,
+            )
+            if not changed:
+                continue
 
             conn.execute(Q.UPDATE_SCORE_ANSWERS, {
                 "answers": json.dumps(new_answers),
@@ -105,16 +127,6 @@ def transform_scores(
                 "id": score_id,
                 "teacher_id": teacher_id,
             })
-
-            record_answer_changes(
-                conn,
-                change_set_id=change_set_id,
-                score_entry_id=score_id,
-                old_answers=answers,
-                new_answers=new_answers,
-                old_percent=old_pct,
-                new_percent=new_pct,
-            )
             updated += 1
 
         conn.commit()
@@ -130,7 +142,7 @@ def open_change_set(
     session_id: int,
     reason: str,
     actor_type: str,
-    changed_by: int,
+    changed_by: int | None,
     llm_job_id: int | None = None,
     reverted_change_id: str | None = None,
 ) -> str:
@@ -146,40 +158,88 @@ def open_change_set(
     return str(row[0])
 
 
+# Fields that must not, on their own, count as a change to an answer.
+#   answer_revision — the bookkeeping we are about to compute
+#   llm_updated_at  — a re-evaluation that reproduces the same result would
+#                     otherwise bump every revision and make every earlier
+#                     change set permanently un-revertable
+_NON_SUBSTANTIVE_FIELDS = ('answer_revision', 'llm_updated_at')
+
+
+def answers_differ(old_answer: dict | None, new_answer: dict) -> bool:
+    """True when the two answers differ in any substantive field.
+
+    Compares full content — points, feedback, verdict, status, override flags —
+    not just points: a re-evaluation that keeps the score but rewrites the
+    feedback is still a change the teacher must be able to see and revert.
+    """
+    if old_answer is None:
+        return True
+
+    def strip(a: dict) -> dict:
+        return {k: v for k, v in a.items() if k not in _NON_SUBSTANTIVE_FIELDS}
+
+    return strip(old_answer) != strip(new_answer)
+
+
 def record_answer_changes(
     conn,
     *,
-    change_set_id: str,
+    change_set_id: str | Callable[[], str],
     score_entry_id: int,
     old_answers: list[dict] | None,
     new_answers: list[dict],
     old_percent: float | None,
     new_percent: float,
-) -> None:
-    """Insert score_history rows for every answer whose points changed.
+) -> int:
+    """Bump revisions and insert score_history rows for changed answers only.
 
-    old_answers may be None (first submission — every answer is new).
-    Saves complete old/new answer snapshots for audit and revert.
+    This is the single seam that decides what "changed" means. For each answer
+    that actually changed it sets answer_revision = old + 1 *on the new answer
+    dict* and writes the history row, so the stored answers and the history
+    always agree — migration 006 enforces new_revision = old_revision + 1.
+    Answers that did not change keep their revision and get no row.
+
+    Mutates new_answers, so callers must serialise them *after* calling this.
+
+    old_answers may be None (first submission — every answer is recorded at
+    revision 0). change_set_id may be a callable, which is invoked only when
+    the first change is recorded, so a no-op operation leaves no empty change
+    set behind.
+
+    Returns the number of changed answers.
     """
+    resolved_id: str | None = None
+    changed = 0
+
     for idx, new_a in enumerate(new_answers):
-        new_pts = new_a.get('points_awarded', 0)
         old_a = None
-        old_pts = 0.0
         if old_answers is not None and idx < len(old_answers):
             old_a = old_answers[idx]
-            old_pts = old_a.get('points_awarded', 0)
 
-        if old_answers is not None and old_pts == new_pts:
+        is_first_submission = old_answers is None
+        if not is_first_submission and not answers_differ(old_a, new_a):
             continue
 
-        old_rev = old_a.get('answer_revision', 0) if old_a else 0
-        new_rev = new_a.get('answer_revision', 0)
-        q_id = str(new_a.get('question_id', ''))
+        old_rev = (old_a.get('answer_revision') or 0) if old_a else 0
+        if is_first_submission:
+            # Nothing preceded these answers: they are revision 0, not 0 -> 1.
+            new_rev = new_a.get('answer_revision') or 0
+            old_rev = new_rev
+        else:
+            new_rev = old_rev + 1
+            new_a['answer_revision'] = new_rev
+
+        if resolved_id is None:
+            resolved_id = change_set_id() if callable(change_set_id) else change_set_id
+
+        old_pts = old_a.get('points_awarded', 0) if old_a else 0.0
+        new_pts = new_a.get('points_awarded', 0)
 
         conn.execute(Q.INSERT_SCORE_HISTORY, {
-            'change_set_id': change_set_id,
+            'change_set_id': resolved_id,
             'score_entry_id': score_entry_id,
-            'question_id': q_id,
+            'question_id': str(new_a.get('question_id', '')),
             'answer_index': idx,
             'old_revision': old_rev,
             'new_revision': new_rev,
@@ -190,13 +250,9 @@ def record_answer_changes(
             'old_percent': round(float(old_percent or 0), 2),
             'new_percent': round(float(new_percent), 2),
         })
+        changed += 1
 
-
-def bump_answer_revision(answer: dict) -> dict:
-    """Increment answer_revision on the dict in-place; returns it."""
-    rev = (answer.get('answer_revision') or 0) + 1
-    answer['answer_revision'] = rev
-    return answer
+    return changed
 
 
 def load_qbank_for_session(
