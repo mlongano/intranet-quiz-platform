@@ -9,7 +9,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
@@ -21,6 +23,105 @@ from db import queries as Q
 from services.grading import grade_open_answer
 from services.llm_errors import LlmConfigurationError, llm_enabled, validate_llm_env
 from utils import ensure_list
+
+
+# ── concurrency ──────────────────────────────────────────────────────────────
+#
+# Grading is I/O bound: a call spends its time waiting on the provider, not on
+# CPU, so threads are the right tool and a bounded pool is the only knob that
+# matters. Serial grading made a 30-student class with six open questions
+# roughly 180 sequential calls — a quarter of an hour at best.
+#
+# Two axes feed one shared bound, because the work arrives in two shapes: a
+# regrade is one job with many score entries, while a class handing in is many
+# jobs with one entry each. Bounding both together keeps a single ceiling on
+# concurrent provider calls instead of multiplying two limits.
+
+DEFAULT_CONCURRENCY = 6
+DEFAULT_MAX_JOBS = 3
+DEFAULT_MAX_JOBS_PER_TEACHER = 2
+
+
+def worker_concurrency() -> int:
+    return max(1, int(os.getenv('LLM_WORKER_CONCURRENCY', str(DEFAULT_CONCURRENCY))))
+
+
+def worker_max_jobs() -> int:
+    return max(1, int(os.getenv('LLM_WORKER_MAX_JOBS', str(DEFAULT_MAX_JOBS))))
+
+
+def worker_max_jobs_per_teacher() -> int:
+    """0 or less disables the cap."""
+    return int(os.getenv('LLM_WORKER_MAX_JOBS_PER_TEACHER', str(DEFAULT_MAX_JOBS_PER_TEACHER)))
+
+
+def required_pool_size() -> int:
+    """Connections the worker must be able to hold at peak.
+
+    Every concurrent unit takes a connection to read and again to write, and a
+    pool smaller than the concurrency deadlocks rather than queueing politely —
+    the failure mode is "couldn't get a connection after 30s", not a slowdown.
+    """
+    return worker_concurrency() + worker_max_jobs() + 2
+
+
+class _JobProgress:
+    """Thread-safe progress counter that does not write on every entry.
+
+    Progress is cosmetic — the teacher watches a number climb — so it is
+    flushed at most once a second rather than once per graded entry.
+    """
+
+    def __init__(self, job_id: int, initial: int, *, flush_interval: float = 1.0):
+        self._job_id = job_id
+        self._total = initial
+        self._lock = threading.Lock()
+        self._flush_interval = flush_interval
+        self._last_flush = 0.0
+
+    @property
+    def total(self) -> int:
+        with self._lock:
+            return self._total
+
+    def record(self, changed: bool) -> None:
+        if not changed:
+            return
+        with self._lock:
+            self._total += 1
+            now = time.monotonic()
+            if now - self._last_flush < self._flush_interval:
+                return
+            self._last_flush = now
+            snapshot = self._total
+        _update_job_progress(self._job_id, snapshot)
+
+
+def _map_concurrently(fn, items: list, *, on_result=None) -> None:
+    """Run *fn* over *items* on the shared pool, collecting results in order.
+
+    Falls back to a plain loop for a single item so the common submission job
+    (exactly one score entry) costs nothing extra.
+    """
+    items = list(items)
+    if not items:
+        return
+    if len(items) == 1 or worker_concurrency() == 1:
+        for item in items:
+            result = fn(item)
+            if on_result:
+                on_result(result)
+        return
+
+    with ThreadPoolExecutor(
+        max_workers=min(worker_concurrency(), len(items)),
+        thread_name_prefix='llm-grade',
+    ) as pool:
+        futures = [pool.submit(fn, item) for item in items]
+        for future in futures:
+            result = future.result()   # re-raises, so a task failure fails the job
+            if on_result:
+                on_result(result)
 
 
 def create_llm_job(
@@ -239,10 +340,15 @@ def get_latest_job_for_session(session_id: int, teacher_id: int) -> dict | None:
 
 
 def process_next_job() -> bool:
+    """Claim and process one job. Returns False when the queue is empty."""
     job = _claim_next_job()
     if not job:
         return False
+    _process_claimed_job(job)
+    return True
 
+
+def _process_claimed_job(job: dict) -> None:
     processed = int(job.get('processed_items') or 0)
     failures: list[str] = []
     try:
@@ -250,22 +356,33 @@ def process_next_job() -> bool:
 
         # One change set for the whole job, opened on the first recorded change
         # so a job that grades nothing leaves no empty entry in the history.
+        # Entries are graded concurrently, so creation is double-checked under a
+        # lock: two threads arriving together would otherwise open two change
+        # sets for one job, splitting the history and leaving revert partial.
         from services.score_transforms import open_change_set
         reason = 'llm_grade' if job['job_type'] == 'submission' else 'llm_regrade'
         change_set_cache: dict[str, str] = {}
+        change_set_lock = threading.Lock()
 
         def change_set() -> str:
             if 'id' not in change_set_cache:
-                with db.get_conn() as cs_conn:
-                    change_set_cache['id'] = open_change_set(
-                        cs_conn,
-                        session_id=job['session_id'],
-                        reason=reason,
-                        actor_type='system',
-                        changed_by=None,
-                        llm_job_id=job['id'],
-                    )
-                    cs_conn.commit()
+                with change_set_lock:
+                    if 'id' not in change_set_cache:
+                        with db.get_conn() as cs_conn:
+                            new_id = open_change_set(
+                                cs_conn,
+                                session_id=job['session_id'],
+                                reason=reason,
+                                actor_type='system',
+                                changed_by=None,
+                                llm_job_id=job['id'],
+                            )
+                            cs_conn.commit()
+                        # Publish only after the commit. Assigning inside the
+                        # transaction lets another thread read the id while the
+                        # row is still invisible on its own connection, and its
+                        # score_history insert then fails the foreign key.
+                        change_set_cache['id'] = new_id
             return change_set_cache['id']
 
         job['_change_set'] = change_set
@@ -282,11 +399,17 @@ def process_next_job() -> bool:
             job['_evaluation'] = None
             failures.append(f"configurazione LLM non valida: {exc}")
 
-        for score_id in score_ids:
-            changed = _process_next_answer_for_score(job, score_id, failures)
-            if changed:
-                processed += 1
-                _update_job_progress(job['id'], processed)
+        # Grade score entries concurrently. Each entry is a different row and
+        # keeps the whole read/grade/write-under-lock cycle it always had, so
+        # nothing about the optimistic write changes — only how many of them
+        # are in flight at once.
+        progress = _JobProgress(job['id'], processed)
+        _map_concurrently(
+            lambda score_id: _process_next_answer_for_score(job, score_id, failures),
+            score_ids,
+            on_result=lambda changed: progress.record(changed),
+        )
+        processed = progress.total
 
         # The job still completes when individual answers failed: the answers
         # themselves carry the outcome. The error text is the teacher's summary.
@@ -307,8 +430,7 @@ def process_next_job() -> bool:
                 'error': str(exc),
             })
             conn.commit()
-        print(f"[LLM_JOBS] Job {job['id']} failed: {exc}")
-    return True
+        print(f"[LLM_JOBS job={job['id']}] failed: {exc}", flush=True)
 
 
 def worker_loop(*, poll_seconds: float = 2.0, error_backoff_seconds: float = 5.0) -> None:
@@ -328,16 +450,44 @@ def worker_loop(*, poll_seconds: float = 2.0, error_backoff_seconds: float = 5.0
             flush=True,
         )
 
+    print(
+        f"[LLM_JOBS] Concurrency: {worker_concurrency()} grading calls, "
+        f"{worker_max_jobs()} jobs in flight, "
+        f"{worker_max_jobs_per_teacher()} per teacher.",
+        flush=True,
+    )
     requeue_running_jobs()
-    while True:
-        try:
-            did_work = process_next_job()
-        except Exception as exc:
-            print(f"[LLM_JOBS] Worker iteration failed: {exc}", flush=True)
-            time.sleep(error_backoff_seconds)
-            continue
-        if not did_work:
-            time.sleep(poll_seconds)
+
+    # Several jobs at once, because a class handing in produces one job per
+    # student: without this, thirty submissions are still graded one after the
+    # other no matter how wide the per-job pool is.
+    with ThreadPoolExecutor(
+        max_workers=worker_max_jobs(), thread_name_prefix='llm-job'
+    ) as jobs:
+        in_flight: set = set()
+        while True:
+            in_flight = {f for f in in_flight if not f.done()}
+            if len(in_flight) >= worker_max_jobs():
+                time.sleep(0.2)
+                continue
+            try:
+                job = _claim_next_job()
+            except Exception as exc:
+                print(f"[LLM_JOBS] Could not claim a job: {exc}", flush=True)
+                time.sleep(error_backoff_seconds)
+                continue
+            if not job:
+                time.sleep(poll_seconds)
+                continue
+            in_flight.add(jobs.submit(_run_claimed_job, job))
+
+
+def _run_claimed_job(job: dict) -> None:
+    """Process an already-claimed job, never raising into the pool."""
+    try:
+        _process_claimed_job(job)
+    except Exception as exc:  # noqa: BLE001 - one bad job must not stop the worker
+        print(f"[LLM_JOBS job={job.get('id')}] Worker iteration failed: {exc}", flush=True)
 
 
 def requeue_running_jobs() -> int:
@@ -352,8 +502,16 @@ def requeue_running_jobs() -> int:
 
 
 def _claim_next_job() -> dict | None:
+    """Claim one pending job.
+
+    Selecting and marking it running happen in one transaction, so with
+    FOR UPDATE SKIP LOCKED several threads can claim concurrently without ever
+    taking the same job.
+    """
     with db.get_conn() as conn:
-        row = conn.execute(Q.CLAIM_LLM_GRADING_JOB).fetchone()
+        row = conn.execute(
+            Q.CLAIM_LLM_GRADING_JOB, {'per_teacher': worker_max_jobs_per_teacher()}
+        ).fetchone()
         if not row:
             conn.commit()
             return None
@@ -666,11 +824,16 @@ def main() -> None:
     parser.add_argument('--poll-seconds', type=float, default=2.0)
     args = parser.parse_args()
 
+    # Sized from the concurrency settings rather than fixed: every grading unit
+    # needs a connection to read and again to write, and a pool smaller than the
+    # concurrency deadlocks instead of queueing.
+    pool_size = required_pool_size()
     db.init_pool(
         dsn=os.environ.get('DATABASE_URL', 'postgresql:///quizparty'),
         min_size=1,
-        max_size=4,
+        max_size=pool_size,
     )
+    print(f"[LLM_JOBS] Connection pool: up to {pool_size}.", flush=True)
 
     # After the pool: the grading endpoint may come from the llm_endpoints
     # table rather than from the environment.
@@ -684,10 +847,6 @@ def main() -> None:
         worker_loop(poll_seconds=args.poll_seconds)
     else:
         process_next_job()
-
-
-if __name__ == '__main__':
-    main()
 
 
 def regrade_preview(session_id: int, teacher_id: int) -> dict:
@@ -734,3 +893,7 @@ def regrade_preview(session_id: int, teacher_id: int) -> dict:
         # the model the existing evaluations were produced with.
         'models_in_use': [m for m, _ in sorted(models.items(), key=lambda kv: -kv[1])],
     }
+
+
+if __name__ == '__main__':
+    main()

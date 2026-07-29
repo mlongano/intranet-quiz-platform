@@ -436,11 +436,22 @@ INSERT_LLM_GRADING_JOB = f"""
     RETURNING {LLM_GRADING_JOB_COLUMNS}
 """
 
+# Ordering: a submission is a student waiting to see their score, a regrade is
+# a teacher revisiting old work, so submissions go first and are otherwise
+# oldest-first. The per-teacher guard bounds how hard one teacher's own API key
+# is hit; %(per_teacher)s of 0 or less disables it.
 CLAIM_LLM_GRADING_JOB = f"""
     SELECT {LLM_GRADING_JOB_COLUMNS}
-    FROM llm_grading_jobs
-    WHERE status = 'pending'
-    ORDER BY created_at
+    FROM llm_grading_jobs j
+    WHERE j.status = 'pending'
+      AND (
+        %(per_teacher)s <= 0
+        OR (
+          SELECT count(*) FROM llm_grading_jobs r
+          WHERE r.teacher_id = j.teacher_id AND r.status = 'running'
+        ) < %(per_teacher)s
+      )
+    ORDER BY (j.job_type <> 'submission'), j.created_at
     FOR UPDATE SKIP LOCKED
     LIMIT 1
 """

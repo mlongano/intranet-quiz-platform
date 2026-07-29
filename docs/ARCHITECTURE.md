@@ -533,7 +533,7 @@ Using the glossary from [`CONTEXT.md`](./CONTEXT.md):
 | Score mutation | `services/score_transforms.py` | `transform_scores(..., transform_fn)` | review, recalculate, regrade-open | Deep — 3 callers, ~80 lines each before extraction |
 | Quiz taking | `services/quiz_session.py` | `save_answer(quiz_id, answer, student_id)` | `routes/quiz.py` | Deep — FOR UPDATE lock + ownership + progression all in one txn |
 | Grading | `services/grading.py` | `grade()`, `grade_open_answer()` | quiz_session, llm_jobs, score_transforms | Deep — pure functions, callers don't reimplement scoring |
-| LLM grading | `services/llm_jobs.py` | job queue + `worker_loop()` | worker container, teacher regrade endpoint | Deep — the only place stored answers are graded |
+| LLM grading | `services/llm_jobs.py` | job queue + `worker_loop()` | worker container, teacher regrade endpoint | Deep — the only place stored answers are graded; bounded thread pool, submissions claimed before regrades |
 | LLM transport | `services/llm_provider.py` | `evaluate_open_question(...)` | `grade_open_answer()` | Deep — one interface over OpenAI/Anthropic/DeepSeek; returns a result or raises, never a zero |
 | LLM configuration | `services/llm_config.py` | `resolve_llm_config(teacher_id=None)` | worker, `llm-info` endpoint, startup validation | Deep — the only reader of LLM env; Fase 4 swaps its body for per-teacher credentials |
 | LLM endpoints | `services/llm_endpoints.py` | list/create/update/delete + `get_default_endpoint()` | super-admin routes, `llm_config` | Deep — only enabled rows resolve, so disabling revokes immediately |

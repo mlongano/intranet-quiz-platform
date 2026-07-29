@@ -143,6 +143,47 @@ outcome lives on the answers themselves. Its `error` column summarises which
 questions were not evaluated, including answers skipped because a teacher
 edited them while the evaluation was in flight.
 
+## Grading worker throughput
+
+Each open answer is one provider call. A class of 30 with six open questions is
+about 180 calls, so grading them one after another took 15–75 minutes before a
+score stopped being provisional. The worker now grades on a bounded thread pool.
+
+```bash
+LLM_WORKER_CONCURRENCY=6            # simultaneous provider calls
+LLM_WORKER_MAX_JOBS=3               # jobs in flight at once
+LLM_WORKER_MAX_JOBS_PER_TEACHER=2   # 0 disables
+```
+
+Two bounds because the work arrives in two shapes: a regrade is **one** job with
+many score entries, while a class handing in is **many** jobs with one entry
+each. Only raising the first would leave thirty submissions still graded one
+after the other.
+
+`LLM_WORKER_MAX_JOBS_PER_TEACHER` matters now that teachers hold their own API
+keys: it stops one teacher's concurrent jobs hammering their own quota into rate
+limits. A 429 is still retried as a temporary error, but the cap avoids getting
+there.
+
+### Raising it
+
+The connection pool is sized as `concurrency + max_jobs + 2` and logged at
+startup. That relationship is not cosmetic: a pool smaller than the concurrency
+**deadlocks** rather than queueing, and surfaces as jobs mysteriously marked
+`failed` with "couldn't get a connection after 30.00 sec". Postgres allows 100
+connections by default and the app itself uses 8, so there is room to raise the
+concurrency well beyond the default — the real ceiling is the provider's rate
+limit, not this database.
+
+Watch a bulk regrade with:
+
+```bash
+docker compose logs -f worker
+```
+
+Job ids are interleaved in the log lines (`[LLM_JOBS job=42]`), which is how to
+tell concurrency is actually happening.
+
 ## Teacher API keys and the encryption master key
 
 Teachers may store their own provider API key (Valutazione in the teacher menu).

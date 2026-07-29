@@ -48,7 +48,10 @@ os.environ.setdefault('IMAGES_BASE', '/tmp/quizparty_test_images')
 def apply_schema():
     """Apply migrations to the test DB once per test session."""
     import db
-    db.init_pool(dsn=os.environ['DATABASE_URL'], min_size=1, max_size=4)
+    # Wide enough for the worker-concurrency tests: a pool smaller than the
+    # grading concurrency deadlocks rather than queueing, which surfaces as a
+    # job mysteriously marked 'failed'.
+    db.init_pool(dsn=os.environ['DATABASE_URL'], min_size=1, max_size=12)
 
     migrations_dir = REPO_ROOT / 'db' / 'migrations'
     with db.get_conn() as conn:
@@ -88,7 +91,10 @@ def apply_schema():
         conn.commit()
     # Close and reopen pool so next session gets fresh connections
     db.get_pool().close()
-    db.init_pool(dsn=os.environ['DATABASE_URL'], min_size=1, max_size=4)
+    # Wide enough for the worker-concurrency tests: a pool smaller than the
+    # grading concurrency deadlocks rather than queueing, which surfaces as a
+    # job mysteriously marked 'failed'.
+    db.init_pool(dsn=os.environ['DATABASE_URL'], min_size=1, max_size=12)
 
 
 @pytest.fixture()
