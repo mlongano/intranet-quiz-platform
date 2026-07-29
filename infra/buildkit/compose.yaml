@@ -1,0 +1,55 @@
+# Standalone BuildKit daemon for building QuizParty images on a Proxmox LXC host.
+#
+# This is NOT part of the application stack. It is host build infrastructure:
+# the thing that builds the app, so it must not be managed by the same
+# `docker compose up` that runs the app. Start it from this directory.
+#
+# Why it exists: on an unprivileged LXC the default Docker builder dies on
+# every Dockerfile RUN step with
+#
+#   apparmor_parser: Access denied. You need policy admin privileges
+#
+# because the container cannot load AppArmor profiles. `security_opt:
+# apparmor:unconfined` in the app's compose file fixes *running* containers,
+# but build steps get no such escape. Delegating builds to this privileged
+# daemon sidesteps the limitation entirely.
+#
+# See README.md in this directory for setup and troubleshooting.
+
+services:
+  buildkitd:
+    image: moby/buildkit:latest
+    container_name: buildkitd
+    restart: unless-stopped
+
+    # Privileged is the whole point: this is what lets the daemon set up the
+    # namespaces and AppArmor profiles that the unprivileged LXC cannot.
+    privileged: true
+
+    command: ["--addr", "tcp://0.0.0.0:1235"]
+
+    # Bound to loopback deliberately. BuildKit here speaks plain TCP with no
+    # authentication and builds run privileged, so anything that can reach this
+    # port can execute arbitrary code as root on this host. buildx connects via
+    # tcp://127.0.0.1:1235, so loopback is all that is ever needed.
+    #
+    # If a remote machine must build, do not widen this — tunnel it
+    # (ssh -L 1235:127.0.0.1:1235) or configure BuildKit's mTLS.
+    ports:
+      - "127.0.0.1:1235:1235"
+
+    # Named rather than anonymous so the build cache survives a recreate and is
+    # identifiable in `docker volume ls` instead of a bare hash.
+    volumes:
+      - buildkit_cache:/var/lib/buildkit
+
+    healthcheck:
+      test: ["CMD", "buildctl", "debug", "workers"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  buildkit_cache:
+    name: quizparty_buildkit_cache

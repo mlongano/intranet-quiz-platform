@@ -27,7 +27,7 @@ docker compose -f compose.yaml -f compose-debug.yaml up --build
 docker compose up --build
 ```
 
-`.env` sets `APP_PORT` (host port, default 5002); Flask listens on container port 5001. On the school Proxmox LXC host run `docker buildx use lxc-remote2` first (see `AGENTS.md`).
+`.env` sets `APP_PORT` (host port, default 5002); Flask listens on container port 5001. On the school Proxmox LXC host run `docker buildx use lxc-remote2` first; the daemon behind it is `infra/buildkit/` (see its README).
 
 Everything runs in containers. There is no supported host-side workflow: the
 host has no virtualenv, and `frontend/node_modules` is bind-mounted from the

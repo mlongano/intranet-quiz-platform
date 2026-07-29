@@ -60,14 +60,23 @@ unable to apply apparmor profile
 apparmor_parser: Access denied
 ```
 
-Use the preconfigured remote BuildKit builder before building the debug stack:
+An unprivileged LXC cannot load AppArmor profiles. The `security_opt: apparmor:unconfined` entries in Compose fix *running* containers, but Dockerfile build steps get no such escape. Builds are therefore delegated to a privileged BuildKit daemon, defined in [`infra/buildkit/`](infra/buildkit/).
+
+Start it once per host, then select it:
 
 ```bash
-docker buildx use lxc-remote2
+cd infra/buildkit && docker compose up -d && cd -
+docker buildx use lxc-remote2        # persistent; only needed once per user
+```
+
+Check the builder reports `running` (not `inactive`) before building:
+
+```bash
+docker buildx ls
 docker compose -f compose.yaml -f compose-debug.yaml up --build
 ```
 
-`lxc-remote2` points at a BuildKit daemon started with AppArmor disabled for build containers, avoiding the LXC/AppArmor limitation. The `security_opt: apparmor:unconfined` entries in Compose help runtime containers, but they do not apply to Dockerfile build steps.
+If a build fails with `context deadline exceeded`, the daemon is simply not up — see [`infra/buildkit/README.md`](infra/buildkit/README.md) for that and the other common causes.
 
 #### Production vs development Compose modes
 
