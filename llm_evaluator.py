@@ -4,20 +4,15 @@ import os
 import random
 import re
 import time
-from pathlib import Path
 
 import llm
 
+from services import prompts
 from services.llm_errors import (
     LlmConfigurationError,
     LlmInvalidResponseError,
     LlmTemporaryError,
 )
-
-BASE_DIR = Path(__file__).resolve().parent
-PROMPT_DIR = BASE_DIR / 'prompts'
-DEFAULT_SYSTEM_PROMPT_PATH = PROMPT_DIR / 'open-question-system.md'
-DEFAULT_USER_PROMPT_PATH = PROMPT_DIR / 'open-question-user.md'
 
 
 def evaluate_open_question(question_text, user_answer, correct_answers):
@@ -107,24 +102,11 @@ def _prompt_worker(queue: mp.Queue, model_id: str, prompt: str, system_prompt: s
 
 
 def _load_system_prompt() -> str:
-    return _read_prompt_path(
-        os.getenv('LLM_OPEN_QUESTION_SYSTEM_PROMPT_PATH'),
-        DEFAULT_SYSTEM_PROMPT_PATH,
-    )
+    return prompts.load_active_prompt(prompts.SYSTEM_PROMPT_NAME)[1]
 
 
 def _load_user_prompt_template() -> str:
-    return _read_prompt_path(
-        os.getenv('LLM_OPEN_QUESTION_USER_PROMPT_PATH'),
-        DEFAULT_USER_PROMPT_PATH,
-    )
-
-
-def _read_prompt_path(env_path: str | None, default_path: Path) -> str:
-    path = Path(env_path).expanduser() if env_path else default_path
-    if not path.is_absolute():
-        path = BASE_DIR / path
-    return path.read_text(encoding='utf-8')
+    return prompts.load_active_prompt(prompts.USER_PROMPT_NAME)[1]
 
 
 def _build_prompt(question_text, user_answer, correct_answers):
