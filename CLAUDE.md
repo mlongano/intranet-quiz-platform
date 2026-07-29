@@ -29,24 +29,31 @@ docker compose up --build
 
 `.env` sets `APP_PORT` (host port, default 5002); Flask listens on container port 5001. On the school Proxmox LXC host run `docker buildx use lxc-remote2` first (see `AGENTS.md`).
 
-### Backend only
+Everything runs in containers. There is no supported host-side workflow: the
+host has no virtualenv, and `frontend/node_modules` is bind-mounted from the
+Alpine `frontend` container, so it holds musl binaries that a glibc host cannot
+execute. Run the commands below through `docker compose exec` instead.
+
+### Backend
 
 ```bash
-uv run server.py              # needs DATABASE_URL + JWT_SECRET in .env
-uv run server.py --debug      # Werkzeug reloader
-python -m db.migrate up       # apply migrations
-python -m db.bootstrap_admin  # first-run super-admin
-python -m services.llm_jobs worker   # LLM grading worker loop
+DC="docker compose -f compose.yaml -f compose-debug.yaml"
+$DC exec app python -m db.migrate status      # which migrations are applied
+$DC exec app python -m db.migrate up          # apply pending migrations
+$DC exec app python -m db.bootstrap_admin     # first-run super-admin
 ```
 
-### Frontend only
+The app and worker are already running as their own services; the entrypoint
+applies migrations at startup, so `migrate up` is only for out-of-band runs.
+
+### Frontend
+
+The `frontend` service (Vite HMR on :5173) exists only in `compose-debug.yaml`.
 
 ```bash
-cd frontend
-pnpm install
-pnpm dev      # http://localhost:5173, proxies /api and /images
-pnpm build    # includes tsc type-check; output frontend/dist/ served by Flask
-pnpm lint
+$DC exec frontend sh -c "cd /app && pnpm build"   # tsc -b + vite build → frontend/dist/
+$DC exec frontend sh -c "cd /app && pnpm lint"
+$DC exec frontend sh -c "cd /app && npx vitest run"
 ```
 
 ### Tests
@@ -54,10 +61,13 @@ pnpm lint
 ```bash
 # Docker-safe runner (creates/uses quizparty_test, sets TEST_DATABASE_URL)
 scripts/run_tests_safe.sh tests/
-
-# Host alternative — DB name MUST contain "test" (conftest refuses otherwise)
-DATABASE_URL=postgresql:///quizparty_test uv run pytest tests/
 ```
+
+The runner also repairs stale source in the app container before running: the
+top-level modules (`server.py`, `utils.py`, `llm_evaluator.py`,
+`email_service.py`) are bind-mounted one file at a time, and because Docker
+resolves a single-file mount to an inode, a `git pull` leaves the container
+serving pre-pull code while the working tree looks correct.
 
 Never run bare `pytest` inside the app container: its `DATABASE_URL` is the real DB. Migration `004_block_production_truncate.sql` blocks `TRUNCATE` in non-test databases as a second guard.
 
@@ -136,7 +146,7 @@ React 19 + Vite + TanStack Query + Tailwind v4, SPA served by Flask from `fronte
 ## Environment Variables
 
 Required: `DATABASE_URL`, `JWT_SECRET` (32+ chars; app refuses to start without them), `POSTGRES_PASSWORD` (compose).
-Optional groups (see `env.example`): Google Workspace sync (`GOOGLE_SA_KEY_PATH`, `GOOGLE_DELEGATED_SUBJECT`, `GOOGLE_TEACHER_GROUP`, `GOOGLE_STUDENT_OU_PATHS`…), Google OAuth (`GOOGLE_OAUTH_CLIENT_ID` + `VITE_…`), email (`EMAIL_SENDER`/`EMAIL_PASSWORD`/SMTP), LLM grading (`USE_LLM_EVAL=1`, `LLM_MODEL`, provider API keys, `LLM_TIMEOUT_SECONDS`, `LLM_RETRIES`), backups (`BACKUP_INTERVAL_SECONDS`, `BACKUP_RETENTION_DAYS`).
+Optional groups (see `.env.example`): Google Workspace sync (`GOOGLE_SA_KEY_PATH`, `GOOGLE_DELEGATED_SUBJECT`, `GOOGLE_TEACHER_GROUP`, `GOOGLE_STUDENT_OU_PATHS`…), Google OAuth (`GOOGLE_OAUTH_CLIENT_ID` + `VITE_…`), email (`EMAIL_SENDER`/`EMAIL_PASSWORD`/SMTP), LLM grading (`USE_LLM_EVAL=1`, `LLM_MODEL`, provider API keys, `LLM_TIMEOUT_SECONDS`, `LLM_RETRIES`), backups (`BACKUP_INTERVAL_SECONDS`, `BACKUP_RETENTION_DAYS`).
 
 Secrets live in `.env` and `secrets/` — both gitignored. Never commit them.
 
