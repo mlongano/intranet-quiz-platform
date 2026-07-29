@@ -240,6 +240,20 @@ score_archives (id, teacher_id FK, title, source_session_id FK [SET NULL],
 student_list_snapshots (id, teacher_id FK, title, content JSONB, created_at)
 ```
 
+### LLM endpoints
+
+```sql
+llm_endpoints (id, slug UNIQUE, label,
+               protocol [openai | anthropic | deepseek],
+               base_url, requires_key, models JSONB,
+               enabled, is_default, notes, created_at, updated_at)
+               UNIQUE ((true)) WHERE is_default   -- at most one default
+```
+
+The closed set of services grading may contact. Only `enabled` rows resolve, so
+disabling one revokes it immediately. Teachers will select by id and never
+supply a URL (Fase 4), which is what removes the request-forgery surface.
+
 ### Sync audit
 
 ```sql
@@ -274,7 +288,8 @@ sync_runs (id, started_at, finished_at, triggered_by FK, result JSONB,
 │       ├── 004_block_production_truncate.sql
 │       ├── 005_score_history.sql       # superseded by 006
 │       ├── 006_score_change_sets.sql   # change sets + answer_revision
-│       └── 007_llm_job_provenance.sql  # provider/model/prompt pinned per job
+│       ├── 007_llm_job_provenance.sql  # provider/model/prompt pinned per job
+│       └── 008_llm_endpoints.sql       # admin-managed endpoint allowlist
 │
 ├── prompts/
 │   ├── open-question-system/     # Immutable v<N>-<sha8>.md grading prompts
@@ -284,6 +299,7 @@ sync_runs (id, started_at, finished_at, triggered_by FK, result JSONB,
 │   ├── grading.py                # Pure grading functions
 │   ├── llm_provider.py           # Direct OpenAI/Anthropic SDK transport
 │   ├── llm_config.py             # Resolves provider/model/key (Fase 4 seam)
+│   ├── llm_endpoints.py          # Admin-managed endpoint allowlist + CRUD
 │   ├── llm_errors.py             # Typed LLM failures + validate_llm_env()
 │   ├── llm_parsing.py            # Parses a model's grading response
 │   ├── prompts.py                # Versioned prompt resolution
@@ -377,6 +393,8 @@ POST/:id/reset-password
 **Classes:** GET (list with counts), POST/:id/teachers (assign)
 
 **Sync:** POST /sync (trigger Google Workspace sync), GET /sync/:run_id
+
+**LLM endpoints:** GET (list), POST (create), PUT/:id, DELETE/:id
 
 **Scores:** GET /scores (global view, filterable by teacher/session)
 
@@ -503,6 +521,7 @@ Using the glossary from [`CONTEXT.md`](./CONTEXT.md):
 | LLM grading | `services/llm_jobs.py` | job queue + `worker_loop()` | worker container, teacher regrade endpoint | Deep — the only place stored answers are graded |
 | LLM transport | `services/llm_provider.py` | `evaluate_open_question(...)` | `grade_open_answer()` | Deep — one interface over OpenAI/Anthropic/DeepSeek; returns a result or raises, never a zero |
 | LLM configuration | `services/llm_config.py` | `resolve_llm_config(teacher_id=None)` | worker, `llm-info` endpoint, startup validation | Deep — the only reader of LLM env; Fase 4 swaps its body for per-teacher credentials |
+| LLM endpoints | `services/llm_endpoints.py` | list/create/update/delete + `get_default_endpoint()` | super-admin routes, `llm_config` | Deep — only enabled rows resolve, so disabling revokes immediately |
 | Grading prompts | `services/prompts.py` | `active_prompt_set()`, `load_active_prompt()` | job enqueue, worker fallback | Deep — immutable versioned files; a published prompt that changed fails to load |
 | Snapshot CRUD | `services/snapshots.py` | import/export JSONC ↔ DB | routes/teacher.py | Medium — import does validation + uniqueness |
 | Image management | `services/images.py` | upload/list/delete per snapshot | routes/teacher.py | Deep — manifest JSONB in snapshot row, filesystem behind it |

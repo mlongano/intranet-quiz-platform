@@ -36,14 +36,6 @@ if _missing:
     print("=" * 60)
     sys.exit(1)
 
-from services.llm_errors import LlmConfigurationError, validate_llm_env
-
-try:
-    validate_llm_env()
-except LlmConfigurationError as exc:
-    print(f"✗ ERROR: {exc}")
-    print("=" * 60)
-    sys.exit(1)
 print("=" * 60)
 
 # ── database pool ─────────────────────────────────────────────────────────────
@@ -56,6 +48,17 @@ db.init_pool(
     max_size=8,
 )
 print("✓ Database pool initialized")
+
+# Grading configuration is validated *after* the pool exists: the endpoint may
+# come from the llm_endpoints table, not only from the environment.
+from services.llm_errors import LlmConfigurationError, validate_llm_env
+
+try:
+    validate_llm_env()
+except LlmConfigurationError as exc:
+    print(f"✗ ERROR: {exc}")
+    print("=" * 60)
+    sys.exit(1)
 
 # ── Flask app ─────────────────────────────────────────────────────────────────
 

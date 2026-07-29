@@ -266,6 +266,8 @@ export interface ResultEmailOptions {
 export interface LlmInfoResponse {
   model: string | null;
   provider?: string | null;
+  /** Label of the managed endpoint in use, when grading goes through one. */
+  endpoint?: string | null;
   enabled?: boolean;
   use_llm?: boolean;
 }
@@ -319,3 +321,24 @@ export interface SyncStatus {
     errors?: string[];
   } | null;
 }
+
+/** An endpoint grading may talk to. Managed by a super-admin: teachers will
+ *  select one by id, never by URL, which keeps the reachable set closed. */
+export interface LlmEndpoint {
+  id: number;
+  slug: string;
+  label: string;
+  protocol: 'openai' | 'anthropic' | 'deepseek';
+  base_url: string | null;
+  requires_key: boolean;
+  models: string[];
+  enabled: boolean;
+  is_default: boolean;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export type LlmEndpointPayload = Partial<
+  Omit<LlmEndpoint, 'id' | 'created_at' | 'updated_at'>
+>;

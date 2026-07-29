@@ -1,5 +1,7 @@
 import { apiFetch } from './client';
 import type {
+  LlmEndpoint,
+  LlmEndpointPayload,
   ClassMeta,
   CreateTeacherPayload,
   CreateTeacherResponse,
@@ -72,4 +74,33 @@ export async function getSuperAdminScores(params?: {
   if (params?.session_id) qs.set('session_id', String(params.session_id));
   const q = qs.toString();
   return apiFetch<ScoreEntry[]>(`/super-admin/scores${q ? `?${q}` : ''}`);
+}
+
+// ── LLM endpoints ───────────────────────────────────────────────────────────
+
+export async function listLlmEndpoints(): Promise<LlmEndpoint[]> {
+  return apiFetch<LlmEndpoint[]>('/super-admin/llm-endpoints');
+}
+
+export async function createLlmEndpoint(payload: LlmEndpointPayload): Promise<LlmEndpoint> {
+  return apiFetch<LlmEndpoint>('/super-admin/llm-endpoints', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateLlmEndpoint(
+  id: number,
+  payload: LlmEndpointPayload,
+): Promise<LlmEndpoint> {
+  return apiFetch<LlmEndpoint>(`/super-admin/llm-endpoints/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteLlmEndpoint(id: number): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/super-admin/llm-endpoints/${id}`, {
+    method: 'DELETE',
+  });
 }

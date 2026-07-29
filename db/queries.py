@@ -656,3 +656,71 @@ GET_CHANGE_SET_ENTRIES = """
 FIND_REVERT_OF_CHANGE_SET = """
     SELECT id FROM score_change_sets WHERE reverted_change_id = %s LIMIT 1
 """
+
+# ── LLM endpoints (administrator-managed allowlist) ──────────────────────────
+
+LLM_ENDPOINT_COLUMNS = """
+    id, slug, label, protocol, base_url, requires_key, models,
+    enabled, is_default, notes, created_at, updated_at
+"""
+
+LIST_LLM_ENDPOINTS = f"""
+    SELECT {LLM_ENDPOINT_COLUMNS}
+    FROM llm_endpoints
+    ORDER BY is_default DESC, enabled DESC, label
+"""
+
+GET_LLM_ENDPOINT = f"""
+    SELECT {LLM_ENDPOINT_COLUMNS}
+    FROM llm_endpoints
+    WHERE id = %s
+"""
+
+# Resolution for grading: only an enabled row may ever be used.
+GET_DEFAULT_LLM_ENDPOINT = f"""
+    SELECT {LLM_ENDPOINT_COLUMNS}
+    FROM llm_endpoints
+    WHERE is_default AND enabled
+"""
+
+GET_ENABLED_LLM_ENDPOINT = f"""
+    SELECT {LLM_ENDPOINT_COLUMNS}
+    FROM llm_endpoints
+    WHERE id = %s AND enabled
+"""
+
+INSERT_LLM_ENDPOINT = f"""
+    INSERT INTO llm_endpoints
+        (slug, label, protocol, base_url, requires_key, models, enabled, is_default, notes)
+    VALUES
+        (%(slug)s, %(label)s, %(protocol)s, %(base_url)s, %(requires_key)s,
+         %(models)s, %(enabled)s, %(is_default)s, %(notes)s)
+    RETURNING {LLM_ENDPOINT_COLUMNS}
+"""
+
+UPDATE_LLM_ENDPOINT = f"""
+    UPDATE llm_endpoints
+    SET slug = %(slug)s,
+        label = %(label)s,
+        protocol = %(protocol)s,
+        base_url = %(base_url)s,
+        requires_key = %(requires_key)s,
+        models = %(models)s,
+        enabled = %(enabled)s,
+        is_default = %(is_default)s,
+        notes = %(notes)s,
+        updated_at = now()
+    WHERE id = %(id)s
+    RETURNING {LLM_ENDPOINT_COLUMNS}
+"""
+
+# Clearing first keeps the single-default index satisfied within one
+# transaction; Postgres checks uniqueness per statement, not per row.
+CLEAR_DEFAULT_LLM_ENDPOINT = """
+    UPDATE llm_endpoints SET is_default = false, updated_at = now()
+    WHERE is_default AND id IS DISTINCT FROM %s
+"""
+
+DELETE_LLM_ENDPOINT = """
+    DELETE FROM llm_endpoints WHERE id = %s RETURNING id
+"""

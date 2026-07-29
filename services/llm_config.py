@@ -32,7 +32,7 @@ DEFAULT_PROVIDER = 'openai'
 LOCAL_ENDPOINT_PLACEHOLDER_KEY = 'no-key-required'
 
 
-def resolve_llm_config(teacher_id: int | None = None) -> dict:
+def resolve_llm_config(teacher_id: int | None = None, conn=None) -> dict:
     """Return {provider, model, api_key, base_url, params} for a grading call.
 
     *teacher_id* is accepted and ignored: it marks the call sites Fase 4 will
@@ -42,34 +42,44 @@ def resolve_llm_config(teacher_id: int | None = None) -> dict:
     Raises LlmConfigurationError when the setup is incomplete — the worker turns
     that into a preserved `pending`, never a zero.
     """
-    provider = (os.getenv('LLM_PROVIDER') or DEFAULT_PROVIDER).strip().lower()
+    endpoint = _default_endpoint(conn)
+
+    if endpoint is not None:
+        provider = endpoint['protocol']
+        base_url = endpoint['base_url']
+        requires_key = endpoint['requires_key']
+    else:
+        provider = (os.getenv('LLM_PROVIDER') or DEFAULT_PROVIDER).strip().lower()
+        base_url = (os.getenv('LLM_BASE_URL') or '').strip() or None
+        # Without a managed endpoint, a custom address is the only signal that
+        # this is a LAN server which may not authenticate.
+        requires_key = base_url is None
+
     if provider not in SUPPORTED_PROVIDERS:
         raise LlmConfigurationError(
-            f"LLM_PROVIDER={provider!r} is not supported. "
+            f"LLM provider {provider!r} is not supported. "
             f"Choose one of: {', '.join(SUPPORTED_PROVIDERS)}."
         )
 
-    model = (os.getenv('LLM_MODEL') or '').strip()
+    model = _resolve_model(endpoint)
     if not model:
         raise LlmConfigurationError("LLM_MODEL is not set.")
-
-    base_url = (os.getenv('LLM_BASE_URL') or '').strip() or None
 
     # A key is what the hosted providers authenticate with, so it is required
     # when talking to them. A LAN endpoint (vLLM, llama.cpp, LiteLLM) commonly
     # has no auth at all; demanding a key there would only teach admins to put
     # junk in a variable named API_KEY. Both SDKs still need *some* string, so a
-    # placeholder is sent. Set the key anyway if the LAN endpoint checks it.
+    # placeholder is sent. Set the key anyway if the endpoint checks it.
     key_env = PROVIDER_KEY_ENV[provider]
     api_key = (os.getenv(key_env) or '').strip()
     if not api_key:
-        if base_url is None:
+        if requires_key:
             raise LlmConfigurationError(
                 f"{key_env} is not set (required for provider {provider!r})."
             )
         api_key = LOCAL_ENDPOINT_PLACEHOLDER_KEY
 
-    return {
+    config = {
         'provider': provider,
         'model': model,
         'api_key': api_key,
@@ -79,6 +89,38 @@ def resolve_llm_config(teacher_id: int | None = None) -> dict:
             'retries': int(os.getenv('LLM_RETRIES', '0')),
         },
     }
+    if endpoint is not None:
+        # Recorded as provenance so a grade can name the endpoint that produced
+        # it. The URL is still re-resolved from the table on every call.
+        config['endpoint_id'] = endpoint['id']
+        config['endpoint_slug'] = endpoint['slug']
+    return config
+
+
+def _default_endpoint(conn=None) -> dict | None:
+    """The managed endpoint grading should use, if the table names one.
+
+    Returns None when the table is empty, unreachable, or has no enabled
+    default — the caller then falls back to the environment, so an
+    installation that never populates it keeps working unchanged.
+    """
+    from services.llm_endpoints import get_default_endpoint
+
+    return get_default_endpoint(conn)
+
+
+def _resolve_model(endpoint: dict | None) -> str:
+    """LLM_MODEL wins; a single-model endpoint supplies its own default.
+
+    An endpoint that lists exactly one model needs no further configuration,
+    which is the common case for a LAN server serving one weight.
+    """
+    model = (os.getenv('LLM_MODEL') or '').strip()
+    if model:
+        return model
+    if endpoint and len(endpoint.get('models') or []) == 1:
+        return endpoint['models'][0]
+    return ''
 
 
 def validate_llm_env() -> None:
@@ -92,17 +134,37 @@ def validate_llm_env() -> None:
     resolve_llm_config()
 
 
+_DISABLED_INFO = {
+    'enabled': False, 'use_llm': False,
+    'provider': None, 'model': None, 'endpoint': None,
+}
+
+
 def public_llm_info() -> dict:
-    """Non-secret description of the active configuration, for the teacher UI."""
+    """Non-secret description of the active configuration, for the teacher UI.
+
+    Names the managed endpoint by its label when one is in use, so a teacher
+    can tell school-server grading from a hosted provider. Never returns the
+    API key or the endpoint address.
+    """
     if not llm_enabled():
-        return {'enabled': False, 'use_llm': False, 'provider': None, 'model': None}
+        return dict(_DISABLED_INFO)
     try:
         config = resolve_llm_config()
     except LlmConfigurationError:
-        return {'enabled': False, 'use_llm': False, 'provider': None, 'model': None}
+        return dict(_DISABLED_INFO)
+
+    endpoint_label = None
+    if config.get('endpoint_id'):
+        from services.llm_endpoints import get_default_endpoint
+
+        endpoint = get_default_endpoint()
+        endpoint_label = endpoint['label'] if endpoint else None
+
     return {
         'enabled': True,
         'use_llm': True,
         'provider': config['provider'],
         'model': config['model'],
+        'endpoint': endpoint_label,
     }

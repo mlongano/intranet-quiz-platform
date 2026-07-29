@@ -88,6 +88,7 @@ services/
   grading.py             # PURE: grade(), grade_open_answer(), format_detailed_answers()
   llm_provider.py        # Direct OpenAI/Anthropic SDK calls (deepseek = OpenAI protocol)
   llm_config.py          # Resolves provider/model/key — the seam Fase 4 replaces
+  llm_endpoints.py       # Admin-managed allowlist of endpoints grading may call
   llm_errors.py          # Typed LLM failures + validate_llm_env()
   llm_parsing.py         # Parses/normalises a model's grading response
   prompts.py             # Immutable versioned prompts, prompts/<name>/v<N>-<sha8>.md
@@ -127,7 +128,9 @@ Three JWT roles: `teacher`, `super_admin` (same login flow, elevated role), `stu
 
 8. **Session close has a grace window.** `save-answer` needs `status='active'`; `submit` also accepts `closed`, so a student caught by a manual close can still hand in. Both refuse past `closes_at + QUIZ_GRACE_SECONDS` (default 3600) with 409 `SESSION_CLOSED`.
 
-9. **A grading job is pinned at enqueue time.** Provider, model, `prompt_version` and `prompt_snapshot` are resolved when the job is created and stored on the `llm_grading_jobs` row; the worker reads them from there, never from the environment or the filesystem. Editing a prompt file or changing `LLM_MODEL` therefore cannot alter a job already queued. Credentials are the exception — they are secrets, always read live, never written to a job. Every graded answer records `llm_provider`/`llm_model`/`prompt_version` so a changed score can be explained. Published prompts (`prompts/<name>/v<N>-<sha8>.md`) are immutable: `services/prompts.py` refuses to load one whose content no longer matches the hash in its filename.
+9. **Endpoints are an admin-managed allowlist.** `llm_endpoints` holds every service grading may call; the row marked `is_default` (enforced unique by a partial index) wins over `LLM_BASE_URL`/`LLM_PROVIDER`, and an empty table falls back to the environment. Only `enabled` rows ever resolve, so disabling one revokes it immediately. Teachers will select by id and never supply a URL (Fase 4) — that is what keeps the reachable set closed, so `base_url` must never become a free-text teacher field. Resolution accepts an optional `conn`: it runs inside the submission transaction, and taking a second pooled connection there deadlocks under concurrent submissions.
+
+10. **A grading job is pinned at enqueue time.** Provider, model, `prompt_version` and `prompt_snapshot` are resolved when the job is created and stored on the `llm_grading_jobs` row; the worker reads them from there, never from the environment or the filesystem. Editing a prompt file or changing `LLM_MODEL` therefore cannot alter a job already queued. Credentials are the exception — they are secrets, always read live, never written to a job. Every graded answer records `llm_provider`/`llm_model`/`prompt_version` so a changed score can be explained. Published prompts (`prompts/<name>/v<N>-<sha8>.md`) are immutable: `services/prompts.py` refuses to load one whose content no longer matches the hash in its filename.
 
 ### Data model (PostgreSQL — see `db/migrations/`)
 

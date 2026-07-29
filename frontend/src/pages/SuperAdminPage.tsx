@@ -7,6 +7,7 @@ import {
   triggerSync, getSyncStatus, SyncStatus,
 } from '../api';
 import { useConfirmModal } from '../lib/useConfirmModal';
+import LlmEndpointsTab from '../components/LlmEndpointsTab';
 
 function TeachersTab() {
   const queryClient = useQueryClient();
@@ -180,13 +181,19 @@ function SyncTab() {
   );
 }
 
+const TAB_LABELS = {
+  teachers: 'Docenti',
+  sync: 'Sincronizzazione',
+  llm: 'Endpoint LLM',
+} as const;
+
 function SuperAdminPage() {
-  const [tab, setTab] = useState<'teachers' | 'sync'>('teachers');
+  const [tab, setTab] = useState<keyof typeof TAB_LABELS>('teachers');
 
   return (
     <TeacherLayout pageTitle="Amministrazione">
       <div className="flex gap-2 mb-6 border-b border-outline-variant/30">
-        {(['teachers', 'sync'] as const).map(t => (
+        {(Object.keys(TAB_LABELS) as Array<keyof typeof TAB_LABELS>).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -194,12 +201,13 @@ function SuperAdminPage() {
               tab === t ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant hover:text-on-surface'
             }`}
           >
-            {t === 'teachers' ? 'Docenti' : 'Sincronizzazione'}
+            {TAB_LABELS[t]}
           </button>
         ))}
       </div>
       {tab === 'teachers' && <TeachersTab />}
       {tab === 'sync' && <SyncTab />}
+      {tab === 'llm' && <LlmEndpointsTab />}
     </TeacherLayout>
   );
 }

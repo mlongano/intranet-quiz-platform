@@ -39,7 +39,10 @@ def create_llm_job(
     worker reads them from the job, so editing a prompt file or changing
     LLM_MODEL after enqueueing cannot alter a job already in the queue.
     """
-    prov = provenance if provenance is not None else resolve_job_provenance()
+    # Reuse the caller's connection: this runs inside the transaction that
+    # records a submission, and taking a second connection from the pool while
+    # that one is held deadlocks under concurrent submissions.
+    prov = provenance if provenance is not None else resolve_job_provenance(conn)
     snapshot = prov.get('prompt_snapshot')
     params = prov.get('params')
     row = conn.execute(Q.INSERT_LLM_GRADING_JOB, {
@@ -57,8 +60,11 @@ def create_llm_job(
     return _job_row_to_dict(row)
 
 
-def resolve_job_provenance() -> dict:
+def resolve_job_provenance(conn=None) -> dict:
     """Resolve the provider, model and prompt texts to pin onto a new job.
+
+    *conn* is the caller's connection when it already holds one, so this never
+    acquires a second from the pool.
 
     Returns empty provenance when LLM grading is disabled or the prompts cannot
     be read: enqueueing must not fail here. The worker will raise the
@@ -73,7 +79,7 @@ def resolve_job_provenance() -> dict:
         from services import prompts
         from services.llm_config import resolve_llm_config
 
-        config = resolve_llm_config()
+        config = resolve_llm_config(conn=conn)
         prompt_set = prompts.active_prompt_set()
     except Exception as exc:  # noqa: BLE001 - enqueueing must stay non-fatal
         print(f"[LLM_JOBS] Could not resolve grading provenance: {exc}", flush=True)
@@ -587,17 +593,19 @@ def main() -> None:
     parser.add_argument('--poll-seconds', type=float, default=2.0)
     args = parser.parse_args()
 
-    try:
-        validate_llm_env()
-    except LlmConfigurationError as exc:
-        print(f"[LLM_JOBS] ERROR: {exc}", flush=True)
-        raise SystemExit(1)
-
     db.init_pool(
         dsn=os.environ.get('DATABASE_URL', 'postgresql:///quizparty'),
         min_size=1,
         max_size=4,
     )
+
+    # After the pool: the grading endpoint may come from the llm_endpoints
+    # table rather than from the environment.
+    try:
+        validate_llm_env()
+    except LlmConfigurationError as exc:
+        print(f"[LLM_JOBS] ERROR: {exc}", flush=True)
+        raise SystemExit(1)
 
     if args.command == 'worker':
         worker_loop(poll_seconds=args.poll_seconds)

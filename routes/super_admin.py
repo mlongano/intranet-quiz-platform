@@ -11,6 +11,10 @@ POST /api/super-admin/classes/<id>/teachers
 POST /api/super-admin/sync
 GET  /api/super-admin/sync/<run_id>
 GET  /api/super-admin/scores
+GET  /api/super-admin/llm-endpoints
+POST /api/super-admin/llm-endpoints
+PUT  /api/super-admin/llm-endpoints/<id>
+DELETE /api/super-admin/llm-endpoints/<id>
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ import db
 from db import queries as Q
 from auth.decorators import require_super_admin
 from auth.jwt_utils import encode_teacher_token
+from services import llm_endpoints
 
 super_admin_bp = Blueprint('super_admin', __name__, url_prefix='/api/super-admin')
 
@@ -205,6 +210,40 @@ def assign_teacher_to_class(class_id: int):
     with db.get_conn() as conn:
         conn.execute(Q.INSERT_CLASS_TEACHER, (class_id, teacher_id))
         conn.commit()
+    return jsonify({'ok': True}), 200
+
+
+# ── LLM endpoints ─────────────────────────────────────────────────────────────
+#
+# The allowlist of endpoints grading may reach. Teachers will select from it by
+# id (Fase 4) and never supply a URL, which is what keeps the set of reachable
+# hosts closed. Managing it here rather than in .env means an endpoint can be
+# added or revoked without a restart.
+
+@super_admin_bp.get('/llm-endpoints')
+@require_super_admin
+def list_llm_endpoints():
+    return jsonify(llm_endpoints.list_endpoints()), 200
+
+
+@super_admin_bp.post('/llm-endpoints')
+@require_super_admin
+def create_llm_endpoint():
+    data = request.get_json(silent=True) or {}
+    return jsonify(llm_endpoints.create_endpoint(data)), 201
+
+
+@super_admin_bp.put('/llm-endpoints/<int:endpoint_id>')
+@require_super_admin
+def update_llm_endpoint(endpoint_id: int):
+    data = request.get_json(silent=True) or {}
+    return jsonify(llm_endpoints.update_endpoint(endpoint_id, data)), 200
+
+
+@super_admin_bp.delete('/llm-endpoints/<int:endpoint_id>')
+@require_super_admin
+def delete_llm_endpoint(endpoint_id: int):
+    llm_endpoints.delete_endpoint(endpoint_id)
     return jsonify({'ok': True}), 200
 
 

@@ -132,6 +132,7 @@ def test_public_info_never_includes_the_key_or_endpoint(monkeypatch):
     assert info == {
         'enabled': True, 'use_llm': True,
         'provider': 'openai', 'model': 'gpt-4o-mini',
+        'endpoint': None,   # no managed endpoint in use, only env config
     }
     assert 'sk-real' not in str(info)
     assert '10.0.0.5' not in str(info)
