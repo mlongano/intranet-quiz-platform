@@ -124,24 +124,15 @@ The entrypoint runs `db.migrate up` automatically on every start, so new migrati
 
 ## Migrating from v2.6.0 (single-tenant)
 
-If you have existing data from `intranet-quiz-manager` v2.6.0, run the migration script **after** the stack is up:
+Not supported any more — the migration is finished and the tooling has been
+removed. `scripts/migrate_v260_to_platform.py`, `scripts/recover_legacy_quizparty.py`
+and the `banks/` JSONC tree were deleted once the imported data was verified in
+PostgreSQL, which is now the only source of truth.
 
-```bash
-docker compose exec app python scripts/migrate_v260_to_platform.py \
-  --source /path/to/intranet-quiz-manager \
-  --owner-email mauro@school.it \
-  --owner-name "Mauro Longano"
-```
-
-> The source path must be accessible inside the container. Mount it as a volume in `compose.yaml` or copy the data into the container first, or run the script directly on the host with bare-metal setup.
-
-The script:
-- Creates the teacher as `super_admin` with a printed temp password
-- Migrates students, classes, question bank snapshots, scores, archives
-- Does **not** migrate in-flight quiz plans (stop the old server before running)
-- Is forward-only; the source directory is never modified
-
-Pass `--discard-in-flight` to proceed even if `quizzes/` is non-empty.
+If a v2.6.0 import is ever needed again, recover the scripts from git history
+(they were last present at tag/commit `92be50d`) rather than rewriting them. The
+legacy single-tenant application itself lives on at
+[`mlongano/intranet-quiz-manager`](https://github.com/mlongano/intranet-quiz-manager).
 
 ---
 

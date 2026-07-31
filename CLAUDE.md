@@ -169,7 +169,7 @@ Secrets live in `.env` and `secrets/` — both gitignored. Never commit them.
 3. **Each score entry is self-contained**: every detailed answer embeds a `question_snapshot` deep copy. Regrade prefers the stored snapshot; recalculate uses the current Quiz version. Vocabulary in `docs/CONTEXT.md` §Scoring.
 4. **Student identity** is the lowercased school email, provisioned by Workspace sync — students have no passwords.
 5. **API response shapes are a contract** with `frontend/src/api.ts` — keep them compatible or update both sides.
-6. **`banks/`, `scripts/migrate_v260_to_platform.py`, `scripts/recover_legacy_quizparty.py`** are legacy v2.6.0 migration/recovery tooling, not part of the running app.
+6. **No legacy migration tooling remains.** The v2.6.0 import/recovery scripts, the `banks/` JSONC tree and the `data/` prototype schema were deleted once the migration was finished and verified — PostgreSQL is the only source of truth. The legacy app is maintained separately at `mlongano/intranet-quiz-manager`; recover history from git if a v2.6.0 import is ever needed again.
 
 ## Testing
 

@@ -33,7 +33,7 @@ docker compose exec frontend sh -c "cd /app && pnpm build"
 Backend:
 
 ```bash
-scripts/run_tests_safe.sh tests/ -v --ignore=tests/test_migration.py
+scripts/run_tests_safe.sh tests/ -v
 ```
 
 Never run pytest directly in the `app` container against the default `DATABASE_URL`. The test fixtures refuse non-test database names and the production schema also blocks accidental `TRUNCATE`, but the safe runner is the supported command.
@@ -307,23 +307,18 @@ GitHub keeps unreachable objects reachable by SHA, forks and clones keep their
 own copies, and mirrors may have indexed it. Rotation is the remediation;
 scrubbing history is cleanup afterwards.
 
-## Legacy image paths
+## Image paths
 
-Images are stored at `images/{teacher_id}/{snapshot_id}/{file}`. Rows created
-before the multi-tenant migration may still reference
-`images/{snapshot_id}/{file}`, which `serve_images()` resolves by scanning
-every teacher directory — meaning one teacher's image can be served out of
-another's folder.
+Images are stored at `images/{teacher_id}/{snapshot_id}/{file}` and
+`serve_images()` resolves that form only.
 
-Check whether any such reference is left, then remove that fallback:
-
-```bash
-docker compose exec -T app python scripts/check_legacy_image_paths.py
-```
-
-Exit code 0 (no findings) means the fallback in `server.py` can be deleted.
-Otherwise rewrite the reported paths to their full
-`{teacher_id}/{snapshot_id}/{file}` form first.
+Historical note: rows written before the multi-tenant migration referenced
+`images/{snapshot_id}/{file}`, and the route used to resolve those by scanning
+every teacher's directory — which meant one teacher's image could be served out
+of another's folder. Those rows have been rewritten to the full form and the
+cross-tenant fallback is gone. A path missing its `teacher_id` segment is now a
+404, not a scan, so **never reintroduce a fallback that searches other teachers'
+directories** — that is a multi-tenant isolation hole, not a convenience.
 
 ## Teacher Login Rate Limit
 

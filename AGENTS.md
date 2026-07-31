@@ -285,7 +285,7 @@ docker compose exec app .venv/bin/pip install pytest -q
 docker compose exec \
   -e DATABASE_URL="postgresql://quizparty:$(grep -m1 '^POSTGRES_PASSWORD=' .env | cut -d= -f2-)@db:5432/quizparty_test" \
   -e JWT_SECRET='test-secret-not-for-production' \
-  app .venv/bin/pytest tests/ -v -k "test_name" --ignore=tests/test_migration.py
+  app .venv/bin/pytest tests/ -v -k "test_name"
 ```
 
 ### Frontend (vitest)
