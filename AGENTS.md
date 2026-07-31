@@ -280,9 +280,10 @@ Follow **vertical tracer bullet TDD**: one test at a time, minimal code to pass,
 # Inside Docker (install pytest once):
 docker compose exec app .venv/bin/pip install pytest -q
 
-# Run one test:
+# Run one test. Never paste the real password here — this file is public.
+# Read it from .env so the command carries no secret:
 docker compose exec \
-  -e DATABASE_URL='postgresql://quizparty:quizparty_dev_2026@db:5432/quizparty_test' \
+  -e DATABASE_URL="postgresql://quizparty:$(grep -m1 '^POSTGRES_PASSWORD=' .env | cut -d= -f2-)@db:5432/quizparty_test" \
   -e JWT_SECRET='test-secret-not-for-production' \
   app .venv/bin/pytest tests/ -v -k "test_name" --ignore=tests/test_migration.py
 ```

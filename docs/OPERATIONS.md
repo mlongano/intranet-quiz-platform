@@ -240,6 +240,73 @@ FROM teacher_llm_credentials c JOIN teachers t ON t.id = c.teacher_id;
 `key_version` is the fingerprint of the master key that encrypted each row; rows
 whose `key_version` differs from the current key are the ones to fix.
 
+## Rotating the database password
+
+`POSTGRES_PASSWORD` is read by the Postgres image **only when the data volume is
+first created**. Editing `.env` afterwards changes what the app *sends*, not what
+the server *accepts* — so a naive rotation locks the app out of its own database
+while leaving the old password valid. Change both, in this order:
+
+```bash
+# 1. pick a new value and set it in .env (POSTGRES_PASSWORD=...).
+#    Use hex, not base64: compose builds DATABASE_URL by interpolating this
+#    value into a URL, and base64 can emit '/' or '+', which corrupts the DSN.
+openssl rand -hex 32
+
+# 2. change it in the server, reading the new value from .env so it is never
+#    typed into a shell history
+docker compose exec -T db psql -U quizparty -d quizparty -c \
+  "ALTER USER quizparty PASSWORD '$(grep -m1 '^POSTGRES_PASSWORD=' .env | cut -d= -f2-)';"
+
+# 3. recreate the app and worker so they pick up the new .env.
+#    `restart` does NOT re-read env_file — it must be `up -d`.
+docker compose up -d --force-recreate app worker
+```
+
+Verify the old password is dead (this must print `rejected`) — run it from the
+`app` container, not from `db`: `pg_hba.conf` has `host all all 127.0.0.1 trust`,
+so *any* password is accepted on the database container's own loopback and a test
+run there proves nothing.
+
+```bash
+docker compose exec -T -e PGPASSWORD='<old>' app python -c "
+import psycopg, os
+try:
+    psycopg.connect('postgresql://quizparty@db:5432/quizparty',
+                    password=os.environ['PGPASSWORD'], connect_timeout=5).close()
+    print('ACCEPTED — rotation did not take')
+except Exception:
+    print('rejected')"
+```
+
+Postgres publishes no host port (only `app` does), so the database is reachable
+only from inside the compose network. That limits the blast radius of a leaked
+password to someone who already has host or container access — it does not make
+rotation optional.
+
+## Secrets never belong in the repository
+
+`.env` and `secrets/` are gitignored; `.env.example` is a **template** and must
+contain only placeholders. The same applies to documentation: a working command
+pasted into `AGENTS.md`, `README.md` or a runbook is as public as the code. Write
+commands so they read the value at run time instead:
+
+```bash
+-e DATABASE_URL="postgresql://quizparty:$(grep -m1 '^POSTGRES_PASSWORD=' .env | cut -d= -f2-)@db:5432/quizparty_test"
+```
+
+To check the tree before pushing:
+
+```bash
+git ls-files -z | xargs -0 grep -nEI '(PASSWORD|SECRET|API_KEY|TOKEN|ENCRYPTION_KEY)[[:space:]]*[=:][[:space:]]*[^[:space:]#]{8,}'
+```
+
+Anything that reaches a public remote must be treated as compromised and
+rotated. Deleting the line, or rewriting history, does not undo the disclosure:
+GitHub keeps unreachable objects reachable by SHA, forks and clones keep their
+own copies, and mirrors may have indexed it. Rotation is the remediation;
+scrubbing history is cleanup afterwards.
+
 ## Legacy image paths
 
 Images are stored at `images/{teacher_id}/{snapshot_id}/{file}`. Rows created
