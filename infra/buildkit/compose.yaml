@@ -44,7 +44,7 @@ services:
       - buildkit_cache:/var/lib/buildkit
 
     healthcheck:
-      test: ["CMD", "buildctl", "debug", "workers"]
+      test: ["CMD", "buildctl", "--addr", "tcp://127.0.0.1:1235", "debug", "workers"]
       interval: 30s
       timeout: 5s
       retries: 3
