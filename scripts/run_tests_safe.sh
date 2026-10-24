@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Safe pytest runner for the Docker debug stack.
+# Safe pytest runner. Uses the debug stack's app container when it is
+# running, and a one-off debug container otherwise (e.g. on production).
 #
 # Never run pytest directly inside the app container: its DATABASE_URL points at
 # the real application database. This script creates/uses quizparty_test and
@@ -36,8 +37,44 @@ mapfile -t ROOT_MODULES < <(
     | sed -E 's#^\s*-\s*\./##; s#:$##' | sort -u
 )
 
+# Is the running app the debug variant? Only that one bind-mounts the source
+# and has pytest. Production bakes the source into the image, so comparing its
+# files against the working tree would always look "stale" — and the repair
+# below would then replace production with debug containers.
+app_is_debug_variant() {
+  local cid
+  cid="$("${COMPOSE[@]}" ps -q --status running app 2>/dev/null || true)"
+  [[ -n "$cid" ]] || return 1
+  docker inspect -f '{{range .Mounts}}{{if eq .Destination "/app/services"}}debug{{end}}{{end}}' "$cid" \
+    2>/dev/null | grep -qx debug
+}
+
+# Create the test DB if it does not exist. Do not drop or recreate anything here.
+if ! "${COMPOSE[@]}" exec -T db psql -U quizparty -d postgres -Atc \
+  "SELECT 1 FROM pg_database WHERE datname = '$TEST_DB'" | grep -qx '1'; then
+  echo "Creating isolated test database '$TEST_DB'..."
+  "${COMPOSE[@]}" exec -T db createdb -U quizparty "$TEST_DB"
+fi
+
+if ! app_is_debug_variant; then
+  # Production stack (or no app at all): never touch the running services. Run
+  # in a throwaway debug container instead — fresh bind mounts, so no stale
+  # source either. DATABASE_URL is pointed at the test database too, because
+  # the entrypoint runs `migrate up` against it before pytest starts: left at
+  # its default, a test run would apply unreleased migrations to production.
+  # Exported rather than passed as -e NAME=value so the password never appears
+  # in the process list.
+  echo "app is not the debug variant: running pytest in a one-off container."
+  POSTGRES_PASSWORD="$(grep -m1 '^POSTGRES_PASSWORD=' .env | cut -d= -f2-)"
+  export DATABASE_URL="postgresql://quizparty:${POSTGRES_PASSWORD}@db:5432/${TEST_DB}"
+  export TEST_DATABASE_URL="$DATABASE_URL"
+  exec "${COMPOSE[@]}" run --rm --no-deps -T \
+    -e DATABASE_URL -e TEST_DATABASE_URL \
+    app pytest "$@"
+fi
+
 stale=()
-if "${COMPOSE[@]}" ps --status running --services 2>/dev/null | grep -qx app; then
+if app_is_debug_variant; then
   for f in "${ROOT_MODULES[@]}"; do
     # A module may have been deleted on the host but still exist in the
     # container, or vice versa; either way the container is out of date.
@@ -71,13 +108,6 @@ if (( ${#stale[@]} > 0 )); then
     echo "app container never became ready (pytest unavailable after 180s)." >&2
     exit 1
   fi
-fi
-
-# Create the test DB if it does not exist. Do not drop or recreate anything here.
-if ! "${COMPOSE[@]}" exec -T db psql -U quizparty -d postgres -Atc \
-  "SELECT 1 FROM pg_database WHERE datname = '$TEST_DB'" | grep -qx '1'; then
-  echo "Creating isolated test database '$TEST_DB'..."
-  "${COMPOSE[@]}" exec -T db createdb -U quizparty "$TEST_DB"
 fi
 
 echo "Running pytest against isolated database '$TEST_DB'..."

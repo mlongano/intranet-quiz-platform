@@ -63,6 +63,9 @@ $DC exec frontend sh -c "cd /app && npx vitest run"
 scripts/run_tests_safe.sh tests/
 ```
 
+On the production stack it runs pytest in a one-off debug container and never
+touches the running services; on the debug stack it execs into `app`.
+
 The runner also repairs stale source in the app container before running: the
 top-level modules (`server.py`, `utils.py`, `email_service.py`) are
 bind-mounted one file at a time, and because Docker
