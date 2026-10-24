@@ -219,11 +219,22 @@ function SessionScoresPage() {
                 <span className="text-sm text-on-surface-variant">LLM regrade:</span>
                 <span className="bg-secondary/10 border border-secondary/30 text-secondary text-xs px-2 py-0.5 rounded">
                   {llmInfo?.model ?? '...'}
-                  {llmInfo?.provider ? ` (${llmInfo.provider})` : ''}
+                  {llmInfo?.endpoint ? ` (${llmInfo.endpoint})` : ''}
                 </span>
-                <span className="text-xs text-on-surface-variant">
-                  ({llmEnabled ? 'abilitato' : 'disabilitato'})
-                </span>
+                {llmInfo.endpoint && !llmInfo.key_configured ? (
+                  // Grading uses only the teacher's own key: say why it is off
+                  // and where to fix it, rather than a bare "disabled".
+                  <button
+                    onClick={() => navigate('/teacher/llm-settings')}
+                    className="text-xs text-error underline hover:opacity-80"
+                  >
+                    manca la tua chiave: impostala
+                  </button>
+                ) : (
+                  <span className="text-xs text-on-surface-variant">
+                    ({llmEnabled ? 'abilitato' : 'disabilitato'})
+                  </span>
+                )}
               </>
             )}
             <RegradePanel

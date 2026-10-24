@@ -266,10 +266,15 @@ export interface ResultEmailOptions {
 export interface LlmInfoResponse {
   model: string | null;
   provider?: string | null;
-  /** Label of the managed endpoint in use, when grading goes through one. */
+  /** Label of the endpoint this teacher's grading goes to. */
   endpoint?: string | null;
+  /** True only when grading would actually run: an endpoint resolves and the
+   *  teacher has a usable key for it. */
   enabled?: boolean;
   use_llm?: boolean;
+  /** Whether the teacher has a key for that endpoint, so the UI can say why
+   *  grading is off. */
+  key_configured?: boolean;
 }
 
 export interface LlmJobStatus {
@@ -330,28 +335,26 @@ export interface LlmKeyStatus {
   updated_at?: string | null;
 }
 
-/** An endpoint grading may talk to. Managed by a super-admin: teachers will
- *  select one by id, never by URL, which keeps the reachable set closed. */
+/** An endpoint grading may talk to. A super-admin manages only this list —
+ *  never keys: each teacher authenticates with their own key per endpoint.
+ *  Teachers select an endpoint by id, never by URL. */
 export interface LlmEndpoint {
   id: number;
   slug: string;
   label: string;
   protocol: 'openai' | 'anthropic' | 'deepseek';
   base_url: string | null;
-  requires_key: boolean;
+  /** Models this endpoint may be asked for; the first is its default. */
   models: string[];
   enabled: boolean;
   is_default: boolean;
   notes: string | null;
   created_at: string | null;
   updated_at: string | null;
-  /** The key this endpoint authenticates with. It is sent to this endpoint
-   *  and nowhere else; set and cleared through its own write-only call. */
-  api_key: LlmKeyStatus;
 }
 
 export type LlmEndpointPayload = Partial<
-  Omit<LlmEndpoint, 'id' | 'created_at' | 'updated_at' | 'api_key'>
+  Omit<LlmEndpoint, 'id' | 'created_at' | 'updated_at'>
 >;
 
 /** A teacher's own LLM configuration. The API key is never returned — only
@@ -360,15 +363,18 @@ export interface TeacherLlmSettings {
   endpoint_id: number | null;
   endpoint_label: string | null;
   model: string | null;
+  /** The endpoint grading actually uses for this teacher: their selection
+   *  while it is enabled, otherwise the default. */
+  effective_endpoint_id: number | null;
   available_endpoints: Array<{
     id: number;
     label: string;
     protocol: string;
-    requires_key: boolean;
     models: string[];
     is_default: boolean;
+    /** The teacher's own key for this endpoint — the only key ever sent there. */
+    key: LlmKeyStatus;
   }>;
-  key: LlmKeyStatus;
   encryption_available: boolean;
 }
 

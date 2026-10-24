@@ -13,7 +13,7 @@ import json
 
 from db import queries as Q
 from services import llm_jobs
-from tests.conftest import make_session, make_snapshot, make_teacher
+from tests.conftest import make_session, make_snapshot, make_teacher, grant_grading_access
 
 
 def _make_job(db_conn, **overrides):
@@ -119,13 +119,12 @@ def test_resolve_job_provenance_is_empty_when_llm_disabled(monkeypatch):
     assert llm_jobs.resolve_job_provenance() == {}
 
 
-def test_resolve_job_provenance_captures_current_prompts(monkeypatch):
+def test_resolve_job_provenance_captures_current_prompts(db_conn, monkeypatch):
     monkeypatch.setenv('USE_LLM_EVAL', '1')
-    monkeypatch.setenv('LLM_PROVIDER', 'openai')
-    monkeypatch.setenv('LLM_MODEL', 'gpt-4o-mini')
-    monkeypatch.setenv('OPENAI_API_KEY', 'sk-test')
+    teacher_id = make_teacher(db_conn, email='prov-capture@test.it')
+    grant_grading_access(teacher_id, model='gpt-4o-mini')
 
-    prov = llm_jobs.resolve_job_provenance()
+    prov = llm_jobs.resolve_job_provenance(teacher_id=teacher_id)
 
     assert prov['provider'] == 'openai'
     assert prov['model'] == 'gpt-4o-mini'
@@ -134,11 +133,11 @@ def test_resolve_job_provenance_captures_current_prompts(monkeypatch):
     assert 'api_key' not in prov, "credentials must never be stored on a job"
 
 
-def test_resolve_job_provenance_survives_bad_config(monkeypatch):
-    """Enqueueing must not fail on misconfiguration; the worker reports it."""
+def test_resolve_job_provenance_survives_bad_config(db_conn, monkeypatch):
+    """Enqueueing must not fail when a teacher has no key; the worker reports it."""
     monkeypatch.setenv('USE_LLM_EVAL', '1')
-    monkeypatch.setenv('LLM_PROVIDER', 'openai')
-    monkeypatch.setenv('LLM_MODEL', 'gpt-4o-mini')
-    monkeypatch.delenv('OPENAI_API_KEY', raising=False)
+    holder = make_teacher(db_conn, email='prov-holder@test.it')
+    grant_grading_access(holder)                      # an endpoint exists...
+    without_key = make_teacher(db_conn, email='prov-nokey@test.it')
 
-    assert llm_jobs.resolve_job_provenance() == {}
+    assert llm_jobs.resolve_job_provenance(teacher_id=without_key) == {}   # ...but no key

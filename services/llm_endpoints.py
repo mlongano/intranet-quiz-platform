@@ -5,6 +5,10 @@ from it by id (Fase 4) and never by URL, so there is no arbitrary URL to
 validate and therefore no request-forgery surface — which is a stronger
 guarantee than trying to validate a user-supplied address.
 
+It is also the *only* thing an administrator controls about grading: there
+are no shared keys. Each teacher authenticates to an endpoint with their own
+key (services/credentials.py), so every call is attributable to a teacher.
+
 Two rules follow from that and are enforced here rather than left to callers:
 
 - grading only ever resolves an ``enabled`` row, so disabling one revokes it
@@ -23,7 +27,6 @@ from werkzeug.exceptions import BadRequest, Conflict, NotFound
 
 import db
 from db import queries as Q
-from services import credentials
 from services.llm_provider import SUPPORTED_PROVIDERS
 
 # Must start and end alphanumeric: a trailing hyphen reads as a typo and makes
@@ -35,46 +38,15 @@ SLUG_PATTERN = re.compile(r'^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$')
 def list_endpoints() -> list[dict]:
     with db.get_conn() as conn:
         rows = conn.execute(Q.LIST_LLM_ENDPOINTS).fetchall()
-    return _with_key_status([_row_to_dict(r) for r in rows])
+    return [_row_to_dict(r) for r in rows]
 
 
 def get_endpoint(endpoint_id: int) -> dict:
-    return _with_key_status([_get_row(endpoint_id)])[0]
-
-
-def _get_row(endpoint_id: int) -> dict:
     with db.get_conn() as conn:
         row = conn.execute(Q.GET_LLM_ENDPOINT, (endpoint_id,)).fetchone()
     if not row:
         raise NotFound(description="Endpoint non trovato.")
     return _row_to_dict(row)
-
-
-def _with_key_status(endpoints: list[dict]) -> list[dict]:
-    """Attach what the admin may know about each key: whether one is set, and
-    its fingerprint. Only for the admin API — the grading path resolves rows
-    without this, so it never pays for the extra query."""
-    status = credentials.describe_endpoint_keys()
-    absent = {'configured': False, 'fingerprint': None, 'updated_at': None}
-    return [{**e, 'api_key': status.get(e['id'], absent)} for e in endpoints]
-
-
-# ── endpoint API key ─────────────────────────────────────────────────────────
-
-def set_key(endpoint_id: int, secret: str) -> dict:
-    """Store the key this endpoint authenticates with. It is sent nowhere else."""
-    _get_row(endpoint_id)   # 404 before anything is encrypted
-    if not credentials.encryption_available():
-        raise Conflict(description=(
-            f"Impossibile salvare chiavi: {credentials.MASTER_KEY_ENV} non è configurata."
-        ))
-    return credentials.set_endpoint_key(endpoint_id, secret)
-
-
-def clear_key(endpoint_id: int) -> dict:
-    _get_row(endpoint_id)
-    credentials.clear_endpoint_key(endpoint_id)
-    return credentials.describe_endpoint_key(endpoint_id)
 
 
 def get_default_endpoint(conn=None) -> dict | None:
@@ -120,11 +92,11 @@ def create_endpoint(payload: dict) -> dict:
             conn.rollback()
             raise _conflict_or_raise(exc, fields['slug'])
         conn.commit()
-    return _with_key_status([_row_to_dict(row)])[0]
+    return _row_to_dict(row)
 
 
 def update_endpoint(endpoint_id: int, payload: dict) -> dict:
-    existing = _get_row(endpoint_id)
+    existing = get_endpoint(endpoint_id)
     merged = {**existing, **payload}
     fields = _validate(merged)
 
@@ -144,7 +116,7 @@ def update_endpoint(endpoint_id: int, payload: dict) -> dict:
             conn.rollback()
             raise NotFound(description="Endpoint non trovato.")
         conn.commit()
-    return _with_key_status([_row_to_dict(row)])[0]
+    return _row_to_dict(row)
 
 
 def delete_endpoint(endpoint_id: int) -> None:
@@ -193,17 +165,21 @@ def _validate(payload: dict) -> dict:
     if base_url:
         base_url = _validate_base_url(base_url)
 
+    # The list is part of the allowlist: an endpoint is only ever asked for a
+    # model named here, and the first is what a teacher gets by default.
+    # Nothing else supplies a model any more, so an empty list is refused.
     models = payload.get('models') or []
     if not isinstance(models, list) or any(not str(m).strip() for m in models):
         raise BadRequest(description="L'elenco dei modelli deve contenere stringhe non vuote.")
     models = [str(m).strip() for m in models]
+    if not models:
+        raise BadRequest(description="Indica almeno un modello: il primo è il predefinito.")
 
     return {
         'slug': slug,
         'label': label,
         'protocol': protocol,
         'base_url': base_url,
-        'requires_key': bool(payload.get('requires_key', True)),
         'models': models,
         'enabled': bool(payload.get('enabled', True)),
         'is_default': bool(payload.get('is_default', False)),
@@ -226,7 +202,7 @@ def _validate_base_url(value: str) -> str:
         raise BadRequest(description="L'indirizzo non contiene un host valido.")
     if parsed.username or parsed.password:
         raise BadRequest(
-            description="Non inserire credenziali nell'URL: usa il campo chiave API."
+            description="Non inserire credenziali nell'URL: ogni docente usa la propria chiave."
         )
     return value.rstrip('/')
 
@@ -248,11 +224,10 @@ def _row_to_dict(row) -> dict:
         'label': row[2],
         'protocol': row[3],
         'base_url': row[4],
-        'requires_key': row[5],
-        'models': row[6] if isinstance(row[6], list) else json.loads(row[6] or '[]'),
-        'enabled': row[7],
-        'is_default': row[8],
-        'notes': row[9],
-        'created_at': row[10].isoformat() if row[10] else None,
-        'updated_at': row[11].isoformat() if row[11] else None,
+        'models': row[5] if isinstance(row[5], list) else json.loads(row[5] or '[]'),
+        'enabled': row[6],
+        'is_default': row[7],
+        'notes': row[8],
+        'created_at': row[9].isoformat() if row[9] else None,
+        'updated_at': row[10].isoformat() if row[10] else None,
     }

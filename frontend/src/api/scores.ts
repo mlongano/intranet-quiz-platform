@@ -121,13 +121,19 @@ export async function updateTeacherLlmSettings(
   });
 }
 
-export async function setTeacherLlmKey(apiKey: string): Promise<TeacherLlmSettings> {
-  return apiFetch<TeacherLlmSettings>('/teacher/llm-settings/key', {
+/** Write-only: stores the teacher's key for one whitelisted endpoint. */
+export async function setTeacherLlmKey(
+  endpointId: number,
+  apiKey: string,
+): Promise<TeacherLlmSettings> {
+  return apiFetch<TeacherLlmSettings>(`/teacher/llm-settings/endpoints/${endpointId}/key`, {
     method: 'PUT',
     body: JSON.stringify({ api_key: apiKey }),
   });
 }
 
-export async function clearTeacherLlmKey(): Promise<TeacherLlmSettings> {
-  return apiFetch<TeacherLlmSettings>('/teacher/llm-settings/key', { method: 'DELETE' });
+export async function clearTeacherLlmKey(endpointId: number): Promise<TeacherLlmSettings> {
+  return apiFetch<TeacherLlmSettings>(`/teacher/llm-settings/endpoints/${endpointId}/key`, {
+    method: 'DELETE',
+  });
 }

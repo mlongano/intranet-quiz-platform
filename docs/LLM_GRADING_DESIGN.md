@@ -3,6 +3,11 @@
 Stato: draft — in discussione
 Creato: 2026-06-06
 
+> **Aggiornamento 2026-10-24 — accesso solo con chiave personale.** Le parti di
+> questo documento che descrivono una chiave condivisa in `.env`, `LLM_BASE_URL`
+> come fallback, `requires_key` o un elenco `models` vuoto ("qualsiasi
+> modello") sono superate. Vedere **Decisioni ulteriori 4** in fondo.
+
 ## Contesto
 
 Il 5 giugno uno studente ha sostenuto il quiz "Recupero Galli" (sessione 62).
@@ -854,3 +859,36 @@ rivalutazione è già in corso». Il cooldown è configurabile via env
    deterministico supportato dal modello e registra i parametri effettivi.
    Questo riduce la variabilità ma non garantisce risultati identici; storico,
    conferma e revert restano necessari.
+
+4. **Accesso solo con chiave personale** (2026-10-24). Con l'arrivo del modello
+   locale della scuola (LiteLLM sul server GPU) il modello di accesso è stato
+   ripensato:
+
+   - il super-admin decide solo **dove** può andare la valutazione: l'elenco
+     `llm_endpoints`, con i modelli ammessi per ciascuno (almeno uno; il
+     primo è il predefinito). Non gestisce chiavi;
+   - un docente valuta **solo con la propria chiave**, salvata per un
+     endpoint specifico (`teacher_llm_credentials`, chiave primaria
+     `(teacher_id, endpoint_id)`) e inviata soltanto a quell'endpoint;
+   - `.env` non fornisce più né destinazione, né modello, né chiave:
+     `LLM_PROVIDER`, `LLM_MODEL`, `LLM_BASE_URL` e le `*_API_KEY` sono
+     ignorate.
+
+   Motivi. Una chiave condivisa viene inviata a nome di tutti e non è
+   attribuibile a nessuno; legarla al protocollo invece che alla destinazione
+   faceva arrivare `OPENAI_API_KEY` a qualunque server compatibile indicato da
+   un endpoint. Con una chiave per docente, LiteLLM tiene il conto di uso e
+   costi per docente e può imporre un budget per chiave — copre gran parte
+   della registrazione costi (Decisione 1).
+
+   Conseguenze:
+
+   - un docente senza chiave non è un errore di sistema: le sue risposte
+     aperte restano `pending` con `llm_error` che indica la chiave mancante;
+   - `requires_key` è stato rimosso (migrazione 012): un endpoint senza
+     autenticazione permetterebbe di valutare senza essere attribuibili;
+   - all'avvio, l'assenza di un endpoint predefinito attivo produce solo un
+     avviso: disabilitare l'unico endpoint non deve rendere la piattaforma
+     inutilizzabile al riavvio successivo;
+   - anche il modello di una rivalutazione deve essere tra quelli
+     dell'endpoint: viene fissato sul job e inviato così com'è.

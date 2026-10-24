@@ -139,8 +139,8 @@ def create_llm_job(
     """Create a grading job, pinning how it must be evaluated.
 
     Provider, model and prompt are resolved *now* and stored on the row. The
-    worker reads them from the job, so editing a prompt file or changing
-    LLM_MODEL after enqueueing cannot alter a job already in the queue.
+    worker reads them from the job, so editing a prompt file or the
+    endpoint's model list after enqueueing cannot alter a job already queued.
     """
     # Reuse the caller's connection: this runs inside the transaction that
     # records a submission, and taking a second connection from the pool while
@@ -168,6 +168,26 @@ def create_llm_job(
         'force_override_manual': force_override_manual,
     }).fetchone()
     return _job_row_to_dict(row)
+
+
+def _assert_model_is_served(teacher_id: int, model: str) -> None:
+    """A one-off regrade model must come from the teacher's endpoint's list.
+
+    The override is pinned on the job and sent as-is, so without this check it
+    would be the one way to send an endpoint a model the allowlist does not
+    name — including, after a switch of endpoint, the model that produced the
+    old evaluations and that the new endpoint does not serve.
+    """
+    from services.llm_config import resolve_destination
+
+    try:
+        served = resolve_destination(teacher_id)['endpoint']['models']
+    except LlmConfigurationError:
+        served = []
+    if model not in served:
+        raise BadRequest(description=(
+            "Il modello scelto non è tra quelli ammessi per il tuo servizio di valutazione."
+        ))
 
 
 def resolve_job_provenance(teacher_id: int | None = None, conn=None) -> dict:
@@ -233,6 +253,9 @@ def enqueue_regrade_session(
     """
     if scope not in ('pending_only', 'all'):
         raise BadRequest(description="Ambito di rivalutazione non valido.")
+    model = (model or '').strip() or None
+    if model:
+        _assert_model_is_served(teacher_id, model)
     import os as _os
     _cooldown = int(_os.getenv('LLM_REGRADE_COOLDOWN_SECONDS', '60'))
 
@@ -274,7 +297,7 @@ def enqueue_regrade_session(
         # Pin how this job must be evaluated, honouring a one-off model choice.
         provenance = resolve_job_provenance(teacher_id=teacher_id, conn=conn)
         if model and provenance:
-            provenance = {**provenance, 'model': model.strip()}
+            provenance = {**provenance, 'model': model}
 
         if total_items > 0:
             # Concurrency: uq_llm_active_regrade_per_session rejects a second

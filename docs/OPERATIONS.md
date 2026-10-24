@@ -91,8 +91,11 @@ lease first, not `--scale worker=N`.
 
 A worker started with `USE_LLM_EVAL` unset logs a warning and keeps running:
 open answers simply stay `pending`, which is safe — a failed or unconfigured
-evaluation is never recorded as a grade. If `USE_LLM_EVAL=1` but `LLM_MODEL`
-is empty, both the app and the worker refuse to start.
+evaluation is never recorded as a grade. With `USE_LLM_EVAL=1` but no enabled
+default endpoint, the app and worker also start and log a warning: the
+allowlist is edited at runtime, and making grading unavailable must never take
+quizzes offline at the next restart. Keys are not checked at startup at all —
+they belong to teachers (see *Grading access* below).
 
 Check the worker:
 
@@ -124,8 +127,9 @@ docker compose exec db psql -U quizparty -d quizparty -c \
 
 Recovery:
 
-1. Fix the underlying cause (worker container down, provider API key/quota,
-   network egress, `LLM_TIMEOUT_SECONDS` too low).
+1. Fix the underlying cause (worker container down, the teacher's key missing
+   or rejected, endpoint unreachable or out of quota, `LLM_TIMEOUT_SECONDS` too
+   low). The answer's `llm_error` says which.
 2. Restart the worker if needed: `docker compose restart worker`.
 3. Ask the Teacher to click **Rivaluta risposte aperte** on the session's
    scores page (or `POST /api/teacher/sessions/<id>/scores/regrade-open`).
@@ -184,14 +188,51 @@ docker compose logs -f worker
 Job ids are interleaved in the log lines (`[LLM_JOBS job=42]`), which is how to
 tell concurrency is actually happening.
 
-## Teacher API keys and the encryption master key
+## Grading access: endpoints and teacher keys
 
-Teachers may store their own provider API key (Valutazione in the teacher menu).
+Who controls what:
+
+| | Controls |
+|---|---|
+| Super-admin | **where** grading may go: the endpoint allowlist (Super Admin → Endpoint LLM) — address, protocol, the models each may be asked for, enabled, default. Never keys. |
+| Teacher | their **own key** for an endpoint (Impostazioni → Valutazione), and optionally which allowed endpoint and model they use |
+| `.env` | only the master switch (`USE_LLM_EVAL`), tuning, and the encryption master key — no destination, model or key |
+
+A grading call uses the teacher's selected endpoint while it is enabled,
+otherwise the default; the teacher's model if that endpoint lists it, otherwise
+the endpoint's **first** model; and the teacher's key **for that endpoint**. Keys
+are stored per `(teacher, endpoint)` and never sent anywhere else, so a key
+issued for the school server cannot reach another host even after the default
+changes. There is no shared key to fall back on — deliberately: a fallback key
+would be sent on everyone's behalf, unattributable.
+
+A teacher without a key is a normal state. Their submissions are accepted as
+always; open answers stay `pending` with an `llm_error` saying the key is
+missing, and the scores page links them to the settings. Once they set a key,
+**Rivaluta risposte aperte** grades what was left.
+
+With a LiteLLM gateway, issue each teacher their own virtual key: LiteLLM then
+tracks usage and spend per teacher and can enforce a budget per key.
+
+### Who has a key
+
+```sql
+SELECT t.email, e.slug AS endpoint, c.fingerprint, c.updated_at
+FROM teacher_llm_credentials c
+JOIN teachers t ON t.id = c.teacher_id
+JOIN llm_endpoints e ON e.id = c.endpoint_id
+ORDER BY e.slug, t.email;
+```
+
+Deleting an endpoint deletes the keys stored for it; disabling one keeps them,
+so re-enabling restores grading without anyone re-entering a key.
+
+### The encryption master key
+
 Keys are encrypted with `CREDENTIAL_ENCRYPTION_KEY` before being written, and
 that key is **not** in the database — a `pg_dump` therefore contains no usable
-credentials.
-
-### First setup
+credentials. It is required for automatic grading: without it no teacher can
+store a key, and the settings page says so.
 
 ```bash
 docker compose exec app python scripts/rotate_credential_key.py --generate
@@ -199,43 +240,10 @@ docker compose exec app python scripts/rotate_credential_key.py --generate
 docker compose up -d --force-recreate app worker
 ```
 
-Without it, teachers simply cannot save a personal key and the shared
-`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` from `.env` is used for everyone. Nothing
-breaks; the settings page says so.
-
-### Endpoint keys
-
-A managed endpoint that authenticates — a school LiteLLM gateway, for example —
-needs its own key: Super Admin → Endpoint LLM → *Imposta* on that endpoint. It is
-encrypted like a teacher key and sent to that endpoint only.
-
-The shared `OPENAI_API_KEY` from `.env` is **not** a fallback for such an
-endpoint. It was issued for api.openai.com, and it is sent only there (or to the
-address `.env` itself sets with `LLM_BASE_URL`). An endpoint with its own
-address that requires a key and has none fails cleanly instead: answers stay
-`pending` with an error naming the endpoint, and the endpoint list shows
-*Chiave API mancante*. Before this rule existed, the protocol alone decided the
-fallback, so making any OpenAI-compatible server the default would have sent the
-school's OpenAI key to it.
-
-Which key a call uses, most specific first:
-
-| Destination | Key used |
-|---|---|
-| Endpoint the teacher selected | teacher's key, else the endpoint's key (else `.env`, only if it is the provider's hosted service) |
-| Default endpoint with its own address | the endpoint's key |
-| Provider's hosted service (`base_url` empty) | teacher's key if they selected nothing, else the endpoint's key, else `.env` |
-| No managed endpoint (pure `.env` setup) | `.env` |
-
-Models follow the same rule. An endpoint that lists models is only sent one of
-them, so `LLM_MODEL=gpt-4o-mini` in `.env` is not forced onto a school server
-that does not serve it; the **first** listed model is the endpoint's default.
-
 ### Rotating the master key
 
 Re-encrypt **before** replacing the value. Replacing it first makes every stored
-key unreadable and each teacher has to enter theirs again. The script covers
-teacher and endpoint keys together, in one transaction.
+key unreadable and each teacher has to enter theirs again.
 
 ```bash
 # 1. new key
@@ -254,20 +262,21 @@ docker compose up -d --force-recreate app worker
 
 If step 3 fails nothing is written, so it is safe to retry.
 
-### If a key was rotated without re-encrypting
+### If the master key was replaced without re-encrypting
 
-Grading does not stop: a credential that cannot be decrypted is ignored and
-that teacher falls back to the shared configuration. Restore the old value of
+Nothing crashes: an undecryptable key counts as absent, so those teachers' open
+answers stay `pending` until it is fixed. Restore the old value of
 `CREDENTIAL_ENCRYPTION_KEY` and run the rotation properly, or ask the affected
-teachers to re-enter their key. Which teachers are affected:
+teachers to re-enter their key. `key_version` is the fingerprint of the master
+key that encrypted each row; rows whose `key_version` differs from the current
+key are the ones to fix:
 
 ```sql
-SELECT t.email, c.fingerprint, c.key_version, c.updated_at
-FROM teacher_llm_credentials c JOIN teachers t ON t.id = c.teacher_id;
+SELECT t.email, e.slug AS endpoint, c.key_version, c.updated_at
+FROM teacher_llm_credentials c
+JOIN teachers t ON t.id = c.teacher_id
+JOIN llm_endpoints e ON e.id = c.endpoint_id;
 ```
-
-`key_version` is the fingerprint of the master key that encrypted each row; rows
-whose `key_version` differs from the current key are the ones to fix.
 
 ## LAN-only endpoints and DNS
 

@@ -2,11 +2,9 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
-  clearLlmEndpointKey,
   createLlmEndpoint,
   deleteLlmEndpoint,
   listLlmEndpoints,
-  setLlmEndpointKey,
   updateLlmEndpoint,
 } from '../api';
 import type { LlmEndpoint, LlmEndpointPayload } from '../api';
@@ -19,7 +17,6 @@ const EMPTY_FORM = {
   label: '',
   protocol: 'openai' as LlmEndpoint['protocol'],
   base_url: '',
-  requires_key: true,
   models: '',
   enabled: true,
   is_default: false,
@@ -34,7 +31,6 @@ function toPayload(form: FormState): LlmEndpointPayload {
     label: form.label.trim(),
     protocol: form.protocol,
     base_url: form.base_url.trim() || null,
-    requires_key: form.requires_key,
     models: form.models.split(',').map(m => m.trim()).filter(Boolean),
     enabled: form.enabled,
     is_default: form.is_default,
@@ -48,7 +44,6 @@ function toForm(endpoint: LlmEndpoint): FormState {
     label: endpoint.label,
     protocol: endpoint.protocol,
     base_url: endpoint.base_url ?? '',
-    requires_key: endpoint.requires_key,
     models: (endpoint.models ?? []).join(', '),
     enabled: endpoint.enabled,
     is_default: endpoint.is_default,
@@ -101,34 +96,6 @@ export function LlmEndpointsTab() {
     onError: showError,
   });
 
-  // The key field is write-only: what is typed is sent once and then dropped
-  // from state; the list only ever shows a fingerprint.
-  const [keyEditingId, setKeyEditingId] = useState<number | null>(null);
-  const [keyDraft, setKeyDraft] = useState('');
-  const closeKeyForm = () => { setKeyEditingId(null); setKeyDraft(''); };
-
-  const setKeyMutation = useMutation({
-    mutationFn: ({ id, apiKey }: { id: number; apiKey: string }) => setLlmEndpointKey(id, apiKey),
-    onSuccess: () => { refresh(); closeKeyForm(); },
-    onError: (e: unknown) => { setKeyDraft(''); showError(e); },
-  });
-
-  const clearKeyMutation = useMutation({
-    mutationFn: (id: number) => clearLlmEndpointKey(id),
-    onSuccess: refresh,
-    onError: showError,
-  });
-
-  const confirmClearKey = (endpoint: LlmEndpoint) => {
-    askConfirm(
-      `Rimuovere la chiave API di "${endpoint.label}"?` +
-      (endpoint.requires_key
-        ? ' Le valutazioni su questo endpoint resteranno in attesa finché non ne imposti una nuova.'
-        : ''),
-      () => clearKeyMutation.mutate(endpoint.id),
-    );
-  };
-
   const startEdit = (endpoint: LlmEndpoint) => {
     setEditingId(endpoint.id);
     setForm(toForm(endpoint));
@@ -160,14 +127,14 @@ export function LlmEndpointsTab() {
         </div>
         <p className="text-sm text-on-surface-variant mt-1">
           Elenco dei servizi che la valutazione automatica può contattare. I docenti
-          potranno sceglierne uno da questa lista, senza mai indicare un indirizzo:
+          possono sceglierne uno da questa lista, senza mai indicare un indirizzo:
           è così che l'insieme dei server raggiungibili resta sotto controllo.
         </p>
         <p className="text-sm text-on-surface-variant mt-1">
-          Ogni chiave viene inviata solo al servizio per cui è stata impostata. La
-          chiave condivisa del file <span className="font-mono">.env</span> vale
-          soltanto per il servizio ufficiale del provider: un endpoint con un proprio
-          indirizzo che richiede una chiave deve averne una qui.
+          Qui si decide solo <em>dove</em> può andare la valutazione. Le chiavi sono
+          personali: ogni docente usa la propria, impostata nelle sue impostazioni, e
+          viene inviata solo al servizio per cui l'ha salvata. Senza chiave, le sue
+          risposte aperte restano da valutare a mano.
         </p>
       </div>
 
@@ -222,9 +189,9 @@ export function LlmEndpointsTab() {
               />
             </label>
             <label className="text-sm md:col-span-2">
-              <span className="text-on-surface-variant">Modelli ammessi (separati da virgola, vuoto = qualsiasi; il primo è il predefinito)</span>
+              <span className="text-on-surface-variant">Modelli ammessi (separati da virgola, almeno uno; il primo è il predefinito)</span>
               <input
-                value={form.models}
+                value={form.models} required
                 onChange={e => setForm({ ...form, models: e.target.value })}
                 placeholder="qwen2.5:14b, llama3.3:70b"
                 className="mt-1 w-full px-3 py-2 bg-surface border border-outline-variant/40 rounded-lg font-mono"
@@ -241,13 +208,6 @@ export function LlmEndpointsTab() {
           </div>
 
           <div className="flex flex-wrap gap-4 text-sm">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox" checked={form.requires_key}
-                onChange={e => setForm({ ...form, requires_key: e.target.checked })}
-              />
-              Richiede una chiave API
-            </label>
             <label className="flex items-center gap-2">
               <input
                 type="checkbox" checked={form.enabled}
@@ -285,7 +245,8 @@ export function LlmEndpointsTab() {
         <p className="text-sm text-on-surface-variant">Caricamento…</p>
       ) : !endpoints?.length ? (
         <p className="text-sm text-on-surface-variant">
-          Nessun endpoint configurato: la valutazione usa le variabili d'ambiente.
+          Nessun endpoint configurato: la valutazione automatica è disattivata e le
+          risposte aperte restano da valutare a mano.
         </p>
       ) : (
         <div className="space-y-2">
@@ -315,72 +276,11 @@ export function LlmEndpointsTab() {
                 <div className="text-xs text-on-surface-variant font-mono mt-0.5">
                   {endpoint.protocol}
                   {endpoint.base_url ? ` · ${endpoint.base_url}` : ' · servizio ufficiale'}
-                  {endpoint.requires_key ? ' · chiave richiesta' : ' · senza chiave'}
                 </div>
                 {endpoint.models.length > 0 && (
                   <div className="text-xs text-on-surface-variant mt-0.5">
                     Modelli: {endpoint.models.join(', ')}
                   </div>
-                )}
-                <div className="text-xs mt-1 flex flex-wrap items-center gap-2">
-                  {endpoint.api_key.configured ? (
-                    <span className="text-on-surface-variant">
-                      Chiave API: configurata
-                      <span className="font-mono"> ({endpoint.api_key.fingerprint})</span>
-                    </span>
-                  ) : endpoint.requires_key && endpoint.base_url ? (
-                    <span className="text-error">
-                      Chiave API mancante: le valutazioni resteranno in attesa
-                    </span>
-                  ) : (
-                    <span className="text-on-surface-variant">Chiave API: non configurata</span>
-                  )}
-                  {keyEditingId !== endpoint.id && (
-                    <button
-                      onClick={() => { setKeyEditingId(endpoint.id); setKeyDraft(''); setError(null); }}
-                      className="underline text-primary hover:opacity-80"
-                    >
-                      {endpoint.api_key.configured ? 'Sostituisci' : 'Imposta'}
-                    </button>
-                  )}
-                  {endpoint.api_key.configured && keyEditingId !== endpoint.id && (
-                    <button
-                      onClick={() => confirmClearKey(endpoint)}
-                      className="underline text-error hover:opacity-80"
-                    >
-                      Rimuovi
-                    </button>
-                  )}
-                </div>
-                {keyEditingId === endpoint.id && (
-                  <form
-                    onSubmit={e => {
-                      e.preventDefault();
-                      setKeyMutation.mutate({ id: endpoint.id, apiKey: keyDraft });
-                    }}
-                    className="mt-2 flex flex-wrap gap-2 items-center"
-                  >
-                    <input
-                      type="password" value={keyDraft} required autoFocus
-                      autoComplete="off" spellCheck={false}
-                      onChange={e => setKeyDraft(e.target.value)}
-                      placeholder="Chiave API"
-                      aria-label={`Chiave API per ${endpoint.label}`}
-                      className="flex-1 min-w-[12rem] px-3 py-1.5 text-sm bg-surface border border-outline-variant/40 rounded-lg font-mono"
-                    />
-                    <button
-                      type="submit" disabled={setKeyMutation.isPending || !keyDraft.trim()}
-                      className="px-3 py-1.5 text-sm bg-primary text-on-primary rounded-lg hover:bg-primary/90 disabled:opacity-50"
-                    >
-                      {setKeyMutation.isPending ? 'Salvataggio…' : 'Salva chiave'}
-                    </button>
-                    <button
-                      type="button" onClick={closeKeyForm}
-                      className="px-3 py-1.5 text-sm border border-outline-variant/40 rounded-lg hover:bg-surface-container"
-                    >
-                      Annulla
-                    </button>
-                  </form>
                 )}
               </div>
 

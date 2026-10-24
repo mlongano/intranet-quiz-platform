@@ -1,4 +1,4 @@
-"""Application-layer encryption for teacher and endpoint API keys.
+"""Application-layer encryption for teachers' API keys.
 
 Keys are encrypted before they reach the database, with a master key that lives
 outside it (``CREDENTIAL_ENCRYPTION_KEY``, an environment variable or Docker
@@ -86,9 +86,13 @@ def decrypt(ciphertext: str, master_key: str | None = None) -> str:
 
 
 # ── stored credentials ───────────────────────────────────────────────────────
+#
+# A teacher's key is stored per endpoint and only ever read back for that
+# endpoint: it authenticates the teacher to one whitelisted service and is never
+# a fallback for any other.
 
-def set_teacher_key(teacher_id: int, secret: str) -> dict:
-    """Store (or replace) a teacher's API key. Returns only its fingerprint."""
+def set_teacher_key(teacher_id: int, endpoint_id: int, secret: str) -> dict:
+    """Store (or replace) a teacher's key for one endpoint. Returns its status."""
     secret = (secret or '').strip()
     if not secret:
         raise BadRequest(description="La chiave API non può essere vuota.")
@@ -98,6 +102,7 @@ def set_teacher_key(teacher_id: int, secret: str) -> dict:
     with db.get_conn() as conn:
         conn.execute(Q.UPSERT_TEACHER_LLM_CREDENTIAL, {
             'teacher_id': teacher_id,
+            'endpoint_id': endpoint_id,
             'ciphertext': ciphertext,
             'fingerprint': digest,
             'key_version': _master_key_fingerprint(),
@@ -106,89 +111,31 @@ def set_teacher_key(teacher_id: int, secret: str) -> dict:
     return {'configured': True, 'fingerprint': digest}
 
 
-def clear_teacher_key(teacher_id: int) -> None:
+def clear_teacher_key(teacher_id: int, endpoint_id: int) -> None:
     with db.get_conn() as conn:
-        conn.execute(Q.DELETE_TEACHER_LLM_CREDENTIAL, (teacher_id,))
+        conn.execute(Q.DELETE_TEACHER_LLM_CREDENTIAL, (teacher_id, endpoint_id))
         conn.commit()
 
 
-def get_teacher_key(teacher_id: int, conn=None) -> str | None:
-    """The decrypted key, for making a provider call. Never expose this.
+def get_teacher_key(teacher_id: int, endpoint_id: int, conn=None) -> str | None:
+    """The decrypted key for this endpoint, for making a call. Never expose it.
 
     Pass *conn* when one is already held: this runs on the grading path.
     """
-    row = _fetch(Q.GET_TEACHER_LLM_CREDENTIAL, (teacher_id,), conn)
+    row = _fetch(Q.GET_TEACHER_LLM_CREDENTIAL, (teacher_id, endpoint_id), conn)
     if not row:
         return None
     return decrypt(row[0])
 
 
-def describe_teacher_key(teacher_id: int) -> dict:
-    """What the API is allowed to say about a stored key."""
-    row = _fetch(Q.GET_TEACHER_LLM_CREDENTIAL, (teacher_id,), None)
-    if not row:
-        return {'configured': False, 'fingerprint': None, 'updated_at': None}
-    return {
-        'configured': True,
-        'fingerprint': row[1],
-        'updated_at': row[3].isoformat() if row[3] else None,
-    }
-
-
-def set_endpoint_key(endpoint_id: int, secret: str) -> dict:
-    """Store (or replace) a managed endpoint's API key. Returns its description.
-
-    The key is used for that endpoint and no other: resolution never sends it
-    anywhere else, which is the point of storing it per endpoint.
-    """
-    secret = (secret or '').strip()
-    if not secret:
-        raise BadRequest(description="La chiave API non può essere vuota.")
-
-    ciphertext = encrypt(secret)
-    digest = fingerprint(secret)
+def describe_teacher_keys(teacher_id: int) -> dict[int, dict]:
+    """What the API may say about a teacher's keys, per endpoint id."""
     with db.get_conn() as conn:
-        conn.execute(Q.UPSERT_ENDPOINT_LLM_CREDENTIAL, {
-            'endpoint_id': endpoint_id,
-            'ciphertext': ciphertext,
-            'fingerprint': digest,
-            'key_version': _master_key_fingerprint(),
-        })
-        conn.commit()
-    return describe_endpoint_key(endpoint_id)
+        rows = conn.execute(Q.LIST_TEACHER_LLM_KEY_STATUS, (teacher_id,)).fetchall()
+    return {endpoint_id: key_status(digest, updated_at) for endpoint_id, digest, updated_at in rows}
 
 
-def clear_endpoint_key(endpoint_id: int) -> None:
-    with db.get_conn() as conn:
-        conn.execute(Q.DELETE_ENDPOINT_LLM_CREDENTIAL, (endpoint_id,))
-        conn.commit()
-
-
-def get_endpoint_key(endpoint_id: int, conn=None) -> str | None:
-    """The decrypted key, for making a provider call. Never expose this.
-
-    Pass *conn* when one is already held: this runs on the grading path.
-    """
-    row = _fetch(Q.GET_ENDPOINT_LLM_CREDENTIAL, (endpoint_id,), conn)
-    if not row:
-        return None
-    return decrypt(row[0])
-
-
-def describe_endpoint_key(endpoint_id: int) -> dict:
-    """What the admin API is allowed to say about an endpoint's key."""
-    row = _fetch(Q.GET_ENDPOINT_LLM_CREDENTIAL, (endpoint_id,), None)
-    return _describe(row[1], row[3]) if row else _describe(None, None)
-
-
-def describe_endpoint_keys() -> dict[int, dict]:
-    """Key status for every endpoint that has one, in a single query."""
-    with db.get_conn() as conn:
-        rows = conn.execute(Q.LIST_ENDPOINT_LLM_CREDENTIAL_FINGERPRINTS).fetchall()
-    return {endpoint_id: _describe(digest, updated_at) for endpoint_id, digest, updated_at in rows}
-
-
-def _describe(digest: str | None, updated_at) -> dict:
+def key_status(digest: str | None = None, updated_at=None) -> dict:
     if digest is None:
         return {'configured': False, 'fingerprint': None, 'updated_at': None}
     return {
@@ -223,24 +170,17 @@ def re_encrypt_all(old_key: str, new_key: str, conn) -> int:
     transaction — either every credential moves to the new key or none does. A
     partial rotation would leave rows nobody can decrypt.
 
-    Covers teacher and endpoint keys in the same transaction: rotating one
-    table and not the other would strand whichever was left behind.
-
     Returns the number of credentials re-encrypted.
     """
     new_fingerprint = fingerprint(new_key)
     count = 0
-    tables = (
-        (Q.LIST_TEACHER_LLM_CREDENTIALS, Q.UPDATE_TEACHER_LLM_CREDENTIAL_CIPHERTEXT, 'teacher_id'),
-        (Q.LIST_ENDPOINT_LLM_CREDENTIALS, Q.UPDATE_ENDPOINT_LLM_CREDENTIAL_CIPHERTEXT, 'endpoint_id'),
-    )
-    for list_query, update_query, id_column in tables:
-        for owner_id, ciphertext in conn.execute(list_query).fetchall():
-            secret = decrypt(ciphertext, old_key)
-            conn.execute(update_query, {
-                id_column: owner_id,
-                'ciphertext': encrypt(secret, new_key),
-                'key_version': new_fingerprint,
-            })
-            count += 1
+    for teacher_id, endpoint_id, ciphertext in conn.execute(Q.LIST_TEACHER_LLM_CREDENTIALS).fetchall():
+        secret = decrypt(ciphertext, old_key)
+        conn.execute(Q.UPDATE_TEACHER_LLM_CREDENTIAL_CIPHERTEXT, {
+            'teacher_id': teacher_id,
+            'endpoint_id': endpoint_id,
+            'ciphertext': encrypt(secret, new_key),
+            'key_version': new_fingerprint,
+        })
+        count += 1
     return count

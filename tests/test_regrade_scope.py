@@ -11,7 +11,8 @@ import json
 import pytest
 
 from services import llm_jobs
-from tests.conftest import make_session, make_snapshot, make_student, make_teacher, teacher_token
+from services import llm_endpoints
+from tests.conftest import make_session, make_snapshot, make_student, make_teacher, teacher_token, grant_grading_access
 
 QUESTION = {
     'id': 'open-1', 'type': 'open', 'text': 'Spiega.',
@@ -182,15 +183,27 @@ def test_invalid_scope_is_rejected(session_with_answers):
 def test_model_override_is_pinned_on_the_job(session_with_answers, db_conn, monkeypatch):
     ctx = session_with_answers
     monkeypatch.setenv('USE_LLM_EVAL', '1')
-    monkeypatch.setenv('LLM_PROVIDER', 'openai')
-    monkeypatch.setenv('LLM_MODEL', 'gpt-4o-mini')
-    monkeypatch.setenv('OPENAI_API_KEY', 'sk-test')
+    endpoint = grant_grading_access(ctx['teacher_id'], model='gpt-4o-mini')
+    llm_endpoints.update_endpoint(endpoint['id'], {'models': ['gpt-4o-mini', 'gpt-4o']})
 
     job = llm_jobs.enqueue_regrade_session(
         ctx['session_id'], ctx['teacher_id'], scope='all', model='gpt-4o'
     )
 
     assert job['model'] == 'gpt-4o'
+
+
+def test_model_override_outside_the_allowlist_is_refused(session_with_answers, monkeypatch):
+    """Pinned and sent as-is, an unchecked override would bypass the model list."""
+    from werkzeug.exceptions import BadRequest
+    ctx = session_with_answers
+    monkeypatch.setenv('USE_LLM_EVAL', '1')
+    grant_grading_access(ctx['teacher_id'], model='qwen3-27b')
+
+    with pytest.raises(BadRequest, match='modello'):
+        llm_jobs.enqueue_regrade_session(
+            ctx['session_id'], ctx['teacher_id'], scope='all', model='gpt-4o-mini'
+        )
 
 
 # ── preview ──────────────────────────────────────────────────────────────────

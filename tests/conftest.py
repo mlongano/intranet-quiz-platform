@@ -121,6 +121,41 @@ def db_conn(apply_schema):
         yield conn
 
 
+# ── grading access ────────────────────────────────────────────────────────────
+
+# Every test encrypts with this, never with the deployment's real master key,
+# which the test container inherits from .env.
+TEST_MASTER_KEY = 'HFPRJdEBqzUCFqLZfPXKQzr1FN0hkOxlrn-9m3ZfJnE='
+
+
+@pytest.fixture(autouse=True)
+def _test_master_key(monkeypatch):
+    monkeypatch.setenv('CREDENTIAL_ENCRYPTION_KEY', TEST_MASTER_KEY)
+
+
+def grant_grading_access(teacher_id, *, model='gpt-4o-mini', protocol='openai',
+                         base_url=None, key='sk-test', slug='grading'):
+    """Whitelist a default endpoint serving *model* and give the teacher a key for it.
+
+    Grading has exactly one way in — a teacher's own key for a whitelisted
+    endpoint — so anything that needs a resolvable configuration sets up both.
+    """
+    from services import credentials, llm_endpoints
+
+    endpoint = llm_endpoints.get_default_endpoint()
+    if endpoint is None:
+        endpoint = llm_endpoints.create_endpoint({
+            'slug': slug, 'label': f'Test {slug}', 'protocol': protocol,
+            'base_url': base_url, 'models': [model], 'enabled': True, 'is_default': True,
+        })
+    elif model not in endpoint['models']:
+        endpoint = llm_endpoints.update_endpoint(
+            endpoint['id'], {'models': [model, *endpoint['models']]}
+        )
+    credentials.set_teacher_key(teacher_id, endpoint['id'], key)
+    return endpoint
+
+
 # ── Flask test client ─────────────────────────────────────────────────────────
 
 @pytest.fixture(scope='session')

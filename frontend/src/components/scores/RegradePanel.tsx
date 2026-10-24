@@ -34,11 +34,21 @@ export function RegradePanel({ sessionId, disabled, onQueued }: Props) {
     enabled: open,
   });
 
+  // Only the models the teacher's own endpoint is whitelisted for: the server
+  // refuses anything else, because the choice is pinned on the job and sent.
+  const effective = settings?.available_endpoints.find(
+    e => e.id === settings.effective_endpoint_id,
+  );
+  const modelOptions = effective?.models ?? [];
+  const previousModel = preview?.models_in_use?.[0];
+  const previousUnavailable = !!previousModel && !!effective && !modelOptions.includes(previousModel);
+
   // Default to the model that produced the current evaluations, so a plain
-  // "regrade" reproduces them rather than silently switching model.
+  // "regrade" reproduces them rather than silently switching model — when it
+  // is still allowed.
   useEffect(() => {
-    if (preview?.models_in_use?.length && !model) setModel(preview.models_in_use[0]);
-  }, [preview, model]);
+    if (previousModel && !model && effective?.models.includes(previousModel)) setModel(previousModel);
+  }, [previousModel, model, effective]);
 
   const regrade = useMutation({
     mutationFn: (options: RegradeOptions) => regradeOpenScores(sessionId, options),
@@ -65,12 +75,6 @@ export function RegradePanel({ sessionId, disabled, onQueued }: Props) {
     if (needsConfirmation && !confirming) { setConfirming(true); return; }
     regrade.mutate({ scope, force_override_manual: force, model: model || null });
   };
-
-  const modelOptions = Array.from(new Set([
-    ...(preview?.models_in_use ?? []),
-    ...(settings?.available_endpoints.flatMap(e => e.models) ?? []),
-    ...(settings?.model ? [settings.model] : []),
-  ]));
 
   if (!open) {
     return (
@@ -152,6 +156,13 @@ export function RegradePanel({ sessionId, disabled, onQueued }: Props) {
           </label>
         )}
       </div>
+
+      {previousUnavailable && (
+        <p className="text-xs text-on-surface-variant">
+          Le valutazioni attuali sono state prodotte da <span className="font-mono">{previousModel}</span>,
+          che non è più tra i modelli ammessi: la rivalutazione userà uno di quelli disponibili.
+        </p>
+      )}
 
       {modelOptions.length > 0 && (
         <label className="block text-sm">

@@ -4,19 +4,21 @@ Splits cleanly in two, and the split is the security boundary:
 
 - preferences (which endpoint, which model) live in ``teachers.llm_config`` and
   are freely readable;
-- the API key lives encrypted in ``teacher_llm_credentials`` and is never
-  returned by any endpoint — reads report only whether one is set and its
-  fingerprint.
+- the teacher's API keys live encrypted in ``teacher_llm_credentials``, one per
+  endpoint, and are never returned by any endpoint — reads report only whether
+  one is set and its fingerprint.
 
-The endpoint is stored as an id, never a URL, so the administrator's list stays
-the authority on what grading may contact.
+A key is the *only* way a teacher's answers get graded: there is no shared
+key. Everything a teacher can name — endpoint, model, the endpoint a key is
+for — is checked against the administrator's allowlist, so the list stays the
+authority on what grading may contact.
 """
 
 from __future__ import annotations
 
 import json
 
-from werkzeug.exceptions import BadRequest
+from werkzeug.exceptions import BadRequest, Conflict
 
 import db
 from db import queries as Q
@@ -34,6 +36,9 @@ def get_settings(teacher_id: int) -> dict:
         llm_endpoints.resolve_enabled_endpoint(int(endpoint_id))
         if endpoint_id else None
     )
+    default = llm_endpoints.get_default_endpoint()
+    effective = selected or default
+    keys = credentials.describe_teacher_keys(teacher_id)
 
     return {
         'endpoint_id': selected['id'] if selected else None,
@@ -42,41 +47,42 @@ def get_settings(teacher_id: int) -> dict:
         # longer applies.
         'endpoint_label': selected['label'] if selected else None,
         'model': config.get('model') or None,
+        # The endpoint grading actually uses for this teacher, so the page can
+        # say whether *that* one has a key.
+        'effective_endpoint_id': effective['id'] if effective else None,
         'available_endpoints': [
             {
                 'id': e['id'],
                 'label': e['label'],
                 'protocol': e['protocol'],
-                'requires_key': e['requires_key'],
                 'models': e['models'],
                 'is_default': e['is_default'],
+                'key': keys.get(e['id'], credentials.key_status()),
             }
             for e in llm_endpoints.list_endpoints() if e['enabled']
         ],
-        'key': credentials.describe_teacher_key(teacher_id),
         'encryption_available': credentials.encryption_available(),
     }
 
 
 def update_settings(teacher_id: int, payload: dict) -> dict:
-    """Store endpoint and model choices. Rejects an endpoint outside the list."""
+    """Store endpoint and model choices. Both must come from the allowlist."""
     config: dict = {}
 
+    endpoint = None
     endpoint_id = payload.get('endpoint_id')
     if endpoint_id not in (None, ''):
-        try:
-            endpoint_id = int(endpoint_id)
-        except (TypeError, ValueError):
-            raise BadRequest(description="Endpoint non valido.")
         # Membership of the administrator's list is the whole guarantee: this
         # is where a teacher is prevented from naming an arbitrary destination.
-        if llm_endpoints.resolve_enabled_endpoint(endpoint_id) is None:
-            raise BadRequest(description="L'endpoint selezionato non è disponibile.")
-        config['endpoint_id'] = endpoint_id
+        endpoint = _enabled_endpoint(endpoint_id)
+        config['endpoint_id'] = endpoint['id']
 
-    model = payload.get('model')
-    if model not in (None, ''):
-        config['model'] = str(model).strip()
+    model = str(payload.get('model') or '').strip()
+    if model:
+        target = endpoint or llm_endpoints.get_default_endpoint()
+        if target is None or model not in target['models']:
+            raise BadRequest(description="Il modello scelto non è tra quelli ammessi per questo servizio.")
+        config['model'] = model
 
     with db.get_conn() as conn:
         conn.execute(Q.UPDATE_TEACHER_LLM_CONFIG, {
@@ -88,11 +94,32 @@ def update_settings(teacher_id: int, payload: dict) -> dict:
     return get_settings(teacher_id)
 
 
-def set_key(teacher_id: int, secret: str) -> dict:
-    credentials.set_teacher_key(teacher_id, secret)
+def set_key(teacher_id: int, endpoint_id, secret: str) -> dict:
+    """Store the teacher's key for one whitelisted endpoint."""
+    endpoint = _enabled_endpoint(endpoint_id)
+    if not credentials.encryption_available():
+        raise Conflict(description=(
+            "Il server non può conservare chiavi: manca CREDENTIAL_ENCRYPTION_KEY. "
+            "Contatta l'amministratore."
+        ))
+    credentials.set_teacher_key(teacher_id, endpoint['id'], secret)
     return get_settings(teacher_id)
 
 
-def clear_key(teacher_id: int) -> dict:
-    credentials.clear_teacher_key(teacher_id)
+def clear_key(teacher_id: int, endpoint_id) -> dict:
+    credentials.clear_teacher_key(teacher_id, _as_id(endpoint_id))
     return get_settings(teacher_id)
+
+
+def _enabled_endpoint(endpoint_id) -> dict:
+    endpoint = llm_endpoints.resolve_enabled_endpoint(_as_id(endpoint_id))
+    if endpoint is None:
+        raise BadRequest(description="L'endpoint selezionato non è disponibile.")
+    return endpoint
+
+
+def _as_id(value) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise BadRequest(description="Endpoint non valido.")

@@ -34,17 +34,13 @@ def llm_enabled() -> bool:
 
 
 def validate_llm_env() -> None:
-    """Raise LlmConfigurationError when USE_LLM_EVAL=1 but the setup is incomplete.
+    """Startup check for grading. Warns; never stops the app.
 
-    Called at startup by both server.py and the grading worker so a
-    misconfigured deployment is reported loudly instead of silently leaving
-    every open answer pending.
-
-    The real check lives in services/llm_config.py, which knows about providers
-    and their keys; it is imported lazily because that module imports this one.
+    Called by server.py and the grading worker. The policy lives in
+    services/llm_config.py, imported lazily because that module imports this
+    one. Callers still catch LlmConfigurationError, so a future check that
+    must be fatal can raise it.
     """
-    if not llm_enabled():
-        return
-    from services.llm_config import resolve_llm_config
+    from services.llm_config import validate_llm_env as check
 
-    resolve_llm_config()
+    check()

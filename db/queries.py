@@ -674,7 +674,7 @@ FIND_REVERT_OF_CHANGE_SET = """
 # ── LLM endpoints (administrator-managed allowlist) ──────────────────────────
 
 LLM_ENDPOINT_COLUMNS = """
-    id, slug, label, protocol, base_url, requires_key, models,
+    id, slug, label, protocol, base_url, models,
     enabled, is_default, notes, created_at, updated_at
 """
 
@@ -705,9 +705,9 @@ GET_ENABLED_LLM_ENDPOINT = f"""
 
 INSERT_LLM_ENDPOINT = f"""
     INSERT INTO llm_endpoints
-        (slug, label, protocol, base_url, requires_key, models, enabled, is_default, notes)
+        (slug, label, protocol, base_url, models, enabled, is_default, notes)
     VALUES
-        (%(slug)s, %(label)s, %(protocol)s, %(base_url)s, %(requires_key)s,
+        (%(slug)s, %(label)s, %(protocol)s, %(base_url)s,
          %(models)s, %(enabled)s, %(is_default)s, %(notes)s)
     RETURNING {LLM_ENDPOINT_COLUMNS}
 """
@@ -718,7 +718,6 @@ UPDATE_LLM_ENDPOINT = f"""
         label = %(label)s,
         protocol = %(protocol)s,
         base_url = %(base_url)s,
-        requires_key = %(requires_key)s,
         models = %(models)s,
         enabled = %(enabled)s,
         is_default = %(is_default)s,
@@ -750,11 +749,14 @@ UPDATE_TEACHER_LLM_CONFIG = """
 """
 
 # Secrets live apart from configuration: this row is useless without the master
-# key, which is not in the database.
+# key, which is not in the database. A key belongs to one (teacher, endpoint)
+# pair and is never read for any other endpoint.
 UPSERT_TEACHER_LLM_CREDENTIAL = """
-    INSERT INTO teacher_llm_credentials (teacher_id, ciphertext, fingerprint, key_version)
-    VALUES (%(teacher_id)s, %(ciphertext)s, %(fingerprint)s, %(key_version)s)
-    ON CONFLICT (teacher_id) DO UPDATE
+    INSERT INTO teacher_llm_credentials
+        (teacher_id, endpoint_id, ciphertext, fingerprint, key_version)
+    VALUES
+        (%(teacher_id)s, %(endpoint_id)s, %(ciphertext)s, %(fingerprint)s, %(key_version)s)
+    ON CONFLICT (teacher_id, endpoint_id) DO UPDATE
         SET ciphertext  = EXCLUDED.ciphertext,
             fingerprint = EXCLUDED.fingerprint,
             key_version = EXCLUDED.key_version,
@@ -764,56 +766,28 @@ UPSERT_TEACHER_LLM_CREDENTIAL = """
 GET_TEACHER_LLM_CREDENTIAL = """
     SELECT ciphertext, fingerprint, key_version, updated_at
     FROM teacher_llm_credentials
-    WHERE teacher_id = %s
+    WHERE teacher_id = %s AND endpoint_id = %s
 """
 
 DELETE_TEACHER_LLM_CREDENTIAL = """
-    DELETE FROM teacher_llm_credentials WHERE teacher_id = %s
+    DELETE FROM teacher_llm_credentials WHERE teacher_id = %s AND endpoint_id = %s
+"""
+
+# Fingerprints only: what a teacher may see about their own keys.
+LIST_TEACHER_LLM_KEY_STATUS = """
+    SELECT endpoint_id, fingerprint, updated_at
+    FROM teacher_llm_credentials
+    WHERE teacher_id = %s
 """
 
 LIST_TEACHER_LLM_CREDENTIALS = """
-    SELECT teacher_id, ciphertext FROM teacher_llm_credentials ORDER BY teacher_id
+    SELECT teacher_id, endpoint_id, ciphertext
+    FROM teacher_llm_credentials
+    ORDER BY teacher_id, endpoint_id
 """
 
 UPDATE_TEACHER_LLM_CREDENTIAL_CIPHERTEXT = """
     UPDATE teacher_llm_credentials
     SET ciphertext = %(ciphertext)s, key_version = %(key_version)s, updated_at = now()
-    WHERE teacher_id = %(teacher_id)s
-"""
-
-# ── managed endpoint credentials ─────────────────────────────────────────────
-
-UPSERT_ENDPOINT_LLM_CREDENTIAL = """
-    INSERT INTO llm_endpoint_credentials (endpoint_id, ciphertext, fingerprint, key_version)
-    VALUES (%(endpoint_id)s, %(ciphertext)s, %(fingerprint)s, %(key_version)s)
-    ON CONFLICT (endpoint_id) DO UPDATE
-        SET ciphertext  = EXCLUDED.ciphertext,
-            fingerprint = EXCLUDED.fingerprint,
-            key_version = EXCLUDED.key_version,
-            updated_at  = now()
-"""
-
-GET_ENDPOINT_LLM_CREDENTIAL = """
-    SELECT ciphertext, fingerprint, key_version, updated_at
-    FROM llm_endpoint_credentials
-    WHERE endpoint_id = %s
-"""
-
-DELETE_ENDPOINT_LLM_CREDENTIAL = """
-    DELETE FROM llm_endpoint_credentials WHERE endpoint_id = %s
-"""
-
-# Fingerprints only: what the admin list may show. Never the ciphertext.
-LIST_ENDPOINT_LLM_CREDENTIAL_FINGERPRINTS = """
-    SELECT endpoint_id, fingerprint, updated_at FROM llm_endpoint_credentials
-"""
-
-LIST_ENDPOINT_LLM_CREDENTIALS = """
-    SELECT endpoint_id, ciphertext FROM llm_endpoint_credentials ORDER BY endpoint_id
-"""
-
-UPDATE_ENDPOINT_LLM_CREDENTIAL_CIPHERTEXT = """
-    UPDATE llm_endpoint_credentials
-    SET ciphertext = %(ciphertext)s, key_version = %(key_version)s, updated_at = now()
-    WHERE endpoint_id = %(endpoint_id)s
+    WHERE teacher_id = %(teacher_id)s AND endpoint_id = %(endpoint_id)s
 """

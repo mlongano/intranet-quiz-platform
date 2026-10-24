@@ -2,13 +2,13 @@
 
 What matters here is not CRUD mechanics but the properties the security model
 rests on: only enabled rows are ever resolved for grading, there is never more
-than one default, and the endpoint address stays server-side.
+than one default, every endpoint names the models it may be asked for, and the
+administrator manages destinations only — never keys.
 """
 
 import pytest
 
-from services import llm_config, llm_endpoints
-from services.llm_errors import LlmConfigurationError
+from services import llm_endpoints
 from tests.conftest import make_teacher, teacher_token
 
 
@@ -18,7 +18,6 @@ def _payload(**overrides):
         'label': 'Server scuola (vLLM)',
         'protocol': 'openai',
         'base_url': 'http://10.0.0.5:8000/v1',
-        'requires_key': False,
         'models': ['qwen2.5:14b'],
         'enabled': True,
         'is_default': False,
@@ -42,7 +41,6 @@ def test_create_and_list(db_conn):
     created = llm_endpoints.create_endpoint(_payload())
 
     assert created['slug'] == 'lan-vllm'
-    assert created['requires_key'] is False
     assert created['models'] == ['qwen2.5:14b']
 
     listed = llm_endpoints.list_endpoints()
@@ -75,7 +73,7 @@ def test_delete_removes_the_row(db_conn):
 
 
 def test_default_endpoint_cannot_be_deleted(db_conn):
-    """Deleting it would move grading back to the environment without warning."""
+    """Deleting it would leave grading with nowhere to go, without warning."""
     created = llm_endpoints.create_endpoint(_payload(is_default=True))
 
     from werkzeug.exceptions import Conflict
@@ -117,9 +115,17 @@ def test_credentials_in_url_are_rejected(db_conn):
         llm_endpoints.create_endpoint(_payload(base_url='https://user:pw@host/v1'))
 
 
+@pytest.mark.parametrize('models', [[], ['ok', '  ']])
+def test_an_endpoint_must_name_its_models(db_conn, models):
+    """Nothing else supplies a model, so the list is required and has no blanks."""
+    from werkzeug.exceptions import BadRequest
+    with pytest.raises(BadRequest):
+        llm_endpoints.create_endpoint(_payload(models=models))
+
+
 def test_hosted_endpoint_needs_no_base_url(db_conn):
     created = llm_endpoints.create_endpoint(
-        _payload(slug='openai-hosted', base_url=None, requires_key=True)
+        _payload(slug='openai-hosted', base_url=None)
     )
     assert created['base_url'] is None
 
@@ -129,7 +135,7 @@ def test_hosted_endpoint_needs_no_base_url(db_conn):
 def test_promoting_a_default_demotes_the_previous_one(db_conn):
     first = llm_endpoints.create_endpoint(_payload(is_default=True))
     second = llm_endpoints.create_endpoint(
-        _payload(slug='openai-hosted', base_url=None, requires_key=True, is_default=True)
+        _payload(slug='openai-hosted', base_url=None, is_default=True)
     )
 
     assert llm_endpoints.get_endpoint(first['id'])['is_default'] is False
@@ -158,89 +164,6 @@ def test_disabled_endpoint_is_never_resolved(db_conn):
 
     assert llm_endpoints.get_default_endpoint() is None
     assert llm_endpoints.resolve_enabled_endpoint(created['id']) is None
-
-
-def test_grading_config_prefers_the_default_endpoint(db_conn, monkeypatch):
-    llm_endpoints.create_endpoint(_payload(is_default=True))
-    monkeypatch.setenv('USE_LLM_EVAL', '1')
-    monkeypatch.setenv('LLM_PROVIDER', 'anthropic')      # must lose to the table
-    monkeypatch.setenv('LLM_BASE_URL', 'http://ignored') # must lose to the table
-    monkeypatch.delenv('LLM_MODEL', raising=False)
-    monkeypatch.delenv('OPENAI_API_KEY', raising=False)
-
-    config = llm_config.resolve_llm_config()
-
-    assert config['provider'] == 'openai'
-    assert config['base_url'] == 'http://10.0.0.5:8000/v1'
-    assert config['model'] == 'qwen2.5:14b'   # the endpoint's only model
-    assert config['api_key'] == llm_config.LOCAL_ENDPOINT_PLACEHOLDER_KEY
-    assert config['endpoint_slug'] == 'lan-vllm'
-
-
-def test_env_is_used_when_no_default_endpoint_exists(db_conn, monkeypatch):
-    llm_endpoints.create_endpoint(_payload(is_default=False))
-    monkeypatch.setenv('USE_LLM_EVAL', '1')
-    monkeypatch.setenv('LLM_PROVIDER', 'openai')
-    monkeypatch.setenv('LLM_MODEL', 'gpt-4o-mini')
-    monkeypatch.setenv('OPENAI_API_KEY', 'sk-env')
-    monkeypatch.delenv('LLM_BASE_URL', raising=False)
-
-    config = llm_config.resolve_llm_config()
-
-    assert config['model'] == 'gpt-4o-mini'
-    assert config['base_url'] is None
-    assert 'endpoint_id' not in config
-
-
-def test_endpoint_requiring_a_key_still_demands_one(db_conn, monkeypatch):
-    llm_endpoints.create_endpoint(
-        _payload(slug='openai-hosted', base_url=None, requires_key=True,
-                 models=['gpt-4o-mini'], is_default=True)
-    )
-    monkeypatch.setenv('USE_LLM_EVAL', '1')
-    monkeypatch.delenv('OPENAI_API_KEY', raising=False)
-    monkeypatch.delenv('LLM_MODEL', raising=False)
-
-    with pytest.raises(LlmConfigurationError, match='OPENAI_API_KEY'):
-        llm_config.resolve_llm_config()
-
-
-def test_public_info_names_the_endpoint_but_not_its_address(db_conn, monkeypatch):
-    llm_endpoints.create_endpoint(_payload(is_default=True))
-    monkeypatch.setenv('USE_LLM_EVAL', '1')
-    monkeypatch.delenv('LLM_MODEL', raising=False)
-
-    info = llm_config.public_llm_info()
-
-    assert info['endpoint'] == 'Server scuola (vLLM)'
-    assert '10.0.0.5' not in str(info)
-
-
-def test_resolution_reuses_a_held_connection(db_conn, monkeypatch):
-    """Never take a second connection while one is held.
-
-    Job creation runs inside the transaction that records a submission. Taking
-    another connection there exhausts the pool under concurrent submissions —
-    which is exactly how this regressed once.
-    """
-    llm_endpoints.create_endpoint(_payload(is_default=True))
-    monkeypatch.setenv('USE_LLM_EVAL', '1')
-    monkeypatch.delenv('LLM_MODEL', raising=False)
-
-    import db as db_module
-    calls = []
-    original = db_module.get_conn
-
-    def counting_get_conn(*args, **kwargs):
-        calls.append(1)
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(db_module, 'get_conn', counting_get_conn)
-
-    config = llm_config.resolve_llm_config(conn=db_conn)
-
-    assert config['endpoint_slug'] == 'lan-vllm'
-    assert calls == [], "resolution must not open its own connection when given one"
 
 
 # ── API surface ──────────────────────────────────────────────────────────────
@@ -280,3 +203,15 @@ def test_super_admin_can_manage_endpoints(client, db_conn):
     )
     assert deleted.status_code == 200
     assert client.get('/api/super-admin/llm-endpoints', headers=headers).get_json() == []
+
+
+def test_super_admin_has_no_key_routes(client, db_conn):
+    """Administrators whitelist destinations; keys belong to teachers alone."""
+    admin_id = make_teacher(db_conn, email='root-nokey@test.it', role='super_admin')
+    headers = {'Authorization': f"Bearer {teacher_token(admin_id, role='super_admin', email='root-nokey@test.it')}"}
+    endpoint = llm_endpoints.create_endpoint(_payload())
+
+    response = client.put(f"/api/super-admin/llm-endpoints/{endpoint['id']}/key",
+                          json={'api_key': 'sk-shared'}, headers=headers)
+
+    assert response.status_code in (404, 405)

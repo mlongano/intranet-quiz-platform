@@ -792,17 +792,20 @@ def update_llm_settings():
     return jsonify(teacher_llm_settings.update_settings(_teacher_id(), data)), 200
 
 
-@teacher_bp.put('/llm-settings/key')
+# A teacher's key is stored per whitelisted endpoint and is the only key ever
+# sent there on their behalf. Write-only: responses report status, never keys.
+@teacher_bp.put('/llm-settings/endpoints/<int:endpoint_id>/key')
 @require_teacher
-def set_llm_key():
+def set_llm_key(endpoint_id: int):
     data = request.get_json(silent=True) or {}
-    return jsonify(teacher_llm_settings.set_key(_teacher_id(), data.get('api_key', ''))), 200
+    return jsonify(teacher_llm_settings.set_key(
+        _teacher_id(), endpoint_id, data.get('api_key', ''))), 200
 
 
-@teacher_bp.delete('/llm-settings/key')
+@teacher_bp.delete('/llm-settings/endpoints/<int:endpoint_id>/key')
 @require_teacher
-def clear_llm_key():
-    return jsonify(teacher_llm_settings.clear_key(_teacher_id())), 200
+def clear_llm_key(endpoint_id: int):
+    return jsonify(teacher_llm_settings.clear_key(_teacher_id(), endpoint_id)), 200
 
 
 # ── misc ──────────────────────────────────────────────────────────────────────
@@ -810,15 +813,15 @@ def clear_llm_key():
 @teacher_bp.get('/llm-info')
 @require_teacher
 def llm_info():
-    """Which provider and model open answers are currently graded with.
+    """Where and with which model *this teacher's* open answers are graded.
 
-    Reports disabled when the configuration is incomplete rather than
-    advertising a model that no grading run could actually use. Never returns
-    the API key.
+    Reports disabled unless grading would actually run for them — an endpoint
+    resolves and they hold a key for it — and says whether the key is what is
+    missing. Never returns a key or an endpoint address.
     """
     from services.llm_config import public_llm_info
 
-    return jsonify(public_llm_info()), 200
+    return jsonify(public_llm_info(_teacher_id())), 200
 
 
 @teacher_bp.post('/email/send-result')

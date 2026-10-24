@@ -245,22 +245,33 @@ student_list_snapshots (id, teacher_id FK, title, content JSONB, created_at)
 ```sql
 llm_endpoints (id, slug UNIQUE, label,
                protocol [openai | anthropic | deepseek],
-               base_url, requires_key, models JSONB,
+               base_url, models JSONB,   -- at least one; the first is the default
                enabled, is_default, notes, created_at, updated_at)
                UNIQUE ((true)) WHERE is_default   -- at most one default
 ```
 
-The closed set of services grading may contact. Only `enabled` rows resolve, so
-disabling one revokes it immediately. Teachers will select by id and never
-supply a URL (Fase 4), which is what removes the request-forgery surface.
+The closed set of services grading may contact, and the only thing a
+super-admin controls about grading — no keys live here. Only `enabled` rows
+resolve, so disabling one revokes it immediately. Teachers select by id and
+never supply a URL, which is what removes the request-forgery surface; every
+model sent is one this row lists. No row, or no enabled default, means nowhere
+to grade: there is no fallback to `.env`.
 
 ### Teacher LLM credentials
 
 ```sql
 teachers.llm_config JSONB     -- {endpoint_id, model} — non-secret, no URLs
-teacher_llm_credentials (teacher_id PK FK [CASCADE], ciphertext, fingerprint,
-                         key_version, created_at, updated_at)
+teacher_llm_credentials (teacher_id FK [CASCADE], endpoint_id FK [CASCADE],
+                         ciphertext, fingerprint, key_version,
+                         created_at, updated_at,
+                         PRIMARY KEY (teacher_id, endpoint_id))
 ```
+
+The only credentials in the system: grading authenticates with the teacher's
+own key for the endpoint it resolves to, and nothing else — there is no shared
+key, per endpoint or in `.env`. Keying the row by `(teacher_id, endpoint_id)` is
+what keeps a key at its destination. A teacher without one has open answers
+left pending.
 
 Keys are encrypted with `CREDENTIAL_ENCRYPTION_KEY`, held outside the database,
 so a dump does not leak them. `fingerprint` is a hash prefix kept in clear so
@@ -302,7 +313,10 @@ sync_runs (id, started_at, finished_at, triggered_by FK, result JSONB,
 │       ├── 006_score_change_sets.sql   # change sets + answer_revision
 │       ├── 007_llm_job_provenance.sql  # provider/model/prompt pinned per job
 │       ├── 008_llm_endpoints.sql       # admin-managed endpoint allowlist
-│       └── 009_teacher_llm_credentials.sql  # per-teacher config + encrypted keys
+│       ├── 009_teacher_llm_credentials.sql  # per-teacher config + encrypted keys
+│       ├── 010_regrade_scope.sql
+│       ├── 011_llm_endpoint_credentials.sql  # shared endpoint keys (dropped by 012)
+│       └── 012_teacher_keys_bound_to_endpoints.sql  # keys per (teacher, endpoint)
 │
 ├── prompts/
 │   ├── open-question-system/     # Immutable v<N>-<sha8>.md grading prompts
