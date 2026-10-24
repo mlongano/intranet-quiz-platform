@@ -15,10 +15,17 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/          # rebuilt in Docker from source
 
-# Secrets — NEVER copy into the image; passed via compose env_file
+# Secrets — NEVER copy into the image. .env reaches the containers through
+# compose env_file; credential files in secrets/ are mounted read-only at
+# runtime (compose.yaml). The Google service-account key has domain-wide
+# delegation: baked into a layer, anyone who can read the image holds it.
 .env
 .env.*
 !.env.example
+secrets/
+
+# Legacy v2.6.0 student lists: personal data, not application code
+students.jsonc*
 
 # Persistent data directories — mounted as Docker volumes
 images/

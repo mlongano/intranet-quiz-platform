@@ -15,6 +15,7 @@ services:
     user: root
     environment:
       INSTALL_DEV_DEPS: "1"
+      REPO_ROOT: /repo
     volumes:
       - app_images:/app/images
       - ./backups:/app/backups
@@ -29,6 +30,11 @@ services:
       - ./server.py:/app/server.py:ro
       - ./utils.py:/app/utils.py:ro
       - ./tests:/app/tests:ro
+      # The whole working tree, read-only, for tests that check repository
+      # files (.dockerignore, compose.yaml) rather than the running app.
+      # A directory mount, so it cannot go stale the way a single-file
+      # bind mount does after `git pull`.
+      - .:/repo:ro
     command: ["--debug"]
 
   worker:

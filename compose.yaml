@@ -49,6 +49,9 @@ services:
     volumes:
       - app_images:/app/images        # quiz images (persistent across deployments)
       - ./backups:/app/backups        # host-visible pg_dump + image archives
+      # Credential files (Google service-account key), read-only. Mounted, never
+      # copied into the image: .dockerignore excludes secrets/.
+      - ./secrets:/app/secrets:ro
 
   # ── Background LLM grading worker ──────────────────────────────────────────
   worker:
