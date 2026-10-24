@@ -15,6 +15,8 @@ GET  /api/super-admin/llm-endpoints
 POST /api/super-admin/llm-endpoints
 PUT  /api/super-admin/llm-endpoints/<id>
 DELETE /api/super-admin/llm-endpoints/<id>
+PUT  /api/super-admin/llm-endpoints/<id>/key     (write-only)
+DELETE /api/super-admin/llm-endpoints/<id>/key
 """
 
 from __future__ import annotations
@@ -245,6 +247,21 @@ def update_llm_endpoint(endpoint_id: int):
 def delete_llm_endpoint(endpoint_id: int):
     llm_endpoints.delete_endpoint(endpoint_id)
     return jsonify({'ok': True}), 200
+
+
+# The key an endpoint authenticates with. Write-only: the response, like every
+# read of an endpoint, reports only whether a key is set and its fingerprint.
+@super_admin_bp.put('/llm-endpoints/<int:endpoint_id>/key')
+@require_super_admin
+def set_llm_endpoint_key(endpoint_id: int):
+    data = request.get_json(silent=True) or {}
+    return jsonify(llm_endpoints.set_key(endpoint_id, data.get('api_key', ''))), 200
+
+
+@super_admin_bp.delete('/llm-endpoints/<int:endpoint_id>/key')
+@require_super_admin
+def clear_llm_endpoint_key(endpoint_id: int):
+    return jsonify(llm_endpoints.clear_key(endpoint_id)), 200
 
 
 # ── google workspace sync ─────────────────────────────────────────────────────

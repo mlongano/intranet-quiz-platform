@@ -322,6 +322,14 @@ export interface SyncStatus {
   } | null;
 }
 
+/** What the API may say about a stored API key: never the key itself, only
+ *  whether one is set and a fingerprint identifying which. */
+export interface LlmKeyStatus {
+  configured: boolean;
+  fingerprint: string | null;
+  updated_at?: string | null;
+}
+
 /** An endpoint grading may talk to. Managed by a super-admin: teachers will
  *  select one by id, never by URL, which keeps the reachable set closed. */
 export interface LlmEndpoint {
@@ -337,10 +345,13 @@ export interface LlmEndpoint {
   notes: string | null;
   created_at: string | null;
   updated_at: string | null;
+  /** The key this endpoint authenticates with. It is sent to this endpoint
+   *  and nowhere else; set and cleared through its own write-only call. */
+  api_key: LlmKeyStatus;
 }
 
 export type LlmEndpointPayload = Partial<
-  Omit<LlmEndpoint, 'id' | 'created_at' | 'updated_at'>
+  Omit<LlmEndpoint, 'id' | 'created_at' | 'updated_at' | 'api_key'>
 >;
 
 /** A teacher's own LLM configuration. The API key is never returned — only
@@ -357,11 +368,7 @@ export interface TeacherLlmSettings {
     models: string[];
     is_default: boolean;
   }>;
-  key: {
-    configured: boolean;
-    fingerprint: string | null;
-    updated_at?: string | null;
-  };
+  key: LlmKeyStatus;
   encryption_available: boolean;
 }
 

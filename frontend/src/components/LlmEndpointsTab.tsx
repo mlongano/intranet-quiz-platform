@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
+  clearLlmEndpointKey,
   createLlmEndpoint,
   deleteLlmEndpoint,
   listLlmEndpoints,
+  setLlmEndpointKey,
   updateLlmEndpoint,
 } from '../api';
 import type { LlmEndpoint, LlmEndpointPayload } from '../api';
@@ -99,6 +101,34 @@ export function LlmEndpointsTab() {
     onError: showError,
   });
 
+  // The key field is write-only: what is typed is sent once and then dropped
+  // from state; the list only ever shows a fingerprint.
+  const [keyEditingId, setKeyEditingId] = useState<number | null>(null);
+  const [keyDraft, setKeyDraft] = useState('');
+  const closeKeyForm = () => { setKeyEditingId(null); setKeyDraft(''); };
+
+  const setKeyMutation = useMutation({
+    mutationFn: ({ id, apiKey }: { id: number; apiKey: string }) => setLlmEndpointKey(id, apiKey),
+    onSuccess: () => { refresh(); closeKeyForm(); },
+    onError: (e: unknown) => { setKeyDraft(''); showError(e); },
+  });
+
+  const clearKeyMutation = useMutation({
+    mutationFn: (id: number) => clearLlmEndpointKey(id),
+    onSuccess: refresh,
+    onError: showError,
+  });
+
+  const confirmClearKey = (endpoint: LlmEndpoint) => {
+    askConfirm(
+      `Rimuovere la chiave API di "${endpoint.label}"?` +
+      (endpoint.requires_key
+        ? ' Le valutazioni su questo endpoint resteranno in attesa finché non ne imposti una nuova.'
+        : ''),
+      () => clearKeyMutation.mutate(endpoint.id),
+    );
+  };
+
   const startEdit = (endpoint: LlmEndpoint) => {
     setEditingId(endpoint.id);
     setForm(toForm(endpoint));
@@ -132,6 +162,12 @@ export function LlmEndpointsTab() {
           Elenco dei servizi che la valutazione automatica può contattare. I docenti
           potranno sceglierne uno da questa lista, senza mai indicare un indirizzo:
           è così che l'insieme dei server raggiungibili resta sotto controllo.
+        </p>
+        <p className="text-sm text-on-surface-variant mt-1">
+          Ogni chiave viene inviata solo al servizio per cui è stata impostata. La
+          chiave condivisa del file <span className="font-mono">.env</span> vale
+          soltanto per il servizio ufficiale del provider: un endpoint con un proprio
+          indirizzo che richiede una chiave deve averne una qui.
         </p>
       </div>
 
@@ -186,7 +222,7 @@ export function LlmEndpointsTab() {
               />
             </label>
             <label className="text-sm md:col-span-2">
-              <span className="text-on-surface-variant">Modelli ammessi (separati da virgola, vuoto = qualsiasi)</span>
+              <span className="text-on-surface-variant">Modelli ammessi (separati da virgola, vuoto = qualsiasi; il primo è il predefinito)</span>
               <input
                 value={form.models}
                 onChange={e => setForm({ ...form, models: e.target.value })}
@@ -285,6 +321,66 @@ export function LlmEndpointsTab() {
                   <div className="text-xs text-on-surface-variant mt-0.5">
                     Modelli: {endpoint.models.join(', ')}
                   </div>
+                )}
+                <div className="text-xs mt-1 flex flex-wrap items-center gap-2">
+                  {endpoint.api_key.configured ? (
+                    <span className="text-on-surface-variant">
+                      Chiave API: configurata
+                      <span className="font-mono"> ({endpoint.api_key.fingerprint})</span>
+                    </span>
+                  ) : endpoint.requires_key && endpoint.base_url ? (
+                    <span className="text-error">
+                      Chiave API mancante: le valutazioni resteranno in attesa
+                    </span>
+                  ) : (
+                    <span className="text-on-surface-variant">Chiave API: non configurata</span>
+                  )}
+                  {keyEditingId !== endpoint.id && (
+                    <button
+                      onClick={() => { setKeyEditingId(endpoint.id); setKeyDraft(''); setError(null); }}
+                      className="underline text-primary hover:opacity-80"
+                    >
+                      {endpoint.api_key.configured ? 'Sostituisci' : 'Imposta'}
+                    </button>
+                  )}
+                  {endpoint.api_key.configured && keyEditingId !== endpoint.id && (
+                    <button
+                      onClick={() => confirmClearKey(endpoint)}
+                      className="underline text-error hover:opacity-80"
+                    >
+                      Rimuovi
+                    </button>
+                  )}
+                </div>
+                {keyEditingId === endpoint.id && (
+                  <form
+                    onSubmit={e => {
+                      e.preventDefault();
+                      setKeyMutation.mutate({ id: endpoint.id, apiKey: keyDraft });
+                    }}
+                    className="mt-2 flex flex-wrap gap-2 items-center"
+                  >
+                    <input
+                      type="password" value={keyDraft} required autoFocus
+                      autoComplete="off" spellCheck={false}
+                      onChange={e => setKeyDraft(e.target.value)}
+                      placeholder="Chiave API"
+                      aria-label={`Chiave API per ${endpoint.label}`}
+                      className="flex-1 min-w-[12rem] px-3 py-1.5 text-sm bg-surface border border-outline-variant/40 rounded-lg font-mono"
+                    />
+                    <button
+                      type="submit" disabled={setKeyMutation.isPending || !keyDraft.trim()}
+                      className="px-3 py-1.5 text-sm bg-primary text-on-primary rounded-lg hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      {setKeyMutation.isPending ? 'Salvataggio…' : 'Salva chiave'}
+                    </button>
+                    <button
+                      type="button" onClick={closeKeyForm}
+                      className="px-3 py-1.5 text-sm border border-outline-variant/40 rounded-lg hover:bg-surface-container"
+                    >
+                      Annulla
+                    </button>
+                  </form>
                 )}
               </div>
 

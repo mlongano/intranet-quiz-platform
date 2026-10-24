@@ -50,7 +50,12 @@ def resolve_llm_config(teacher_id: int | None = None, conn=None) -> dict:
     that into a preserved `pending`, never a zero.
     """
     teacher = _teacher_preferences(teacher_id, conn)
-    endpoint = _teacher_endpoint(teacher, conn) or _default_endpoint(conn)
+    selected = _teacher_endpoint(teacher, conn)
+    endpoint = selected or _default_endpoint(conn)
+    # A teacher's model and key were chosen for the endpoint they selected —
+    # or, having selected none, for whatever grading uses. When a selection is
+    # revoked they fall back to the default, but their choices do not follow.
+    teacher_choices_apply = selected is not None or not teacher.get('endpoint_id')
 
     if endpoint is not None:
         provider = endpoint['protocol']
@@ -69,23 +74,35 @@ def resolve_llm_config(teacher_id: int | None = None, conn=None) -> dict:
             f"Choose one of: {', '.join(SUPPORTED_PROVIDERS)}."
         )
 
-    model = _resolve_model(endpoint, teacher)
+    model = _resolve_model(endpoint, teacher if teacher_choices_apply else None)
     if not model:
         raise LlmConfigurationError("LLM_MODEL is not set.")
 
-    # A key is what the hosted providers authenticate with, so it is required
-    # when talking to them. A LAN endpoint (vLLM, llama.cpp, LiteLLM) commonly
-    # has no auth at all; demanding a key there would only teach admins to put
-    # junk in a variable named API_KEY. Both SDKs still need *some* string, so a
-    # placeholder is sent. Set the key anyway if the endpoint checks it.
+    # A key goes only to the destination it was issued for. Choosing the
+    # fallback by protocol alone used to send OPENAI_API_KEY — a key for
+    # api.openai.com — to any OpenAI-compatible host an endpoint named.
+    #
+    #   teacher key   -> the endpoint they selected; with no selection, only the
+    #                    provider's own hosted service
+    #   endpoint key  -> that endpoint
+    #   key from .env -> the provider's own hosted service, or the address .env
+    #                    itself configures, which the admin paired with it
     key_env = PROVIDER_KEY_ENV[provider]
-    api_key = _teacher_api_key(teacher_id, conn) or (os.getenv(key_env) or '').strip()
+    hosted_by_provider = base_url is None
+    api_key = ''
+    if selected is not None or (teacher_choices_apply and hosted_by_provider):
+        api_key = _teacher_api_key(teacher_id, conn)
+    if not api_key and endpoint is not None:
+        api_key = _endpoint_api_key(endpoint['id'], conn)
+    if not api_key and (endpoint is None or hosted_by_provider):
+        api_key = (os.getenv(key_env) or '').strip()
+
+    # A LAN endpoint (vLLM, llama.cpp) commonly has no auth at all; demanding a
+    # key there would only teach admins to put junk in a variable named
+    # API_KEY. Both SDKs still need *some* string, so a placeholder is sent.
     if not api_key:
         if requires_key:
-            raise LlmConfigurationError(
-                f"Nessuna chiave API configurata per il provider {provider!r}: "
-                f"impostala nelle tue impostazioni oppure definisci {key_env}."
-            )
+            raise LlmConfigurationError(_missing_key_message(endpoint, provider, key_env))
         api_key = LOCAL_ENDPOINT_PLACEHOLDER_KEY
 
     config = {
@@ -155,6 +172,30 @@ def _teacher_endpoint(teacher: dict, conn=None) -> dict | None:
     return resolve_enabled_endpoint(int(endpoint_id), conn)
 
 
+def _missing_key_message(endpoint: dict | None, provider: str, key_env: str) -> str:
+    if endpoint is not None and endpoint['base_url'] is not None:
+        return (
+            f"Nessuna chiave API configurata per l'endpoint '{endpoint['slug']}': "
+            f"impostala nella gestione endpoint del super-admin, oppure nelle tue "
+            f"impostazioni se hai selezionato questo endpoint."
+        )
+    return (
+        f"Nessuna chiave API configurata per il provider {provider!r}: "
+        f"impostala nelle tue impostazioni oppure definisci {key_env}."
+    )
+
+
+def _endpoint_api_key(endpoint_id: int, conn=None) -> str:
+    try:
+        from services.credentials import get_endpoint_key
+
+        return get_endpoint_key(endpoint_id, conn) or ''
+    except Exception:
+        # Same policy as a teacher key: unreadable means absent, so the caller
+        # either finds another key that belongs here or reports one missing.
+        return ''
+
+
 def _teacher_api_key(teacher_id: int | None, conn=None) -> str:
     if not teacher_id:
         return ''
@@ -169,20 +210,27 @@ def _teacher_api_key(teacher_id: int | None, conn=None) -> str:
 
 
 def _resolve_model(endpoint: dict | None, teacher: dict | None = None) -> str:
-    """Teacher's choice, then LLM_MODEL, then a single-model endpoint.
+    """Teacher's choice, then LLM_MODEL, then the endpoint's first listed model.
 
-    An endpoint that lists exactly one model needs no further configuration,
-    which is the common case for a LAN server serving one weight.
+    An endpoint that lists models serves only those, so a choice it does not
+    serve is skipped rather than sent: LLM_MODEL in .env usually names a hosted
+    model, and forcing it onto a school server would fail every call. The
+    first listed model is therefore the endpoint's default, and a single-model
+    LAN server needs no further configuration. *teacher* is None when the
+    teacher's choices do not apply to this endpoint.
     """
+    served = list((endpoint or {}).get('models') or [])
+
+    def servable(name: str) -> bool:
+        return bool(name) and (not served or name in served)
+
     chosen = str((teacher or {}).get('model') or '').strip()
-    if chosen:
+    if servable(chosen):
         return chosen
     model = (os.getenv('LLM_MODEL') or '').strip()
-    if model:
+    if servable(model):
         return model
-    if endpoint and len(endpoint.get('models') or []) == 1:
-        return endpoint['models'][0]
-    return ''
+    return served[0] if served else ''
 
 
 def validate_llm_env() -> None:

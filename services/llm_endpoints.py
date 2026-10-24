@@ -23,6 +23,7 @@ from werkzeug.exceptions import BadRequest, Conflict, NotFound
 
 import db
 from db import queries as Q
+from services import credentials
 from services.llm_provider import SUPPORTED_PROVIDERS
 
 # Must start and end alphanumeric: a trailing hyphen reads as a typo and makes
@@ -34,15 +35,46 @@ SLUG_PATTERN = re.compile(r'^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$')
 def list_endpoints() -> list[dict]:
     with db.get_conn() as conn:
         rows = conn.execute(Q.LIST_LLM_ENDPOINTS).fetchall()
-    return [_row_to_dict(r) for r in rows]
+    return _with_key_status([_row_to_dict(r) for r in rows])
 
 
 def get_endpoint(endpoint_id: int) -> dict:
+    return _with_key_status([_get_row(endpoint_id)])[0]
+
+
+def _get_row(endpoint_id: int) -> dict:
     with db.get_conn() as conn:
         row = conn.execute(Q.GET_LLM_ENDPOINT, (endpoint_id,)).fetchone()
     if not row:
         raise NotFound(description="Endpoint non trovato.")
     return _row_to_dict(row)
+
+
+def _with_key_status(endpoints: list[dict]) -> list[dict]:
+    """Attach what the admin may know about each key: whether one is set, and
+    its fingerprint. Only for the admin API — the grading path resolves rows
+    without this, so it never pays for the extra query."""
+    status = credentials.describe_endpoint_keys()
+    absent = {'configured': False, 'fingerprint': None, 'updated_at': None}
+    return [{**e, 'api_key': status.get(e['id'], absent)} for e in endpoints]
+
+
+# ── endpoint API key ─────────────────────────────────────────────────────────
+
+def set_key(endpoint_id: int, secret: str) -> dict:
+    """Store the key this endpoint authenticates with. It is sent nowhere else."""
+    _get_row(endpoint_id)   # 404 before anything is encrypted
+    if not credentials.encryption_available():
+        raise Conflict(description=(
+            f"Impossibile salvare chiavi: {credentials.MASTER_KEY_ENV} non è configurata."
+        ))
+    return credentials.set_endpoint_key(endpoint_id, secret)
+
+
+def clear_key(endpoint_id: int) -> dict:
+    _get_row(endpoint_id)
+    credentials.clear_endpoint_key(endpoint_id)
+    return credentials.describe_endpoint_key(endpoint_id)
 
 
 def get_default_endpoint(conn=None) -> dict | None:
@@ -88,11 +120,11 @@ def create_endpoint(payload: dict) -> dict:
             conn.rollback()
             raise _conflict_or_raise(exc, fields['slug'])
         conn.commit()
-    return _row_to_dict(row)
+    return _with_key_status([_row_to_dict(row)])[0]
 
 
 def update_endpoint(endpoint_id: int, payload: dict) -> dict:
-    existing = get_endpoint(endpoint_id)
+    existing = _get_row(endpoint_id)
     merged = {**existing, **payload}
     fields = _validate(merged)
 
@@ -112,7 +144,7 @@ def update_endpoint(endpoint_id: int, payload: dict) -> dict:
             conn.rollback()
             raise NotFound(description="Endpoint non trovato.")
         conn.commit()
-    return _row_to_dict(row)
+    return _with_key_status([_row_to_dict(row)])[0]
 
 
 def delete_endpoint(endpoint_id: int) -> None:

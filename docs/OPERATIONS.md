@@ -203,10 +203,39 @@ Without it, teachers simply cannot save a personal key and the shared
 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` from `.env` is used for everyone. Nothing
 breaks; the settings page says so.
 
+### Endpoint keys
+
+A managed endpoint that authenticates — a school LiteLLM gateway, for example —
+needs its own key: Super Admin → Endpoint LLM → *Imposta* on that endpoint. It is
+encrypted like a teacher key and sent to that endpoint only.
+
+The shared `OPENAI_API_KEY` from `.env` is **not** a fallback for such an
+endpoint. It was issued for api.openai.com, and it is sent only there (or to the
+address `.env` itself sets with `LLM_BASE_URL`). An endpoint with its own
+address that requires a key and has none fails cleanly instead: answers stay
+`pending` with an error naming the endpoint, and the endpoint list shows
+*Chiave API mancante*. Before this rule existed, the protocol alone decided the
+fallback, so making any OpenAI-compatible server the default would have sent the
+school's OpenAI key to it.
+
+Which key a call uses, most specific first:
+
+| Destination | Key used |
+|---|---|
+| Endpoint the teacher selected | teacher's key, else the endpoint's key (else `.env`, only if it is the provider's hosted service) |
+| Default endpoint with its own address | the endpoint's key |
+| Provider's hosted service (`base_url` empty) | teacher's key if they selected nothing, else the endpoint's key, else `.env` |
+| No managed endpoint (pure `.env` setup) | `.env` |
+
+Models follow the same rule. An endpoint that lists models is only sent one of
+them, so `LLM_MODEL=gpt-4o-mini` in `.env` is not forced onto a school server
+that does not serve it; the **first** listed model is the endpoint's default.
+
 ### Rotating the master key
 
 Re-encrypt **before** replacing the value. Replacing it first makes every stored
-key unreadable and each teacher has to enter theirs again.
+key unreadable and each teacher has to enter theirs again. The script covers
+teacher and endpoint keys together, in one transaction.
 
 ```bash
 # 1. new key

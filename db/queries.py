@@ -780,3 +780,40 @@ UPDATE_TEACHER_LLM_CREDENTIAL_CIPHERTEXT = """
     SET ciphertext = %(ciphertext)s, key_version = %(key_version)s, updated_at = now()
     WHERE teacher_id = %(teacher_id)s
 """
+
+# ── managed endpoint credentials ─────────────────────────────────────────────
+
+UPSERT_ENDPOINT_LLM_CREDENTIAL = """
+    INSERT INTO llm_endpoint_credentials (endpoint_id, ciphertext, fingerprint, key_version)
+    VALUES (%(endpoint_id)s, %(ciphertext)s, %(fingerprint)s, %(key_version)s)
+    ON CONFLICT (endpoint_id) DO UPDATE
+        SET ciphertext  = EXCLUDED.ciphertext,
+            fingerprint = EXCLUDED.fingerprint,
+            key_version = EXCLUDED.key_version,
+            updated_at  = now()
+"""
+
+GET_ENDPOINT_LLM_CREDENTIAL = """
+    SELECT ciphertext, fingerprint, key_version, updated_at
+    FROM llm_endpoint_credentials
+    WHERE endpoint_id = %s
+"""
+
+DELETE_ENDPOINT_LLM_CREDENTIAL = """
+    DELETE FROM llm_endpoint_credentials WHERE endpoint_id = %s
+"""
+
+# Fingerprints only: what the admin list may show. Never the ciphertext.
+LIST_ENDPOINT_LLM_CREDENTIAL_FINGERPRINTS = """
+    SELECT endpoint_id, fingerprint, updated_at FROM llm_endpoint_credentials
+"""
+
+LIST_ENDPOINT_LLM_CREDENTIALS = """
+    SELECT endpoint_id, ciphertext FROM llm_endpoint_credentials ORDER BY endpoint_id
+"""
+
+UPDATE_ENDPOINT_LLM_CREDENTIAL_CIPHERTEXT = """
+    UPDATE llm_endpoint_credentials
+    SET ciphertext = %(ciphertext)s, key_version = %(key_version)s, updated_at = now()
+    WHERE endpoint_id = %(endpoint_id)s
+"""

@@ -2,6 +2,7 @@ import { apiFetch } from './client';
 import type {
   LlmEndpoint,
   LlmEndpointPayload,
+  LlmKeyStatus,
   ClassMeta,
   CreateTeacherPayload,
   CreateTeacherResponse,
@@ -101,6 +102,20 @@ export async function updateLlmEndpoint(
 
 export async function deleteLlmEndpoint(id: number): Promise<{ ok: boolean }> {
   return apiFetch<{ ok: boolean }>(`/super-admin/llm-endpoints/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+/** Write-only: the response reports the key's status, never the key. */
+export async function setLlmEndpointKey(id: number, apiKey: string): Promise<LlmKeyStatus> {
+  return apiFetch<LlmKeyStatus>(`/super-admin/llm-endpoints/${id}/key`, {
+    method: 'PUT',
+    body: JSON.stringify({ api_key: apiKey }),
+  });
+}
+
+export async function clearLlmEndpointKey(id: number): Promise<LlmKeyStatus> {
+  return apiFetch<LlmKeyStatus>(`/super-admin/llm-endpoints/${id}/key`, {
     method: 'DELETE',
   });
 }
