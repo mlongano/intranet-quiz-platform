@@ -14,6 +14,12 @@ import psycopg
 
 MIGRATIONS_DIR = Path(__file__).parent / 'migrations'
 
+# Held for the whole run, so concurrent runs apply each migration once. app and
+# worker share an entrypoint that migrates, and compose starts them together:
+# without this, both can see the same migration as pending, and the loser fails
+# on objects the winner just created and takes its container down with it.
+MIGRATION_LOCK_ID = 727_100_001
+
 
 def _get_dsn() -> str:
     load_dotenv(Path(__file__).parent.parent / '.env')
@@ -42,21 +48,32 @@ def _all_migration_files() -> list[Path]:
 
 def run_up(dsn: str) -> None:
     with psycopg.connect(dsn, autocommit=False) as conn:
-        _ensure_tracking_table(conn)
-        applied = _applied_versions(conn)
-        pending = [f for f in _all_migration_files() if f.stem not in applied]
-        if not pending:
-            print("All migrations already applied.")
-            return
-        for f in pending:
-            print(f"Applying {f.name} ... ", end='', flush=True)
-            sql = f.read_text()
-            conn.execute(sql)
-            conn.execute(
-                "INSERT INTO schema_migrations (version) VALUES (%s)", (f.stem,)
-            )
+        # Session-level, so it survives the per-migration commits below. Taken
+        # before anything else — including creating the tracking table, which
+        # races too on a fresh database — and before reading what is applied,
+        # so a run that waited sees the work of the one it waited for.
+        conn.execute("SELECT pg_advisory_lock(%s)", (MIGRATION_LOCK_ID,))
+        conn.commit()
+        try:
+            _ensure_tracking_table(conn)
+            applied = _applied_versions(conn)
+            pending = [f for f in _all_migration_files() if f.stem not in applied]
+            if not pending:
+                print("All migrations already applied.")
+                return
+            for f in pending:
+                print(f"Applying {f.name} ... ", end='', flush=True)
+                sql = f.read_text()
+                conn.execute(sql)
+                conn.execute(
+                    "INSERT INTO schema_migrations (version) VALUES (%s)", (f.stem,)
+                )
+                conn.commit()
+                print("done")
+        finally:
+            conn.rollback()   # a failed migration leaves the transaction aborted
+            conn.execute("SELECT pg_advisory_unlock(%s)", (MIGRATION_LOCK_ID,))
             conn.commit()
-            print("done")
 
 
 def run_status(dsn: str) -> None:
