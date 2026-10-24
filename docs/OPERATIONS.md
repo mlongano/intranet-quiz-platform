@@ -269,6 +269,26 @@ FROM teacher_llm_credentials c JOIN teachers t ON t.id = c.teacher_id;
 `key_version` is the fingerprint of the master key that encrypted each row; rows
 whose `key_version` differs from the current key are the ones to fix.
 
+## LAN-only endpoints and DNS
+
+The host resolves through public DNS, which cannot see names that exist only in
+the school's DNS (the LiteLLM gateway, for instance). The `app` and `worker`
+containers therefore use `CONTAINER_DNS` from `.env` — set it to the school's DNS
+server — with 8.8.8.8 as a second resolver so hosted providers keep working if
+it is down. Docker's embedded DNS still answers for service names (`db`).
+
+Check what the worker sees:
+
+```bash
+docker compose exec -T worker python -c \
+  "import socket; print(socket.gethostbyname('<gateway hostname>'))"
+```
+
+Changing `CONTAINER_DNS` needs `docker compose up -d app worker` (a `restart`
+does not re-read compose configuration). Fixing the host's own resolver instead
+belongs in the Proxmox container config (`pct set <id> --nameserver ...`):
+editing `/etc/resolv.conf` inside the LXC does not survive a reboot.
+
 ## Rotating the database password
 
 `POSTGRES_PASSWORD` is read by the Postgres image **only when the data volume is
