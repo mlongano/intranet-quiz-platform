@@ -243,20 +243,22 @@ GET_SESSION = """
     GROUP BY qs.id
 """
 
+# Classes and score count come from separate subqueries on purpose. Joining
+# both onto the session multiplies the rows (classes x scores), and the class
+# list then repeated each class once per score entry.
 LIST_SESSIONS_FOR_TEACHER = """
     SELECT qs.id, qs.title, qs.status, qs.join_code,
            qs.opens_at, qs.closes_at, qs.created_at,
            COALESCE(
-               json_agg(json_build_object('id', c.id, 'name', c.name))
-               FILTER (WHERE c.id IS NOT NULL), '[]'
+               (SELECT json_agg(json_build_object('id', c.id, 'name', c.name) ORDER BY c.name)
+                FROM session_classes sc
+                JOIN classes c ON c.id = sc.class_id
+                WHERE sc.session_id = qs.id),
+               '[]'
            ) AS classes,
-           COUNT(DISTINCT se.id) AS score_count
+           (SELECT COUNT(*) FROM score_entries se WHERE se.session_id = qs.id) AS score_count
     FROM quiz_sessions qs
-    LEFT JOIN session_classes sc ON sc.session_id = qs.id
-    LEFT JOIN classes c ON c.id = sc.class_id
-    LEFT JOIN score_entries se ON se.session_id = qs.id
     WHERE qs.teacher_id = %s
-    GROUP BY qs.id
     ORDER BY qs.created_at DESC
 """
 
