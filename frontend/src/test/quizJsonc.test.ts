@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -94,6 +96,16 @@ describe('NEW_QUIZ_TEMPLATE', () => {
     expect(r.errors).toEqual([]);
     expect(new Set(r.questions?.map(q => q.type))).toEqual(new Set(['single', 'multiple', 'open']));
     expect(NEW_QUIZ_TEMPLATE).toMatch(/\/\/ /);
+  });
+
+  it('shows images in a question and in its options, with files that exist', () => {
+    const q = checkQuizJsonc(NEW_QUIZ_TEMPLATE).questions?.find(x => x.question_image);
+    expect(q?.question_image).toMatch(/^\/esempi\//);
+    const images = q?.options.map((o: { image?: string }) => o.image) ?? [];
+    expect(images.length).toBeGreaterThan(1);
+    for (const src of [q?.question_image, ...images]) {
+      expect(existsSync(resolve(__dirname, '../../public', src.slice(1)))).toBe(true);
+    }
   });
 });
 

@@ -162,7 +162,7 @@ export const NEW_QUIZ_TEMPLATE = `{
       "type": "single",          // una sola risposta giusta
       "text": "Testo della domanda. Il **Markdown** è ammesso.",
       "options": ["Prima opzione", "Seconda opzione", "Terza opzione"],
-      "correct": 0,              // indice dell'opzione giusta, contando da 0
+      "correct": 0,              // indice della giusta, da 0
       "weight": 1
     },
     {
@@ -174,7 +174,25 @@ export const NEW_QUIZ_TEMPLATE = `{
       "weight": 1
     },
     {
+      // Immagini: "question_image" nella domanda,
+      // { "text", "image" } nelle opzioni.
+      // Queste sono di esempio. Per le tue: salva,
+      // caricale con «Gestisci immagini», poi
+      // «Inserisci immagine» scrive il percorso.
       "id": 3,
+      "type": "single",
+      "text": "Quale di queste figure ha tre lati?",
+      "question_image": "/esempi/figure.svg",
+      "options": [
+        { "text": "Il triangolo", "image": "/esempi/triangolo.svg" },
+        { "text": "Il quadrato", "image": "/esempi/quadrato.svg" },
+        { "text": "Il cerchio", "image": "/esempi/cerchio.svg" }
+      ],
+      "correct": 0,
+      "weight": 1
+    },
+    {
+      "id": 4,
       "type": "open",            // risposta libera, valutata dal modello
       "text": "Spiega con parole tue.",
       "options": [],
