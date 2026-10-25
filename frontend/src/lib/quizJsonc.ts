@@ -168,8 +168,10 @@ export const NEW_QUIZ_TEMPLATE = `{
     {
       "id": 2,
       "type": "multiple",        // più risposte giuste
-      "text": "Quali sono corrette?",
-      "options": ["A", "B", "C"],
+      // Formule LaTeX: $…$ nel testo, $$…$$ su una riga a sé.
+      // Nel JSON ogni \\ va scritta doppia: \\\\frac.
+      "text": "Quali valgono $\\\\frac{1}{2}$?",
+      "options": ["$0{,}5$", "$\\\\dfrac{2}{3}$", "$\\\\dfrac{2}{4}$"],
       "correct": [0, 2],
       "weight": 1
     },

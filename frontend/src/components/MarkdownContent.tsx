@@ -1,9 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeSanitize from 'rehype-sanitize';
-import rehypePrism from 'rehype-prism-plus';
+import { remarkPlugins, rehypePlugins } from '../lib/markdownPlugins';
 import Prism from 'prismjs';
 
 import '../prism-themes.css';
@@ -74,11 +72,8 @@ function MarkdownContent({ children, className = '', compact = false }: Props) {
       className={`prose prose-sm max-w-none dark:prose-invert prose-pre:max-w-full prose-pre:overflow-x-auto ${compact ? 'prose-p:my-1 prose-pre:my-2' : ''} ${className}`}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[
-          rehypeSanitize,
-          [rehypePrism as any, { showLineNumbers: true }],
-        ]}
+        remarkPlugins={remarkPlugins}
+        rehypePlugins={rehypePlugins}
         components={components}
       >
         {cleanMarkdown(children || '')}

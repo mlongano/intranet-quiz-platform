@@ -98,6 +98,11 @@ describe('NEW_QUIZ_TEMPLATE', () => {
     expect(NEW_QUIZ_TEMPLATE).toMatch(/\/\/ /);
   });
 
+  it('shows a LaTeX formula, with the backslash surviving JSON', () => {
+    const q = checkQuizJsonc(NEW_QUIZ_TEMPLATE).questions?.find(x => x.text.includes('$'));
+    expect(q?.text).toContain('$\\frac{1}{2}$');
+  });
+
   it('shows images in a question and in its options, with files that exist', () => {
     const q = checkQuizJsonc(NEW_QUIZ_TEMPLATE).questions?.find(x => x.question_image);
     expect(q?.question_image).toMatch(/^\/esempi\//);

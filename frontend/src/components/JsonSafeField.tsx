@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeSanitize from "rehype-sanitize";
+import { remarkPlugins, rehypePluginsNoCode } from "../lib/markdownPlugins";
 import Prism from "prismjs";
 import "../prism-themes.css";
 // Prism line numbers plugin CSS
@@ -210,8 +209,8 @@ export default function JsonSafeField() {
               className="mt-1 p-3 border border-outline-variant/20 rounded-lg bg-surface-container-low max-h-48 overflow-auto prose prose-sm dark:prose-invert max-w-none"
             >
               <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeSanitize]}
+                remarkPlugins={remarkPlugins}
+                rehypePlugins={rehypePluginsNoCode}
                 components={components}
               >
                 {input || ""}

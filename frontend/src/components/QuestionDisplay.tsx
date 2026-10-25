@@ -2,9 +2,7 @@
 import React, { useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeSanitize from "rehype-sanitize";
-import rehypePrism from "rehype-prism-plus";
+import { remarkPlugins, rehypePlugins } from "../lib/markdownPlugins";
 import { Question, Answer, OptionObject } from "../api"; // Import types
 import Prism from "prismjs";
 
@@ -165,11 +163,8 @@ function QuestionDisplay({
         style={disableCopy ? { userSelect: "none", WebkitUserSelect: "none" } : undefined}
       >
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[
-            rehypeSanitize,
-            [rehypePrism as any, { showLineNumbers: true }]
-          ]}
+          remarkPlugins={remarkPlugins}
+          rehypePlugins={rehypePlugins}
           components={{
             pre: ({ children, ...props }: any) => {
               // Extract the language from the code element if present
@@ -255,11 +250,8 @@ function QuestionDisplay({
                     style={disableCopy ? { userSelect: "none", WebkitUserSelect: "none" } : undefined}
                   >
                     <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      rehypePlugins={[
-                        rehypeSanitize,
-                        [rehypePrism as any, { showLineNumbers: true }]
-                      ]}
+                      remarkPlugins={remarkPlugins}
+                      rehypePlugins={rehypePlugins}
                       components={optionMarkdownComponents}
                     >
                       {getOptionText(option) || ""}
