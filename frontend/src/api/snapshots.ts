@@ -12,6 +12,11 @@ export async function createSnapshot(title: string, jsonc: string): Promise<Snap
   });
 }
 
+/** Server-side copy: questions and images, image references rewritten to the copy. */
+export async function duplicateSnapshot(id: number): Promise<SnapshotMeta> {
+  return apiFetch<SnapshotMeta>(`/teacher/snapshots/${id}/duplicate`, { method: 'POST' });
+}
+
 export async function getSnapshot(id: number): Promise<SnapshotDetail> {
   return apiFetch<SnapshotDetail>(`/teacher/snapshots/${id}`);
 }

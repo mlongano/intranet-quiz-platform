@@ -1,27 +1,16 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Upload, Trash2, Download, ArrowRight, Image, Eye, EyeOff } from 'lucide-react';
+import { Upload, Trash2, Download, ArrowRight, Image, Eye, EyeOff, Plus, Copy } from 'lucide-react';
 import TeacherLayout from '../layouts/TeacherLayout';
 import QuestionDisplay from '../components/QuestionDisplay';
 import {
-  listSnapshots, getSnapshot, createSnapshot, deleteSnapshot,
-  getSnapshotExportUrl, downloadExport, type Question, type SnapshotMeta,
+  listSnapshots, getSnapshot, createSnapshot, deleteSnapshot, duplicateSnapshot,
+  getSnapshotExportUrl, downloadExport, type SnapshotMeta,
 } from '../api';
 import { useConfirmModal } from '../lib/useConfirmModal';
+import { correctIndices } from '../lib/quizJsonc';
 
-function getHighlightIndices(q: Question): number[] {
-  const question = q as Question & { correct?: number | number[] };
-  if (question.type === 'single') {
-    return typeof question.correct === 'number' && question.correct >= 0 ? [question.correct] : [];
-  }
-  if (question.type === 'multiple') {
-    return Array.isArray(question.correct)
-      ? question.correct.filter((n) => Number.isInteger(n) && n >= 0)
-      : [];
-  }
-  return [];
-}
 
 function formatLabel(s: SnapshotMeta) {
   const date = new Date(s.created_at ?? s.updated_at);
@@ -53,6 +42,15 @@ function SnapshotsListPage() {
     queryFn: () => getSnapshot(previewingId!),
     enabled: !!previewingId,
     staleTime: Infinity,
+  });
+
+  const duplicateMutation = useMutation({
+    mutationFn: duplicateSnapshot,
+    onSuccess: (copy) => {
+      queryClient.invalidateQueries({ queryKey: ['snapshots'] });
+      navigate(`/teacher/snapshots/${copy.id}`);
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : 'Duplicazione non riuscita.'),
   });
 
   const deleteMutation = useMutation({
@@ -96,9 +94,16 @@ function SnapshotsListPage() {
             className="hidden"
           />
           <button
+            onClick={() => navigate('/teacher/snapshots/new')}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
+            <Plus size={16} />
+            Nuovo quiz
+          </button>
+          <button
             onClick={() => fileRef.current?.click()}
             disabled={importing}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-40 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 border border-outline-variant/40 text-on-surface rounded-lg text-sm font-medium hover:bg-surface-container-high disabled:opacity-40 transition-colors"
           >
             <Upload size={16} />
             {importing ? 'Importazione...' : 'Importa JSONC'}
@@ -154,6 +159,14 @@ function SnapshotsListPage() {
                     <Image size={16} />
                   </button>
                   <button
+                    onClick={() => duplicateMutation.mutate(s.id)}
+                    disabled={duplicateMutation.isPending}
+                    className="p-2 text-on-surface-variant hover:text-primary transition-colors disabled:opacity-40"
+                    title="Duplica: copia domande e immagini in un nuovo quiz"
+                  >
+                    <Copy size={16} />
+                  </button>
+                  <button
                     onClick={() => navigate(`/teacher/snapshots/${s.id}`)}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-outline-variant/40 text-on-surface rounded-lg hover:bg-surface-container-high transition-colors"
                   >
@@ -188,7 +201,7 @@ function SnapshotsListPage() {
                             currentAnswer={null}
                             onAnswerChange={() => {}}
                             readOnly
-                            highlightIndices={getHighlightIndices(q)}
+                            highlightIndices={correctIndices(q)}
                           />
                         </div>
                       ))}
@@ -205,7 +218,7 @@ function SnapshotsListPage() {
         {!isLoading && !snapshots?.length && (
           <div className="text-center py-16 text-on-surface-variant">
             <p className="text-lg mb-2">Nessun quiz importato</p>
-            <p className="text-sm">Importa un file JSONC per iniziare.</p>
+            <p className="text-sm">Crea un nuovo quiz o importa un file JSONC per iniziare.</p>
           </div>
         )}
       </div>

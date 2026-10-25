@@ -1,18 +1,35 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 
 interface ConfirmState {
   message: string;
   onConfirm: () => void;
+  onCancel?: () => void;
+  confirmLabel?: string;
 }
 
 export function useConfirmModal() {
   const [state, setState] = useState<ConfirmState | null>(null);
+  // The open dialog, readable from callbacks without a state updater: updaters
+  // may run twice in StrictMode, and onCancel must run once.
+  const current = useRef<ConfirmState | null>(null);
+  useEffect(() => { current.current = state; }, [state]);
 
-  const ask = useCallback((message: string, onConfirm: () => void) => {
-    setState({ message, onConfirm });
+  // onCancel runs when the dialog is dismissed without confirming (Annulla or
+  // a click outside): callers such as a navigation blocker need to know.
+  const ask = useCallback((
+    message: string,
+    onConfirm: () => void,
+    options?: { onCancel?: () => void; confirmLabel?: string },
+  ) => {
+    setState({ message, onConfirm, ...options });
   }, []);
 
-  const dismiss = useCallback(() => setState(null), []);
+  const close = useCallback(() => setState(null), []);
+  const dismiss = useCallback(() => {
+    const open = current.current;
+    setState(null);
+    open?.onCancel?.();
+  }, []);
 
   const modal = state ? (
     <div
@@ -33,12 +50,12 @@ export function useConfirmModal() {
           </button>
           <button
             onClick={() => {
-              dismiss();
+              close();
               state.onConfirm();
             }}
             className="px-3 py-1.5 text-sm bg-error/20 border border-error/50 text-error rounded-lg hover:bg-error/30 transition-colors"
           >
-            Conferma
+            {state.confirmLabel ?? 'Conferma'}
           </button>
         </div>
       </div>

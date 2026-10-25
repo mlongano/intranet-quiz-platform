@@ -204,6 +204,13 @@ UPDATE_SNAPSHOT = """
     WHERE id = %(id)s AND teacher_id = %(teacher_id)s
 """
 
+# Duplication: the copy's content (image references rewritten) and manifest.
+UPDATE_SNAPSHOT_CONTENT_AND_MANIFEST = """
+    UPDATE question_snapshots
+    SET content = %s::jsonb, images_manifest = %s::jsonb
+    WHERE id = %s AND teacher_id = %s
+"""
+
 UPDATE_SNAPSHOT_IMAGES_MANIFEST = """
     UPDATE question_snapshots
     SET images_manifest = %s

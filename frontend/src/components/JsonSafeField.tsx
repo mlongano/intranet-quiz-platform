@@ -66,7 +66,7 @@ export default function JsonSafeField() {
       }
     } catch {
       // Invalid JSON - show error but don't update input
-      setParseError('Invalid JSON format');
+      setParseError('Il testo JSON non è valido');
     }
   };
 
@@ -132,7 +132,7 @@ export default function JsonSafeField() {
       // First try the modern Clipboard API
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(text);
-        setCopyStatus({ message: `${label} copied!`, type: 'success' });
+        setCopyStatus({ message: `${label} copiato!`, type: 'success' });
       } else {
         // Fallback for older browsers or non-HTTPS contexts
         const textArea = document.createElement('textarea');
@@ -148,7 +148,7 @@ export default function JsonSafeField() {
         document.body.removeChild(textArea);
 
         if (successful) {
-          setCopyStatus({ message: `${label} copied!`, type: 'success' });
+          setCopyStatus({ message: `${label} copiato!`, type: 'success' });
         } else {
           throw new Error('execCommand failed');
         }
@@ -159,7 +159,7 @@ export default function JsonSafeField() {
     } catch (error) {
       console.error("Copy failed:", error);
       setCopyStatus({
-        message: `Failed to copy ${label.toLowerCase()}. Please select and copy manually.`,
+        message: `Copia di ${label.toLowerCase()} non riuscita: selezionalo e copialo a mano.`,
         type: 'error'
       });
 
@@ -170,9 +170,9 @@ export default function JsonSafeField() {
 
   return (
     <div className="p-4 bg-surface-container border border-outline-variant/20 rounded-xl">
-      <h3 className="font-semibold mb-2 text-on-surface">JSON-safe text generator (bidirectional)</h3>
+      <h3 className="font-semibold mb-2 text-on-surface">Da testo a stringa JSON, e viceversa</h3>
       <p className="text-sm text-on-surface-variant mb-3">
-        Edit either side: paste raw text to get JSON, or paste JSON to get raw text.
+        Scrivi a sinistra il testo (con a capo, virgolette e blocchi di codice) e copia la stringa JSON da incollare nel campo "text"; oppure incolla una stringa JSON per rileggerla come testo.
         Changes sync automatically.
       </p>
 
@@ -195,7 +195,7 @@ export default function JsonSafeField() {
 
       <div className="flex items-start gap-3">
         <div className="flex-1">
-          <label className="block text-xs font-medium text-on-surface-variant">Input (raw Markdown/text)</label>
+          <label className="block text-xs font-medium text-on-surface-variant">Testo (Markdown, anche con blocchi di codice)</label>
           <textarea
             className="w-full border border-outline-variant/20 rounded-lg bg-surface-container-low text-on-surface p-2 mt-1 mb-3 font-mono text-sm focus:outline-none focus:border-primary/50 placeholder-outline-variant"
             rows={8}
@@ -204,7 +204,7 @@ export default function JsonSafeField() {
             placeholder={`Scrivi o incolla la domanda con blocchi di codice qui...`}
           />
           <div className="mt-2">
-            <label className="block text-xs font-medium text-on-surface-variant">Preview (Markdown)</label>
+            <label className="block text-xs font-medium text-on-surface-variant">Anteprima</label>
             <div
               ref={previewRef}
               className="mt-1 p-3 border border-outline-variant/20 rounded-lg bg-surface-container-low max-h-48 overflow-auto prose prose-sm dark:prose-invert max-w-none"
@@ -225,16 +225,16 @@ export default function JsonSafeField() {
             className="px-3 py-1 bg-surface-container-high border border-outline-variant/30 text-on-surface-variant hover:text-on-surface rounded text-2xl font-bold transition-colors"
             onClick={() => {
               // Swap direction hint - just visual feedback
-              setCopyStatus({ message: 'Edit either side to convert!', type: 'success' });
+              setCopyStatus({ message: 'Modifica uno dei due lati per convertire', type: 'success' });
             }}
-            title="Bidirectional conversion"
+            title="Conversione nei due sensi"
           >
             ⇄
           </button>
         </div>
 
         <div className="flex-1">
-          <label className="block text-xs font-medium text-on-surface-variant">Output (JSON-safe string)</label>
+          <label className="block text-xs font-medium text-on-surface-variant">Stringa JSON da incollare nel quiz</label>
           <textarea
             className="w-full border border-outline-variant/20 rounded-lg bg-surface-container-low text-on-surface p-2 mt-1 mb-3 font-mono text-sm focus:outline-none focus:border-primary/50 placeholder-outline-variant"
             rows={8}
@@ -252,14 +252,14 @@ export default function JsonSafeField() {
             onClick={() => copy(jsonInput, "JSON")}
             title="Copia valore JSON"
           >
-            📋 Copy JSON
+            📋 Copia JSON
           </button>
           <button
             className="px-4 py-2 bg-surface-container-high border border-outline-variant/30 text-on-surface-variant hover:text-on-surface hover:border-outline-variant/60 rounded-lg transition-colors text-sm"
-            onClick={() => copy(input, "Raw text")}
-            title="Copy raw"
+            onClick={() => copy(input, "Testo")}
+            title="Copia il testo"
           >
-            📋 Copy Raw
+            📋 Copia testo
           </button>
         </div>
         <button
@@ -269,9 +269,9 @@ export default function JsonSafeField() {
             setJsonInput("");
             setParseError(null);
           }}
-          title="Clear all"
+          title="Svuota tutto"
         >
-          🗑️ Clear All
+          🗑️ Svuota
         </button>
       </div>
     </div>

@@ -132,6 +132,12 @@ def create_snapshot():
     return jsonify(snap), 201
 
 
+@teacher_bp.post('/snapshots/<int:snapshot_id>/duplicate')
+@require_teacher
+def duplicate_snapshot(snapshot_id: int):
+    return jsonify(snap_service.duplicate_snapshot(snapshot_id, _teacher_id())), 201
+
+
 @teacher_bp.get('/snapshots/<int:snapshot_id>')
 @require_teacher
 def get_snapshot(snapshot_id: int):

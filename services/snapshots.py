@@ -164,6 +164,55 @@ def get_snapshot(snapshot_id: int, teacher_id: int) -> dict:
     }
 
 
+def duplicate_snapshot(snapshot_id: int, teacher_id: int) -> dict:
+    """Copy a saved quiz into a new, independent one titled "<title> (copia)".
+
+    Images are copied into the copy's own folder and the references in the
+    questions rewritten to it. Pointing the copy at the original's folder would
+    leave its image manager empty and tie it to images that belong to another
+    quiz. Raises NotFound unless the quiz belongs to this teacher.
+    """
+    import shutil
+    from services import images as image_service
+
+    with db.get_conn() as conn:
+        row = conn.execute(Q.GET_SNAPSHOT, (snapshot_id, teacher_id)).fetchone()
+        if not row:
+            raise NotFound(description="Snapshot not found.")
+        title = f"{row[2]} (copia)"
+        content = row[4] if isinstance(row[4], dict) else json.loads(row[4] or '{}')
+        manifest = row[5] if isinstance(row[5], list) else json.loads(row[5] or '[]')
+
+        slug = _unique_slug(teacher_id, slugify(title))
+        new = conn.execute(Q.INSERT_SNAPSHOT, {
+            'teacher_id': teacher_id, 'title': title, 'slug': slug,
+            'content': json.dumps(content),
+        }).fetchone()
+        new_id = new[0]
+
+        source_dir = image_service._snapshot_dir(teacher_id, snapshot_id)
+        target_dir = image_service._snapshot_dir(teacher_id, new_id)
+        try:
+            if source_dir.is_dir():
+                shutil.copytree(source_dir, target_dir)
+            # Only this quiz's own images move: the prefix carries both ids.
+            old_prefix = f'/images/{teacher_id}/{snapshot_id}/'
+            new_prefix = f'/images/{teacher_id}/{new_id}/'
+            rewritten = json.loads(json.dumps(content).replace(old_prefix, new_prefix))
+            conn.execute(Q.UPDATE_SNAPSHOT_CONTENT_AND_MANIFEST,
+                         (json.dumps(rewritten), json.dumps(manifest), new_id, teacher_id))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            shutil.rmtree(target_dir, ignore_errors=True)
+            raise
+
+    questions = rewritten.get('questions') or []
+    return {'id': new_id, 'title': title, 'slug': slug,
+            'question_count': len(questions),
+            'created_at': new[1], 'updated_at': new[2]}
+
+
 def delete_snapshot(snapshot_id: int, teacher_id: int) -> None:
     """
     Raises NotFound if not owned by teacher, raises Conflict if a session references it
