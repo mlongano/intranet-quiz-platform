@@ -171,8 +171,11 @@ export default function JsonSafeField() {
     <div className="p-4 bg-surface-container border border-outline-variant/20 rounded-xl">
       <h3 className="font-semibold mb-2 text-on-surface">Da testo a stringa JSON, e viceversa</h3>
       <p className="text-sm text-on-surface-variant mb-3">
-        Scrivi a sinistra il testo (con a capo, virgolette e blocchi di codice) e copia la stringa JSON da incollare nel campo "text"; oppure incolla una stringa JSON per rileggerla come testo.
-        Changes sync automatically.
+        Scrivi a sinistra il testo così come vuoi che appaia: a capo, virgolette, blocchi di codice e formule
+        LaTeX (<code>{'$\\frac{1}{2}$'}</code> nel testo, <code>$$…$$</code> su una riga a sé), con le barre rovesciate scritte una volta sola.
+        A destra trovi la stringa JSON da incollare nel campo "text" o in un'opzione, con a capo e barre già
+        convertite (<code>\n</code>, <code>\\frac</code>); oppure incolla una stringa JSON per rileggerla come testo.
+        Le due parti si aggiornano a vicenda.
       </p>
 
       {/* Copy Status Message */}
@@ -194,13 +197,13 @@ export default function JsonSafeField() {
 
       <div className="flex items-start gap-3">
         <div className="flex-1">
-          <label className="block text-xs font-medium text-on-surface-variant">Testo (Markdown, anche con blocchi di codice)</label>
+          <label className="block text-xs font-medium text-on-surface-variant">Testo (Markdown, blocchi di codice, formule LaTeX)</label>
           <textarea
             className="w-full border border-outline-variant/20 rounded-lg bg-surface-container-low text-on-surface p-2 mt-1 mb-3 font-mono text-sm focus:outline-none focus:border-primary/50 placeholder-outline-variant"
             rows={8}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={`Scrivi o incolla la domanda con blocchi di codice qui...`}
+            placeholder={"Scrivi o incolla qui la domanda, per esempio:\n\nQuanto vale $\\frac{1}{2} + \\frac{1}{4}$?\n\n```python\nprint(1/2 + 1/4)\n```"}
           />
           <div className="mt-2">
             <label className="block text-xs font-medium text-on-surface-variant">Anteprima</label>
@@ -239,7 +242,7 @@ export default function JsonSafeField() {
             rows={8}
             value={jsonInput}
             onChange={handleJsonChange}
-            placeholder={`Incolla JSON qui per decodificare...`}
+            placeholder={`Oppure incolla qui una stringa JSON da rileggere come testo...`}
           />
         </div>
       </div>
