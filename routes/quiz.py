@@ -5,6 +5,7 @@ GET  /api/quiz/session-info          (uses student JWT to get session details)
 POST /api/quiz/start                 (create or resume a quiz plan)
 GET  /api/quiz/resume/<quiz_id>      (current question + progress)
 POST /api/quiz/save-answer           (save one answer, advance index)
+POST /api/quiz/save-draft            (autosave the open answer being written)
 POST /api/quiz/submit                (grade and record submission)
 """
 
@@ -17,7 +18,7 @@ import db
 from db import queries as Q
 from auth.decorators import require_student
 from services import quiz_session as qs
-from services.quiz_session import SessionClosed
+from services.quiz_session import AnswerTooLong, DraftNotOpen, DraftStale, SessionClosed
 from services.score_transforms import load_qbank_for_session
 
 quiz_bp = Blueprint('quiz', __name__, url_prefix='/api/quiz')
@@ -33,6 +34,23 @@ def _json_session_closed(e):
         'code': 'SESSION_CLOSED',
         'description': e.description,
     }), 409
+
+
+@quiz_bp.errorhandler(AnswerTooLong)
+def _json_answer_too_long(e):
+    return jsonify({'error': 'ANSWER_TOO_LONG', 'code': 'ANSWER_TOO_LONG',
+                    'description': e.description}), 413
+
+
+@quiz_bp.errorhandler(DraftStale)
+def _json_draft_stale(e):
+    return jsonify({'error': 'CONFLICT', 'code': 'DRAFT_STALE', 'description': e.description}), 409
+
+
+@quiz_bp.errorhandler(DraftNotOpen)
+def _json_draft_not_open(e):
+    return jsonify({'error': 'BAD_REQUEST', 'code': 'DRAFT_NOT_OPEN',
+                    'description': e.description}), 400
 
 
 @quiz_bp.errorhandler(NotFound)
@@ -141,6 +159,7 @@ def resume(quiz_id: str):
             'question_image': q.get('question_image'),
             'options': shuffled_options,
         },
+        'draft': qs.current_draft(plan_data),
     }), 200
 
 
@@ -158,6 +177,22 @@ def save_answer():
     student_id = g.current_user['sub']
     result = qs.save_answer(quiz_id, data['answer'], student_id)
     return jsonify(result), 200
+
+
+@quiz_bp.post('/save-draft')
+@require_student
+def save_draft():
+    """Autosave the open answer the student is writing for the current question."""
+    data = request.get_json(silent=True) or {}
+    quiz_id = (data.get('quiz_id') or '').strip()
+    if not quiz_id:
+        return jsonify({'error': 'MISSING_QUIZ_ID'}), 400
+    index = data.get('index')
+    if not isinstance(index, int) or isinstance(index, bool):
+        return jsonify({'error': 'MISSING_INDEX'}), 400
+
+    student_id = g.current_user['sub']
+    return jsonify(qs.save_draft(quiz_id, index, data.get('text'), student_id)), 200
 
 
 @quiz_bp.post('/submit')

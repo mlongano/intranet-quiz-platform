@@ -228,12 +228,23 @@ export interface SessionInfoResponse {
   closes_at: string | null;
 }
 
+export interface AnswerDraft {
+  text: string;
+  saved_at: string;
+}
+
 export interface ResumeResponse {
   quiz_id: string;
   current_question?: Question;
   current_index: number;
   total_questions: number;
   is_complete: boolean;
+  /** The autosaved open answer of the current question, if any. */
+  draft?: AnswerDraft | null;
+}
+
+export interface SaveDraftResponse {
+  saved_at: string;
 }
 
 export interface SaveAnswerResponse {

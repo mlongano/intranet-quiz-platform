@@ -256,7 +256,7 @@ Added per-type counts.
 1. **JSONC**: parse question files with `commentjson` — never stdlib `json` (comments would crash it)
 2. **Question IDs**: stringify always — `str(q_id)`
 3. **Option indices**: extract with `re.search(r'\(Index:\s*(\d+)\)', formatted_answer)` for legacy entries
-4. **Quiz progression**: question-by-question via `/api/quiz/save-answer`; answers are immutable once saved
+4. **Quiz progression**: question-by-question via `/api/quiz/save-answer`; answers are immutable once saved; the open answer being written is autosaved via `/api/quiz/save-draft`
 5. **Required env**: `DATABASE_URL` and `JWT_SECRET` (32+ chars) — app won't start without them
 6. **Student identity**: lowercased school email from Google Workspace sync; students have no passwords
 7. **Frontend build**: run `pnpm build` before production; output goes to `frontend/dist/` (Docker does this in-stage)

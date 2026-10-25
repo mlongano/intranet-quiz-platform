@@ -3,6 +3,7 @@ import React from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import { remarkPlugins, rehypePlugins } from "../lib/markdownPlugins";
+import MarkdownAnswerEditor from "./MarkdownAnswerEditor";
 import { Question, Answer, OptionObject } from "../api"; // Import types
 
 import "../prism-themes.css";
@@ -57,11 +58,6 @@ function QuestionDisplay({
     return typeof option === "string" ? undefined : option.image;
   };
 
-  const handleOpenChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    if (readOnly) return;
-    onAnswerChange(e.target.value);
-  };
-
   const handleOptionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (readOnly) return;
     const selectedIndex = Number(e.target.value);
@@ -113,12 +109,9 @@ function QuestionDisplay({
       </div>
 
       {question.type === "open" && (
-        <textarea
+        <MarkdownAnswerEditor
           value={(currentAnswer as string) || ""}
-          onChange={handleOpenChange}
-          rows={4}
-          className={`w-full p-2 border rounded-md shadow-sm focus:ring focus:ring-opacity-50 bg-surface-container-low border-outline-variant/40 text-on-surface placeholder-on-surface-variant focus:border-primary/50 focus:ring-primary/20`}
-          placeholder="Enter your answer..."
+          onChange={(text) => { if (!readOnly) onAnswerChange(text); }}
           disabled={readOnly}
         />
       )}

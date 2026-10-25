@@ -326,13 +326,15 @@ CHECK_STUDENT_IN_SESSION = """
 # ── quiz plans ────────────────────────────────────────────────────────────────
 
 GET_PLAN_BY_QUIZ_ID = """
-    SELECT quiz_id, session_id, student_id, plan, progression, created_at, last_updated, completed_at
+    SELECT quiz_id, session_id, student_id, plan, progression, created_at, last_updated, completed_at,
+           draft
     FROM quiz_plans
     WHERE quiz_id = %s
 """
 
 GET_PLAN_BY_STUDENT_SESSION = """
-    SELECT quiz_id, session_id, student_id, plan, progression, created_at, last_updated, completed_at
+    SELECT quiz_id, session_id, student_id, plan, progression, created_at, last_updated, completed_at,
+           draft
     FROM quiz_plans
     WHERE session_id = %s AND student_id = %s
 """
@@ -344,9 +346,25 @@ INSERT_PLAN = """
     RETURNING quiz_id
 """
 
+# Saving an answer moves past the question the draft belonged to.
 UPDATE_PLAN_PROGRESSION = """
     UPDATE quiz_plans
-    SET progression = %(progression)s, last_updated = now()
+    SET progression = %(progression)s, draft = NULL, last_updated = now()
+    WHERE quiz_id = %(quiz_id)s
+"""
+
+LOCK_PLAN_WITH_SESSION = """
+    SELECT qp.student_id, qp.session_id, qp.plan, qp.progression, qp.completed_at,
+           qs.status, qs.closes_at
+    FROM quiz_plans qp
+    JOIN quiz_sessions qs ON qs.id = qp.session_id
+    WHERE qp.quiz_id = %s
+    FOR UPDATE OF qp
+"""
+
+UPDATE_PLAN_DRAFT = """
+    UPDATE quiz_plans
+    SET draft = %(draft)s::jsonb, last_updated = now()
     WHERE quiz_id = %(quiz_id)s
 """
 

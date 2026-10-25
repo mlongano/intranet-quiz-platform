@@ -3,6 +3,7 @@ import type {
   Answer,
   ResumeResponse,
   SaveAnswerResponse,
+  SaveDraftResponse,
   SessionInfoResponse,
   SubmitResponse,
 } from './types';
@@ -23,6 +24,17 @@ export async function saveAnswer(quiz_id: string, answer: Answer): Promise<SaveA
   return apiFetch<SaveAnswerResponse>('/quiz/save-answer', {
     method: 'POST',
     body: JSON.stringify({ quiz_id, answer }),
+  }, 'student');
+}
+
+/** keepalive lets the request outlive the page when it is being closed. */
+export async function saveDraft(
+  quiz_id: string, index: number, text: string, keepalive = false,
+): Promise<SaveDraftResponse> {
+  return apiFetch<SaveDraftResponse>('/quiz/save-draft', {
+    method: 'POST',
+    body: JSON.stringify({ quiz_id, index, text }),
+    keepalive,
   }, 'student');
 }
 

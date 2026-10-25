@@ -15,7 +15,7 @@ from typing import Any
 
 import psycopg
 from psycopg import errors as pg_errors
-from werkzeug.exceptions import Conflict, Forbidden, NotFound
+from werkzeug.exceptions import BadRequest, Conflict, Forbidden, NotFound, RequestEntityTooLarge
 
 import db
 from db import queries as Q
@@ -28,6 +28,30 @@ _CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
 class SessionClosed(Conflict):
     """The session no longer accepts this operation."""
+
+
+class AnswerTooLong(RequestEntityTooLarge):
+    """An open answer over OPEN_ANSWER_MAX_CHARS."""
+
+
+class DraftStale(Conflict):
+    """A draft for a question the student has already moved past."""
+
+
+class DraftNotOpen(BadRequest):
+    """Drafts exist only for open questions."""
+
+
+def _max_answer_chars() -> int:
+    """Generous for an essay, a bound for the database and the grading model."""
+    return int(os.getenv('OPEN_ANSWER_MAX_CHARS', '20000'))
+
+
+def _check_answer_length(answer: Any) -> None:
+    if isinstance(answer, str) and len(answer) > _max_answer_chars():
+        raise AnswerTooLong(
+            description=f"La risposta supera i {_max_answer_chars()} caratteri ammessi."
+        )
 
 
 def _grace_seconds() -> int:
@@ -219,12 +243,62 @@ def find_plan_by_quiz_id(quiz_id: str) -> dict | None:
     return _plan_row_to_dict(row)
 
 
+def save_draft(quiz_id: str, index: int, text: Any, student_id: str) -> dict:
+    """Store the draft of the open answer the student is writing.
+
+    Only for the current question, and only while the student could still hand
+    it in: an active session, or a closed one within the grace window, since
+    submit_plan hands in the draft after a manual close. Ownership is checked
+    under the same FOR UPDATE lock as the write. Returns {'saved_at': iso}.
+    """
+    if not isinstance(text, str):
+        raise BadRequest(description="Il testo della bozza non è valido.")
+    _check_answer_length(text)
+    with db.get_conn() as conn:
+        row = conn.execute(Q.LOCK_PLAN_WITH_SESSION, (quiz_id,)).fetchone()
+        if not row:
+            raise NotFound(description="Quiz plan not found.")
+        owner, session_id, plan_raw, progression_raw, completed_at, status, closes_at = row
+        if str(owner) != student_id:
+            raise Forbidden(description="Not your plan.")
+        if status not in ('active', 'closed') or _past_grace(closes_at):
+            raise SessionClosed(description="La sessione è chiusa: la bozza non è stata salvata.")
+
+        plan_data = _parse_json_field(plan_raw)
+        plan_steps = plan_data.get('plan', []) if isinstance(plan_data, dict) else plan_data
+        current_index = int(_parse_json_field(progression_raw).get('current_index', 0))
+        if completed_at is not None or index != current_index or current_index >= len(plan_steps):
+            raise DraftStale(description="La domanda della bozza non è più quella corrente.")
+
+        q = load_qbank_for_session(conn, session_id).get(str(plan_steps[current_index].get('id')))
+        if not q or q.get('type') != 'open':
+            raise DraftNotOpen(description="Solo le domande aperte hanno una bozza.")
+
+        saved_at = datetime.now(timezone.utc).isoformat()
+        conn.execute(Q.UPDATE_PLAN_DRAFT, {
+            'draft': json.dumps({'index': index, 'text': text, 'saved_at': saved_at}),
+            'quiz_id': quiz_id,
+        })
+        conn.commit()
+    return {'saved_at': saved_at}
+
+
+def current_draft(plan: dict) -> dict | None:
+    """The plan's draft if it belongs to the current question, for resume."""
+    draft = plan.get('draft')
+    progression = plan.get('progression') or {}
+    if not isinstance(draft, dict) or draft.get('index') != int(progression.get('current_index', 0)):
+        return None
+    return {'text': draft.get('text', ''), 'saved_at': draft.get('saved_at')}
+
+
 def save_answer(quiz_id: str, answer: Any, student_id: int) -> dict:
     """
     Save the answer for the current question and advance the index.
     Ownership is verified inside the FOR UPDATE lock — no TOCTOU gap.
     Returns {'next_question': {...}, 'current_index': N, 'total': N} or {'is_complete': True}.
     """
+    _check_answer_length(answer)
     with db.get_conn() as conn:
         row = conn.execute(
             "SELECT qp.quiz_id, qp.session_id, qp.student_id, qp.plan, qp.progression, "
@@ -290,7 +364,8 @@ def submit_plan(quiz_id: str, student_id: int) -> dict:
     with db.get_conn() as conn:
         row = conn.execute(
             "SELECT qp.quiz_id, qp.session_id, qp.student_id, qp.plan, qp.progression, "
-            "       qp.completed_at, qs.teacher_id, qs.snapshot_id, qs.status, qs.closes_at "
+            "       qp.completed_at, qs.teacher_id, qs.snapshot_id, qs.status, qs.closes_at, "
+            "       qp.draft "
             "FROM quiz_plans qp "
             "JOIN quiz_sessions qs ON qs.id = qp.session_id "
             "WHERE qp.quiz_id = %s FOR UPDATE OF qp",
@@ -326,11 +401,28 @@ def submit_plan(quiz_id: str, student_id: int) -> dict:
         answers_dict = progression.get('answers', {})
         answers_list = [answers_dict.get(str(i)) for i in range(len(plan_steps))]
 
+        # Handing in before the last question happens only after a close. The
+        # open answer being written then counts: losing it would punish the
+        # student for the teacher closing mid-sentence. The question's type is
+        # checked below, once the snapshot is loaded.
+        draft = _parse_json_field(row[10])
+        current_index = int(progression.get('current_index', 0))
+        draft_text = None
+        if (isinstance(draft, dict) and draft.get('index') == current_index
+                and current_index < len(plan_steps)
+                and answers_list[current_index] is None
+                and isinstance(draft.get('text'), str) and draft['text'].strip()):
+            draft_text = draft['text']
+
         # Load snapshot
         snap_row = conn.execute(Q.GET_SNAPSHOT_CONTENT, (snapshot_id,)).fetchone()
         content = snap_row[0] if snap_row else {}
         questions_list = content.get('questions', []) if isinstance(content, dict) else []
         qbank_map = {str(q['id']): q for q in questions_list}
+        if draft_text is not None:
+            q = qbank_map.get(str(plan_steps[current_index].get('id')))
+            if q and q.get('type') == 'open':
+                answers_list[current_index] = draft_text
 
         grading_plan = {'plan': plan_steps}
         grading_qbank = {'questions': questions_list}
@@ -435,6 +527,7 @@ def _plan_row_to_dict(row) -> dict:
         'created_at': row[5],
         'last_updated': row[6],
         'completed_at': row[7] if len(row) > 7 else None,
+        'draft': _parse_json_field(row[8]) if len(row) > 8 else None,
     }
 
 

@@ -1,8 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { resumeQuiz, saveAnswer, submitQuiz, studentJoin, Question, Answer, ApiError } from '../api';
 import { updateStudentToken } from '../lib/session';
+import {
+  clearLocal, purgeOldLocal, restoreDraft, useAnswerDraft, type DraftStatus,
+} from '../lib/answerDraft';
 import QuestionDisplay from '../components/QuestionDisplay';
 import ThemeToggle from '../components/ThemeToggle';
 import AccessibilityPanel from '../components/AccessibilityPanel';
@@ -74,6 +77,17 @@ function ReJoinModal({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
+function DraftStatusLine({ status }: { status: DraftStatus }) {
+  const time = (d: Date) => d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const [text, tone] =
+    status.kind === 'saving' ? ['Salvataggio della bozza…', 'text-on-surface-variant'] :
+    status.kind === 'saved' ? [`Bozza salvata alle ${time(status.at)}`, 'text-tertiary'] :
+    status.kind === 'offline' ? ['Connessione assente: la bozza è conservata su questo computer e verrà inviata appena possibile', 'text-secondary'] :
+    status.kind === 'stopped' ? [`Bozza non salvata sul server: ${status.message}. Il testo resta su questo computer.`, 'text-error'] :
+    ['La risposta viene salvata automaticamente mentre scrivi', 'text-on-surface-variant'];
+  return <p className={`mt-2 text-xs ${tone}`} role="status" aria-live="polite">{text}</p>;
+}
+
 function QuizPage() {
   const { quizId } = useParams<{ quizId: string }>();
   const navigate = useNavigate();
@@ -113,17 +127,44 @@ function QuizPage() {
     }
   }, [isError, queryError]);
 
+  const currentIndexForDraft = quizData?.current_index ?? 0;
+  const isOpenQuestion = !quizData?.is_complete && quizData?.current_question?.type === 'open';
+  const draft = useAnswerDraft(quizId, currentIndexForDraft, isOpenQuestion);
+  const { reset: resetDraft } = draft;
+
+  useEffect(() => { purgeOldLocal(); }, []);
+
+  // When a question opens, bring back what was being written for it: an
+  // unsent copy in this browser first, otherwise the server's draft. Only
+  // once per question: a later refetch must not overwrite the typing.
+  const restoredFor = useRef<string | null>(null);
   useEffect(() => {
-    setCurrentAnswer(null);
+    if (!quizId || !quizData) return;
+    const slot = `${quizId}:${quizData.current_index}:${quizData.is_complete}`;
+    if (restoredFor.current === slot) return;
+    restoredFor.current = slot;
     setLocalError(null);
-  }, [quizData?.current_index]);
+    if (!quizData.is_complete && quizData.current_question?.type === 'open') {
+      const restored = restoreDraft(quizId, quizData.current_index, quizData.draft);
+      setCurrentAnswer(restored.text || null);
+      resetDraft(restored.text, restored.unsent);
+    } else {
+      setCurrentAnswer(null);
+    }
+  }, [quizId, quizData, resetDraft]);
+
+  const handleAnswerChange = (answer: Answer) => {
+    setCurrentAnswer(answer);
+    if (isOpenQuestion && typeof answer === 'string') draft.edited(answer);
+  };
 
   const saveAnswerMutation = useMutation({
-    mutationFn: ({ answer }: { answer: Answer }) => {
+    mutationFn: ({ answer }: { answer: Answer; index: number }) => {
       if (!quizId) throw new Error('Quiz ID mancante.');
       return saveAnswer(quizId, answer);
     },
-    onSuccess: () => {
+    onSuccess: (_result, { index }) => {
+      if (quizId) clearLocal(quizId, index);
       setCurrentAnswer(null);
       queryClient.invalidateQueries({ queryKey: ['quiz', quizId] });
       refetch();
@@ -146,6 +187,7 @@ function QuizPage() {
       return submitQuiz(quizId);
     },
     onSuccess: (result) => {
+      if (quizId) clearLocal(quizId);
       queryClient.invalidateQueries({ queryKey: ['quiz', quizId] });
       navigate('/finish', { state: { submitResult: result } });
     },
@@ -177,11 +219,14 @@ function QuizPage() {
   const handleNext = () => {
     setLocalError(null);
     if (!isCurrentAnswered) { setLocalError('Rispondi alla domanda prima di continuare.'); return; }
-    saveAnswerMutation.mutate({ answer: currentAnswer });
+    saveAnswerMutation.mutate({ answer: currentAnswer, index: currentIndex });
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setLocalError(null);
+    // After a close, the open answer being written is handed in as a draft:
+    // make sure the server has its latest words first.
+    await draft.flush();
     submitMutation.mutate();
   };
 
@@ -213,7 +258,7 @@ function QuizPage() {
           <AccessibilityPanel />
           <ThemeToggle />
         </div>
-        <div className="container mx-auto p-4 max-w-3xl quiz-no-select">
+        <div className={`container mx-auto p-4 ${isOpenQuestion ? 'max-w-6xl' : 'max-w-3xl'} quiz-no-select`}>
 
           {isComplete || sessionClosed ? (
             <div className="min-h-screen flex items-center justify-center">
@@ -240,7 +285,8 @@ function QuizPage() {
             <div className="text-error p-4">Dati del quiz mancanti o non validi.</div>
           ) : (
             <>
-              <div className="flex justify-between items-center mb-4 pt-4">
+              {/* Room for the fixed accessibility and theme buttons: beside them on wide screens, below them on phones. */}
+              <div className="flex justify-between items-center mb-4 pt-16 sm:pt-4 sm:pr-32">
                 <h2 className="text-lg font-semibold text-on-surface">Quiz</h2>
                 <span className="text-sm text-on-surface-variant">
                   Domanda {currentIndex + 1} / {totalQuestions}
@@ -257,9 +303,10 @@ function QuizPage() {
                 <QuestionDisplay
                   question={currentQuestion}
                   currentAnswer={currentAnswer}
-                  onAnswerChange={setCurrentAnswer}
+                  onAnswerChange={handleAnswerChange}
                   disableCopy={true}
                 />
+                {isOpenQuestion && <DraftStatusLine status={draft.status} />}
               </div>
 
               <div className="mt-6 flex justify-end">

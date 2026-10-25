@@ -384,7 +384,8 @@ sync_runs (id, started_at, finished_at, triggered_by FK, result JSONB,
 | GET  | `/quiz/session-info` | Student JWT | Title + question count |
 | POST | `/quiz/start` | Student JWT | Create or resume plan |
 | GET  | `/quiz/resume/<quiz_id>` | Student JWT | Current question + progression |
-| POST | `/quiz/save-answer` | Student JWT | Save one answer, advance index |
+| POST | `/quiz/save-draft` | Student JWT | Autosave the open answer being written (current question only; also after a manual close, within grace) |
+| POST | `/quiz/save-answer` | Student JWT | Save one answer, advance index, clear the draft |
 | POST | `/quiz/submit` | Student JWT | Grade and record submission |
 
 ### Teacher (`/api/teacher/`)
