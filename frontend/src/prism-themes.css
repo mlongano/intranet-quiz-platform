@@ -39,41 +39,22 @@ pre[class*="language-"] {
   white-space: normal;
 }
 
-/* ─── Line-numbers plugin ────────────────────────────────────────────────── */
+/* ─── Line numbers ──────────────────────────────────────────────────────────
+   rehype-prism-plus marks every line <span class="code-line line-number"
+   line="N"> while rendering, so the numbers are part of the markup and survive
+   React re-renders (Prism's runtime plugin wrote them into the DOM afterwards,
+   and the first re-render erased them). */
 
-pre[class*="language-"].line-numbers {
-  position: relative;
-  padding-left: 3.8em;
-  counter-reset: linenumber;
-}
-
-pre[class*="language-"].line-numbers > code {
-  position: relative;
-  white-space: inherit;
-}
-
-.line-numbers .line-numbers-rows {
-  position: absolute;
-  pointer-events: none;
-  top: 0;
-  font-size: 100%;
-  left: -3.8em;
-  width: 3em;
-  letter-spacing: -1px;
+.line-number::before {
+  content: attr(line);
+  display: inline-block;
+  width: 2em;
+  margin-right: 0.9em;
+  padding-right: 0.6em;
+  text-align: right;
   border-right: 1px solid;
   user-select: none;
-}
-
-.line-numbers-rows > span {
-  display: block;
-  counter-increment: linenumber;
-}
-
-.line-numbers-rows > span::before {
-  content: counter(linenumber);
-  display: block;
-  padding-right: 0.8em;
-  text-align: right;
+  -webkit-user-select: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -94,12 +75,9 @@ pre[class*="language-"].line-numbers > code {
   background: var(--surface-container-high);
 }
 
-.dark .line-numbers .line-numbers-rows {
-  border-right-color: #404754;
-}
-
-.dark .line-numbers-rows > span::before {
+.dark .line-number::before {
   color: #606570;
+  border-right-color: #404754;
 }
 
 .dark .token.comment,
@@ -196,12 +174,9 @@ pre[class*="language-"].line-numbers > code {
   background: var(--surface-container-low);
 }
 
-.light .line-numbers .line-numbers-rows {
-  border-right-color: #c8cad2;
-}
-
-.light .line-numbers-rows > span::before {
+.light .line-number::before {
   color: #9095a0;
+  border-right-color: #c8cad2;
 }
 
 .light .token.comment,

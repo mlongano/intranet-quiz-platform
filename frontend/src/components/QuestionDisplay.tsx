@@ -1,28 +1,11 @@
 // frontend/src/components/QuestionDisplay.tsx (New file - basic structure)
-import React, { useEffect, useRef } from "react";
+import React from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import { remarkPlugins, rehypePlugins } from "../lib/markdownPlugins";
 import { Question, Answer, OptionObject } from "../api"; // Import types
-import Prism from "prismjs";
 
 import "../prism-themes.css";
-import "prismjs/plugins/line-numbers/prism-line-numbers.css";
-import "prismjs/plugins/line-numbers/prism-line-numbers";
-
-// Import common languages to reduce unknown language errors
-import "prismjs/components/prism-javascript";
-import "prismjs/components/prism-typescript";
-import "prismjs/components/prism-python";
-import "prismjs/components/prism-java";
-import "prismjs/components/prism-c";
-import "prismjs/components/prism-cpp";
-import "prismjs/components/prism-csharp";
-import "prismjs/components/prism-css";
-import "prismjs/components/prism-markup"; // HTML/XML
-import "prismjs/components/prism-json";
-import "prismjs/components/prism-bash";
-import "prismjs/components/prism-sql";
 
 interface Props {
   question: Question;
@@ -42,26 +25,6 @@ function QuestionDisplay({
   highlightIndices = [],
   disableCopy = false,
 }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Re-run Prism highlighting when question changes
-  useEffect(() => {
-    if (containerRef.current) {
-      // Use a small delay to ensure DOM is fully rendered
-      const timeoutId = setTimeout(() => {
-        try {
-          if (containerRef.current) {
-            Prism.highlightAllUnder(containerRef.current);
-          }
-        } catch (error) {
-          // Silently ignore Prism errors (e.g., unknown languages in code blocks)
-          console.warn('Prism highlighting error (ignored):', error);
-        }
-      }, 50);
-
-      return () => clearTimeout(timeoutId);
-    }
-  }, [question.id, question.text, question.options]);  // Custom markdown component sizes for options
   const optionMarkdownComponents: Components = {
     h1: (props: any) => (
       <h3
@@ -81,27 +44,6 @@ function QuestionDisplay({
         className={`text-base font-semibold ${props.className || ""}`}
       />
     ),
-    // Ensure pre blocks have line-numbers class AND preserve language class
-    pre: ({ children, ...props }: any) => {
-      // Extract the language from the code element if present
-      const codeElement = React.Children.toArray(children).find(
-        (child): child is React.ReactElement =>
-          React.isValidElement(child) && child.type === "code"
-      ) as React.ReactElement<{ className?: string }> | undefined;
-
-      const className = codeElement?.props?.className || "";
-      const languageMatch = className.match(/language-(\w+)/);
-      const language = languageMatch ? languageMatch[1] : "";
-
-      // Ensure both line-numbers and language-* classes are present
-      const preClassName = `line-numbers ${language ? `language-${language}` : ""} ${props.className || ""}`.trim();
-
-      return (
-        <pre {...props} className={preClassName}>
-          {children}
-        </pre>
-      );
-    },
   };
   // --- NEW: Helper to get text from option ---
   const getOptionText = (option: string | OptionObject): string => {
@@ -141,7 +83,7 @@ function QuestionDisplay({
   };
 
   return (
-    <div className="space-y-4" ref={containerRef}>
+    <div className="space-y-4">
       {/* --- NEW: Display question image --- */}
       {question.question_image && (
         <img
@@ -165,28 +107,6 @@ function QuestionDisplay({
         <ReactMarkdown
           remarkPlugins={remarkPlugins}
           rehypePlugins={rehypePlugins}
-          components={{
-            pre: ({ children, ...props }: any) => {
-              // Extract the language from the code element if present
-              const codeElement = React.Children.toArray(children).find(
-                (child): child is React.ReactElement =>
-                  React.isValidElement(child) && child.type === "code"
-              ) as React.ReactElement<{ className?: string }> | undefined;
-
-              const className = codeElement?.props?.className || "";
-              const languageMatch = className.match(/language-(\w+)/);
-              const language = languageMatch ? languageMatch[1] : "";
-
-              // Ensure both line-numbers and language-* classes are present
-              const preClassName = `line-numbers ${language ? `language-${language}` : ""} ${props.className || ""}`.trim();
-
-              return (
-                <pre {...props} className={preClassName}>
-                  {children}
-                </pre>
-              );
-            },
-          }}
         >
           {cleanMarkdown(question.text || "")}
         </ReactMarkdown>

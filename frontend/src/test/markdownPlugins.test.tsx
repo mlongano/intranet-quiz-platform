@@ -34,3 +34,24 @@ describe('quiz Markdown renders LaTeX', () => {
     expect(c.querySelector('img')).toBeNull();
   });
 });
+
+describe('code blocks', () => {
+  const code = '```python\nx = 1\ny = 2\nprint(x + y)\n```';
+
+  it('number their lines as part of the render, so a re-render keeps them', () => {
+    const { container, rerender } = render(
+      <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>{code}</ReactMarkdown>,
+    );
+    const lines = () => [...container.querySelectorAll('.line-number')].map(l => l.getAttribute('line'));
+    expect(lines()).toEqual(['1', '2', '3']);
+    expect(container.querySelector('.token')).not.toBeNull();
+    rerender(<ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>{code}</ReactMarkdown>);
+    expect(lines()).toEqual(['1', '2', '3']);
+  });
+
+  it('an unknown language is shown as plain code, not an error', () => {
+    const c = md('```pseudocodice\nSE x > 0 ALLORA\n```');
+    expect(c.textContent).toContain('SE x > 0 ALLORA');
+    expect(c.querySelectorAll('.line-number')).toHaveLength(1);
+  });
+});

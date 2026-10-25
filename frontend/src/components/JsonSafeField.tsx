@@ -1,27 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
-import type { Components } from "react-markdown";
-import { remarkPlugins, rehypePluginsNoCode } from "../lib/markdownPlugins";
-import Prism from "prismjs";
+import { remarkPlugins, rehypePlugins } from "../lib/markdownPlugins";
 import "../prism-themes.css";
-// Prism line numbers plugin CSS
-import "prismjs/plugins/line-numbers/prism-line-numbers.css";
-// Prism line numbers plugin JavaScript
-import "prismjs/plugins/line-numbers/prism-line-numbers";
-
-// Import common languages to reduce unknown language errors
-import "prismjs/components/prism-javascript";
-import "prismjs/components/prism-typescript";
-import "prismjs/components/prism-python";
-import "prismjs/components/prism-java";
-import "prismjs/components/prism-c";
-import "prismjs/components/prism-cpp";
-import "prismjs/components/prism-csharp";
-import "prismjs/components/prism-css";
-import "prismjs/components/prism-markup"; // HTML/XML
-import "prismjs/components/prism-json";
-import "prismjs/components/prism-bash";
-import "prismjs/components/prism-sql";
 
 /**
  * JsonSafeField
@@ -33,7 +13,6 @@ import "prismjs/components/prism-sql";
 export default function JsonSafeField() {
   const [input, setInput] = useState<string>("");
   const [jsonInput, setJsonInput] = useState<string>("");
-  const previewRef = useRef<HTMLDivElement>(null);
   const [copyStatus, setCopyStatus] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
 
@@ -69,62 +48,6 @@ export default function JsonSafeField() {
     }
   };
 
-  // Re-run Prism highlighting when input changes
-  useEffect(() => {
-    if (previewRef.current) {
-      try {
-        // Use setTimeout to ensure DOM is ready and catch async errors
-        const timeoutId = setTimeout(() => {
-          try {
-            if (previewRef.current) {
-              Prism.highlightAllUnder(previewRef.current);
-            }
-          } catch (error) {
-            // Silently ignore Prism errors (e.g., unknown languages, malformed code blocks)
-            console.warn('Prism highlighting error (ignored):', error);
-          }
-        }, 100); // Small delay to let react-markdown finish rendering
-
-        return () => clearTimeout(timeoutId);
-      } catch (error) {
-        console.warn('Prism setup error (ignored):', error);
-      }
-    }
-  }, [input]);
-
-  // Custom components for ReactMarkdown to handle code blocks safely
-  const components: Components = {
-    code: ({ inline, className, children, ...props }: any) => {
-      const match = /language-(\w+)/.exec(className || '');
-      const language = match ? match[1] : '';
-
-      if (!inline && language) {
-        // Check if language is supported, fallback to 'markup' if not
-        const lang = Prism.languages[language] ? language : 'markup';
-
-        return (
-          <code className={`language-${lang} ${className || ''}`} {...props}>
-            {children}
-          </code>
-        );
-      }
-
-      return <code className={className} {...props}>{children}</code>;
-    },
-    pre: ({ children, ...props }: any) => {
-      // Extract language from code element
-      const codeElement = Array.isArray(children) ? children[0] : children;
-      const className = codeElement?.props?.className || '';
-      const match = /language-(\w+)/.exec(className);
-      const language = match ? match[1] : '';
-
-      return (
-        <pre className={`line-numbers ${language ? `language-${language}` : ''}`} {...props}>
-          {children}
-        </pre>
-      );
-    },
-  };
 
   const copy = async (text: string, label: string) => {
     try {
@@ -208,13 +131,11 @@ export default function JsonSafeField() {
           <div className="mt-2">
             <label className="block text-xs font-medium text-on-surface-variant">Anteprima</label>
             <div
-              ref={previewRef}
               className="mt-1 p-3 border border-outline-variant/20 rounded-lg bg-surface-container-low max-h-48 overflow-auto prose prose-sm dark:prose-invert max-w-none"
             >
               <ReactMarkdown
                 remarkPlugins={remarkPlugins}
-                rehypePlugins={rehypePluginsNoCode}
-                components={components}
+                rehypePlugins={rehypePlugins}
               >
                 {input || ""}
               </ReactMarkdown>

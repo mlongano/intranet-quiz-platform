@@ -31,11 +31,6 @@ export default defineConfig({
               return 'react-vendor';
             }
 
-            // Separate heavy libraries that don't depend on React internals
-            if (id.includes('prismjs')) {
-              return 'prism';
-            }
-
             if (id.includes('jsonc-parser')) {
               return 'jsonc';
             }

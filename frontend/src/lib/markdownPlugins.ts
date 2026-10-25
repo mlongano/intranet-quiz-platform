@@ -31,10 +31,11 @@ const schema = {
 
 export const remarkPlugins: PluggableList = [remarkGfm, remarkMath];
 
-/** Before Prism: Prism would otherwise try to highlight formulas as code. */
-export const rehypePluginsNoCode: PluggableList = [[rehypeSanitize, schema], rehypeKatex];
-
+// KaTeX before Prism: Prism would otherwise highlight formulas as code.
 export const rehypePlugins: PluggableList = [
-  ...rehypePluginsNoCode,
-  [rehypePrism, { showLineNumbers: true }],
+  [rehypeSanitize, schema],
+  rehypeKatex,
+  // Highlighting and line numbers are part of the rendered markup, so a
+  // re-render keeps them; an unknown language stays plain code.
+  [rehypePrism, { showLineNumbers: true, ignoreMissing: true }],
 ];
