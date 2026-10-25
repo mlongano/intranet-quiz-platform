@@ -82,6 +82,7 @@ function DraftStatusLine({ status }: { status: DraftStatus }) {
   const [text, tone] =
     status.kind === 'saving' ? ['Salvataggio della bozza…', 'text-on-surface-variant'] :
     status.kind === 'saved' ? [`Bozza salvata alle ${time(status.at)}`, 'text-tertiary'] :
+    status.kind === 'expired' ? ['Accesso scaduto: reinserisci il codice per continuare. La bozza è conservata su questo computer.', 'text-secondary'] :
     status.kind === 'offline' ? ['Connessione assente: la bozza è conservata su questo computer e verrà inviata appena possibile', 'text-secondary'] :
     status.kind === 'stopped' ? [`Bozza non salvata sul server: ${status.message}. Il testo resta su questo computer.`, 'text-error'] :
     ['La risposta viene salvata automaticamente mentre scrivi', 'text-on-surface-variant'];
@@ -152,6 +153,10 @@ function QuizPage() {
       setCurrentAnswer(null);
     }
   }, [quizId, quizData, resetDraft]);
+
+  useEffect(() => {
+    if (draft.status.kind === 'expired') setShowReJoin(true);
+  }, [draft.status.kind]);
 
   const handleAnswerChange = (answer: Answer) => {
     setCurrentAnswer(answer);

@@ -19,13 +19,13 @@ def _auth_guard(required_roles: set[str]):
         def decorated(*args, **kwargs):
             token = _extract_token()
             if not token:
-                return jsonify({'error': 'MISSING_TOKEN'}), 401
+                return jsonify({'error': 'MISSING_TOKEN', 'code': 'MISSING_TOKEN'}), 401
             try:
                 payload = decode_token(token)
             except jwt.ExpiredSignatureError:
-                return jsonify({'error': 'TOKEN_EXPIRED'}), 401
+                return jsonify({'error': 'TOKEN_EXPIRED', 'code': 'TOKEN_EXPIRED'}), 401
             except jwt.InvalidTokenError:
-                return jsonify({'error': 'INVALID_TOKEN'}), 401
+                return jsonify({'error': 'INVALID_TOKEN', 'code': 'INVALID_TOKEN'}), 401
             if payload.get('role') not in required_roles:
                 return jsonify({'error': 'FORBIDDEN'}), 403
             g.current_user = payload
@@ -53,13 +53,13 @@ def require_change_password_token(f):
     def decorated(*args, **kwargs):
         token = _extract_token()
         if not token:
-            return jsonify({'error': 'MISSING_TOKEN'}), 401
+            return jsonify({'error': 'MISSING_TOKEN', 'code': 'MISSING_TOKEN'}), 401
         try:
             payload = decode_token(token)
         except jwt.ExpiredSignatureError:
-            return jsonify({'error': 'TOKEN_EXPIRED'}), 401
+            return jsonify({'error': 'TOKEN_EXPIRED', 'code': 'TOKEN_EXPIRED'}), 401
         except jwt.InvalidTokenError:
-            return jsonify({'error': 'INVALID_TOKEN'}), 401
+            return jsonify({'error': 'INVALID_TOKEN', 'code': 'INVALID_TOKEN'}), 401
         if payload.get('scope') != 'password_change' and payload.get('role') not in ('teacher', 'super_admin'):
             return jsonify({'error': 'FORBIDDEN'}), 403
         g.current_user = payload

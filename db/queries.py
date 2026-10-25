@@ -290,6 +290,64 @@ REOPEN_SESSION = """
     RETURNING id
 """
 
+# ── session editing ───────────────────────────────────────────────────────────
+
+LOCK_SESSION_FOR_EDIT = """
+    SELECT status, snapshot_id, title, opens_at, closes_at
+    FROM quiz_sessions
+    WHERE id = %s AND teacher_id = %s
+    FOR UPDATE
+"""
+
+SNAPSHOT_OWNED_BY = """
+    SELECT 1 FROM question_snapshots WHERE id = %s AND teacher_id = %s
+"""
+
+CLASS_OWNED_BY = """
+    SELECT 1 FROM class_teachers WHERE class_id = %s AND teacher_id = %s
+"""
+
+SESSION_CLASS_IDS = """
+    SELECT class_id FROM session_classes WHERE session_id = %s ORDER BY class_id
+"""
+
+# A participant is a student who has started (plan) or handed in (score).
+SESSION_HAS_PARTICIPANTS = """
+    SELECT EXISTS (SELECT 1 FROM quiz_plans WHERE session_id = %(sid)s)
+        OR EXISTS (SELECT 1 FROM score_entries WHERE session_id = %(sid)s)
+"""
+
+# Names of the removed classes that would strand a participant: one who is in
+# a removed class and in none of the classes kept.
+CLASSES_STRANDING_PARTICIPANTS = """
+    WITH participants AS (
+        SELECT student_id FROM quiz_plans WHERE session_id = %(sid)s
+        UNION
+        SELECT student_id FROM score_entries WHERE session_id = %(sid)s
+    )
+    SELECT DISTINCT c.id, c.name
+    FROM participants p
+    JOIN class_students cs ON cs.student_id = p.student_id
+    JOIN classes c ON c.id = cs.class_id
+    WHERE cs.class_id = ANY(%(removed)s)
+      AND NOT EXISTS (
+          SELECT 1 FROM class_students kept
+          WHERE kept.student_id = p.student_id AND kept.class_id = ANY(%(kept)s)
+      )
+    ORDER BY c.name
+"""
+
+UPDATE_SESSION_SETTINGS = """
+    UPDATE quiz_sessions
+    SET title = %(title)s, snapshot_id = %(snapshot_id)s,
+        opens_at = %(opens_at)s, closes_at = %(closes_at)s
+    WHERE id = %(id)s AND teacher_id = %(teacher_id)s
+"""
+
+DELETE_SESSION_CLASS = """
+    DELETE FROM session_classes WHERE session_id = %s AND class_id = %s
+"""
+
 UPDATE_JOIN_CODE = """
     UPDATE quiz_sessions
     SET join_code = %s

@@ -90,6 +90,7 @@ export type DraftStatus =
   | { kind: 'saving' }
   | { kind: 'saved'; at: Date }
   | { kind: 'offline' }                     // kept in this browser, will retry
+  | { kind: 'expired' }                     // token expired: the student must re-enter the code
   | { kind: 'stopped'; message: string };   // the server refuses: keep the local copy only
 
 /**
@@ -137,7 +138,11 @@ export function useAnswerDraft(quizId: string | undefined, index: number, enable
       setStatus({ kind: 'saved', at: new Date(res.saved_at) });
     } catch (err) {
       if (gen !== generation.current) return;
-      if (err instanceof ApiError && err.status !== 401 && err.status < 500) {
+      if (err instanceof ApiError && err.code === 'TOKEN_EXPIRED') {
+        // Kept locally; retried with the new token once the code is re-entered.
+        setStatus({ kind: 'expired' });
+        retryTimer.current = window.setTimeout(() => { void flush(); }, RETRY_MS);
+      } else if (err instanceof ApiError && err.status !== 401 && err.status < 500) {
         // Closed session, question already answered elsewhere, too long:
         // retrying cannot help. The local copy stays.
         stopped.current = true;

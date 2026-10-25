@@ -23,6 +23,7 @@ Classes:
 Sessions:
     GET    /api/teacher/sessions
     POST   /api/teacher/sessions
+    PATCH  /api/teacher/sessions/<id>           (title, quiz, classes, schedule)
     POST   /api/teacher/sessions/<id>/activate
     POST   /api/teacher/sessions/<id>/close
     POST   /api/teacher/sessions/<id>/regen-code
@@ -59,7 +60,7 @@ from __future__ import annotations
 import json
 
 from flask import Blueprint, Response, g, jsonify, request
-from werkzeug.exceptions import Conflict, Forbidden, NotFound
+from werkzeug.exceptions import BadRequest, Conflict, Forbidden, NotFound
 
 import db
 from db import queries as Q
@@ -99,6 +100,18 @@ def _json_not_found(e):
 @teacher_bp.errorhandler(Forbidden)
 def _json_forbidden(e):
     return jsonify({'error': 'FORBIDDEN', 'description': e.description}), 403
+
+
+# These two carry a message for the teacher, so it goes in 'error', the field
+# apiFetch shows; the machine-readable reason is in 'code'.
+@teacher_bp.errorhandler(BadRequest)
+def _json_bad_request(e):
+    return jsonify({'error': e.description, 'code': 'BAD_REQUEST'}), 400
+
+
+@teacher_bp.errorhandler(qs_service.EditRefused)
+def _json_edit_refused(e):
+    return jsonify({'error': e.description, 'code': e.reason, 'description': e.description}), 409
 
 
 @teacher_bp.errorhandler(Conflict)
@@ -308,6 +321,10 @@ def create_session():
     if not snap_row:
         return jsonify({'error': 'SNAPSHOT_NOT_FOUND'}), 404
 
+    opens_at = qs_service.parse_schedule(opens_at, 'Apertura')
+    closes_at = qs_service.parse_schedule(closes_at, 'Chiusura')
+    qs_service.check_schedule(opens_at, closes_at)
+
     session_title = title or snap_row[0]
     result = qs_service.create_session(
         teacher_id=teacher_id,
@@ -318,6 +335,17 @@ def create_session():
         closes_at=closes_at,
     )
     return jsonify(result), 201
+
+
+@teacher_bp.patch('/sessions/<int:session_id>')
+@require_teacher
+def edit_session(session_id: int):
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': 'INVALID_BODY'}), 400
+    allowed = {'title', 'snapshot_id', 'class_ids', 'opens_at', 'closes_at'}
+    qs_service.edit_session(session_id, _teacher_id(), {k: v for k, v in data.items() if k in allowed})
+    return jsonify(ss_service.get_session_for_teacher(_teacher_id(), session_id)), 200
 
 
 @teacher_bp.post('/sessions/<int:session_id>/activate')

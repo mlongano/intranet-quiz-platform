@@ -84,10 +84,7 @@ def create_session(
     with db.get_conn() as conn:
         # Verify teacher owns every class (inside the same transaction as the INSERT)
         for cid in class_ids:
-            owns = conn.execute(
-                "SELECT 1 FROM class_teachers WHERE class_id = %s AND teacher_id = %s",
-                (cid, teacher_id),
-            ).fetchone()
+            owns = conn.execute(Q.CLASS_OWNED_BY, (cid, teacher_id)).fetchone()
             if not owns:
                 raise Forbidden(description=f"Class {cid} not found or not yours.")
 
@@ -103,6 +100,156 @@ def create_session(
             conn.execute(Q.INSERT_SESSION_CLASS, (session_id, cid))
         conn.commit()
     return {'id': session_id, 'join_code': None}
+
+
+class EditRefused(Conflict):
+    """A session change its status does not allow; `reason` is the API code."""
+
+    def __init__(self, reason: str, description: str):
+        super().__init__(description=description)
+        self.reason = reason
+
+
+_UNSET = object()
+
+
+def parse_schedule(value: Any, field: str) -> datetime | None:
+    """An opens_at/closes_at value: None, or an ISO 8601 time with a time zone.
+
+    A time without a zone is refused rather than guessed: the browser knows
+    the teacher's zone, the server does not.
+    """
+    if value is None or value == '':
+        return None
+    if not isinstance(value, str):
+        raise BadRequest(description=f"{field}: data non valida.")
+    try:
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except ValueError:
+        raise BadRequest(description=f"{field}: data non valida.")
+    if parsed.tzinfo is None:
+        raise BadRequest(description=f"{field}: manca il fuso orario.")
+    return parsed
+
+
+def check_schedule(opens_at: datetime | None, closes_at: datetime | None) -> None:
+    if opens_at and closes_at and closes_at <= opens_at:
+        raise BadRequest(description="La chiusura deve venire dopo l'apertura.")
+
+
+def _participants(conn, session_id: int) -> bool:
+    return bool(conn.execute(Q.SESSION_HAS_PARTICIPANTS, {'sid': session_id}).fetchone()[0])
+
+
+def edit_constraints(conn, session_id: int, status: str) -> dict:
+    """What the edit form may offer: can the quiz change, which classes must stay.
+
+    The server enforces the same rules in edit_session; this only lets the
+    form disable what would be refused.
+    """
+    class_ids = [r[0] for r in conn.execute(Q.SESSION_CLASS_IDS, (session_id,)).fetchall()]
+    if status == 'closed':
+        return {'quiz': False, 'locked_class_ids': class_ids}
+    if status == 'draft':
+        return {'quiz': True, 'locked_class_ids': []}
+    locked = []
+    for cid in class_ids:
+        others = [c for c in class_ids if c != cid]
+        if conn.execute(Q.CLASSES_STRANDING_PARTICIPANTS,
+                        {'sid': session_id, 'removed': [cid], 'kept': others}).fetchone():
+            locked.append(cid)
+    return {'quiz': not _participants(conn, session_id), 'locked_class_ids': locked}
+
+
+def edit_session(session_id: int, teacher_id: int, changes: dict) -> None:
+    """Change a session's title, quiz, classes or schedule, as its status allows.
+
+    - draft: everything;
+    - active: title and schedule; the quiz only while no student has started
+      or handed in; classes may be added, and removed unless that strands a
+      student who has started (one in none of the classes kept);
+    - closed: only the title. Its schedule decides the grace window for
+      handing in, and its results belong to the quiz and classes it had.
+
+    Values equal to the current ones are not changes, so a form may send
+    every field back. Ownership and every check run under the session's
+    FOR UPDATE lock, in the transaction that writes.
+    """
+    title = changes.get('title', _UNSET)
+    if title is not _UNSET:
+        if not isinstance(title, str) or not title.strip():
+            raise BadRequest(description="Il titolo non può essere vuoto.")
+        title = title.strip()[:200]
+    snapshot_id = changes.get('snapshot_id', _UNSET)
+    if snapshot_id is not _UNSET:
+        if not isinstance(snapshot_id, int) or isinstance(snapshot_id, bool):
+            raise BadRequest(description="Quiz non valido.")
+    class_ids = changes.get('class_ids', _UNSET)
+    if class_ids is not _UNSET:
+        if (not isinstance(class_ids, list) or not class_ids
+                or not all(isinstance(c, int) and not isinstance(c, bool) for c in class_ids)):
+            raise BadRequest(description="Seleziona almeno una classe.")
+    opens_at = changes.get('opens_at', _UNSET)
+    if opens_at is not _UNSET:
+        opens_at = parse_schedule(opens_at, 'Apertura')
+    closes_at = changes.get('closes_at', _UNSET)
+    if closes_at is not _UNSET:
+        closes_at = parse_schedule(closes_at, 'Chiusura')
+
+    with db.get_conn() as conn:
+        row = conn.execute(Q.LOCK_SESSION_FOR_EDIT, (session_id, teacher_id)).fetchone()
+        if not row:
+            raise NotFound(description="Session not found.")
+        status, cur_snapshot, cur_title, cur_opens, cur_closes = row
+        cur_classes = [r[0] for r in conn.execute(Q.SESSION_CLASS_IDS, (session_id,)).fetchall()]
+
+        new_title = cur_title if title is _UNSET else title
+        new_snapshot = cur_snapshot if snapshot_id is _UNSET else snapshot_id
+        new_opens = cur_opens if opens_at is _UNSET else opens_at
+        new_closes = cur_closes if closes_at is _UNSET else closes_at
+        new_classes = cur_classes if class_ids is _UNSET else sorted(set(class_ids))
+
+        quiz_changed = new_snapshot != cur_snapshot
+        classes_changed = new_classes != cur_classes
+        schedule_changed = new_opens != cur_opens or new_closes != cur_closes
+
+        if status == 'closed' and (quiz_changed or classes_changed or schedule_changed):
+            raise EditRefused('SESSION_CLOSED',
+                              "In una sessione chiusa si può cambiare solo il titolo.")
+        check_schedule(new_opens, new_closes)
+
+        if quiz_changed:
+            if not conn.execute(Q.SNAPSHOT_OWNED_BY, (new_snapshot, teacher_id)).fetchone():
+                raise NotFound(description="Quiz non trovato.")
+            if status == 'active' and _participants(conn, session_id):
+                raise EditRefused('QUIZ_IN_USE',
+                                  "Il quiz non si può cambiare: qualche studente l'ha già iniziato.")
+
+        if classes_changed:
+            for cid in new_classes:
+                if cid not in cur_classes and not conn.execute(
+                        Q.CLASS_OWNED_BY, (cid, teacher_id)).fetchone():
+                    raise Forbidden(description=f"Class {cid} not found or not yours.")
+            removed = [c for c in cur_classes if c not in new_classes]
+            if status == 'active' and removed:
+                stranded = conn.execute(Q.CLASSES_STRANDING_PARTICIPANTS, {
+                    'sid': session_id, 'removed': removed, 'kept': new_classes,
+                }).fetchall()
+                if stranded:
+                    names = ', '.join(r[1] for r in stranded)
+                    raise EditRefused('CLASS_IN_USE',
+                                      f"Non si può togliere {names}: alcuni studenti hanno già iniziato.")
+            for cid in removed:
+                conn.execute(Q.DELETE_SESSION_CLASS, (session_id, cid))
+            for cid in new_classes:
+                if cid not in cur_classes:
+                    conn.execute(Q.INSERT_SESSION_CLASS, (session_id, cid))
+
+        conn.execute(Q.UPDATE_SESSION_SETTINGS, {
+            'id': session_id, 'teacher_id': teacher_id, 'title': new_title,
+            'snapshot_id': new_snapshot, 'opens_at': new_opens, 'closes_at': new_closes,
+        })
+        conn.commit()
 
 
 def activate_session(session_id: int, teacher_id: int) -> str:

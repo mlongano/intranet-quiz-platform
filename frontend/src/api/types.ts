@@ -132,6 +132,16 @@ export interface SessionMeta {
   classes: { id: number; name: string }[];
   snapshot_id?: number;   // present on GET /sessions/<id> only
   score_count?: number;   // present on GET /sessions list only
+  /** GET /sessions/<id> only: what the edit form may change (the server enforces it). */
+  edit?: { quiz: boolean; locked_class_ids: number[] };
+}
+
+export interface UpdateSessionPayload {
+  title?: string;
+  snapshot_id?: number;
+  class_ids?: number[];
+  opens_at?: string | null;
+  closes_at?: string | null;
 }
 
 export interface CreateSessionPayload {

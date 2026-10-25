@@ -141,6 +141,8 @@ Three JWT roles: `teacher`, `super_admin` (same login flow, elevated role), `stu
 
 12. **Grading problems never stop the app.** At startup `validate_llm_env()` only warns when `USE_LLM_EVAL=1` but no enabled default endpoint exists, and never checks keys. The allowlist is edited at runtime, so refusing to boot would let disabling the only endpoint take quizzes offline at the next restart.
 
+13. **A session is edited only as far as its status allows.** `PATCH /api/teacher/sessions/<id>` (`edit_session`) changes title, quiz, classes and the join window (`opens_at`/`closes_at`, time-zone aware). Draft: everything. Active: the quiz only before any student has started or handed in; classes may be added, and removed unless that strands a student who has started. Closed: only the title — its schedule sets the grace window and its results belong to the quiz and classes it had. `GET /sessions/<id>` returns `edit` so the form disables what the server would refuse.
+
 ### Data model (PostgreSQL — see `db/migrations/`)
 
 `teachers`, `students`, `classes`, `class_teachers`, `class_students` (identity);

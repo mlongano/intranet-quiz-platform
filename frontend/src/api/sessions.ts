@@ -1,5 +1,5 @@
 import { apiFetch } from './client';
-import type { CreateSessionPayload, SessionMeta } from './types';
+import type { CreateSessionPayload, SessionMeta, UpdateSessionPayload } from './types';
 
 export async function listSessions(status?: string): Promise<SessionMeta[]> {
   const qs = status ? `?status=${encodeURIComponent(status)}` : '';
@@ -13,6 +13,13 @@ export async function getSession(sessionId: number): Promise<SessionMeta> {
 export async function createSession(payload: CreateSessionPayload): Promise<SessionMeta> {
   return apiFetch<SessionMeta>('/teacher/sessions', {
     method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateSession(sessionId: number, payload: UpdateSessionPayload): Promise<SessionMeta> {
+  return apiFetch<SessionMeta>(`/teacher/sessions/${sessionId}`, {
+    method: 'PATCH',
     body: JSON.stringify(payload),
   });
 }

@@ -44,10 +44,12 @@ def list_sessions_for_teacher(teacher_id: int, status_filter: str | None = None)
 
 
 def get_session_for_teacher(teacher_id: int, session_id: int) -> dict:
+    from services.quiz_session import edit_constraints
     with db.get_conn() as conn:
         row = conn.execute(Q.GET_SESSION, (session_id, teacher_id)).fetchone()
-    if not row:
-        raise NotFound(description="Session not found.")
+        if not row:
+            raise NotFound(description="Session not found.")
+        edit = edit_constraints(conn, session_id, row[5])
     return {
         'id': row[0], 'snapshot_id': row[2], 'title': row[3],
         'join_code': row[4], 'status': row[5],
@@ -55,6 +57,7 @@ def get_session_for_teacher(teacher_id: int, session_id: int) -> dict:
         'closes_at': row[7].isoformat() if row[7] else None,
         'created_at': row[8].isoformat() if row[8] else None,
         'classes': row[9] if isinstance(row[9], list) else json.loads(row[9] or '[]'),
+        'edit': edit,
     }
 
 

@@ -395,8 +395,16 @@ GET/:id/export, POST/:id/rename, image endpoints (POST/GET/DELETE/clear)
 
 **Classes:** GET (list for teacher), GET/:id/students
 
-**Sessions:** GET (list), POST (create), POST/:id/activate, POST/:id/close,
-POST/:id/reopen, POST/:id/regen-code, DELETE/:id
+**Sessions:** GET (list), GET/:id (includes `edit`: what may change), POST (create),
+PATCH/:id (title, quiz, classes, `opens_at`/`closes_at`), POST/:id/activate,
+POST/:id/close, POST/:id/reopen, POST/:id/regen-code, DELETE/:id
+
+What PATCH accepts depends on the status (`edit_session`): draft — everything;
+active — title and schedule, the quiz only while no student has started or handed
+in, classes added freely and removed unless that strands a student who has
+started (409 `QUIZ_IN_USE` / `CLASS_IN_USE`); closed — only the title (409
+`SESSION_CLOSED`). `opens_at`/`closes_at` bound when the join code works; they
+must carry a time zone (the browser converts the teacher's local time).
 
 **Scores:** GET/:id/scores, POST/:id/scores/review, POST/:id/scores/recalculate,
 POST/:id/scores/regrade-open (202 — enqueues a job), POST/:id/archive
@@ -460,8 +468,8 @@ POST/:id/reset-password
 
 7. **`services/quiz_session.py`** — Plan lifecycle (`get_or_create_plan`,
    `save_answer(quiz_id, answer, student_id)`, `submit_plan(quiz_id, student_id)`),
-   session lifecycle (`create_session`, `activate_session`, `close_session`,
-   `regenerate_join_code`). All writes inside a single DB transaction. Ownership
+   session lifecycle (`create_session`, `edit_session`, `activate_session`,
+   `close_session`, `regenerate_join_code`). All writes inside a single DB transaction. Ownership
    is verified inside the FOR UPDATE lock (no TOCTOU gap).
 
 8. **`services/snapshots.py`** — JSONC import/export ↔ `question_snapshots` table.
