@@ -158,10 +158,18 @@ export const NEW_QUIZ_TEMPLATE = `{
   // I commenti che iniziano con // sono ammessi.
   "questions": [
     {
+      // Markdown: **grassetto**, *corsivo*, \`codice\`,
+      // elenchi con "- ", blocchi \`\`\`python ... \`\`\`.
+      // Nel JSON si va a capo scrivendo \\n.
+      // Più comodo: «Strumenti» → Markdown→JSON.
       "id": 1,
       "type": "single",          // una sola risposta giusta
-      "text": "Testo della domanda. Il **Markdown** è ammesso.",
-      "options": ["Prima opzione", "Seconda opzione", "Terza opzione"],
+      "text": "**Cosa stampa** questo programma *Python*?\\n\\n\`\`\`python\\nnumeri = [3, 1, 2]\\nfor n in sorted(numeri):\\n    print(n * 2)\\n\`\`\`\\n\\n- \`sorted()\` restituisce una **nuova** lista\\n- la lista \`numeri\` resta invariata",
+      "options": [
+        "\`2\`, \`4\`, \`6\`, uno per riga",
+        "\`6\`, \`2\`, \`4\`, uno per riga",
+        "\`3\`, \`1\`, \`2\`, uno per riga"
+      ],
       "correct": 0,              // indice della giusta, da 0
       "weight": 1
     },

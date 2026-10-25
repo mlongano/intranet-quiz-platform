@@ -98,6 +98,14 @@ describe('NEW_QUIZ_TEMPLATE', () => {
     expect(NEW_QUIZ_TEMPLATE).toMatch(/\/\/ /);
   });
 
+  it('shows richer Markdown with a code block', () => {
+    const q = checkQuizJsonc(NEW_QUIZ_TEMPLATE).questions?.[0];
+    expect(q?.text).toMatch(/^\*\*.+\*\*/);
+    expect(q?.text).toContain('\n```python\n');
+    expect(q?.text).toContain('\n    print(n * 2)\n```');
+    expect(q?.options[0]).toContain('`2`');
+  });
+
   it('shows a LaTeX formula, with the backslash surviving JSON', () => {
     const q = checkQuizJsonc(NEW_QUIZ_TEMPLATE).questions?.find(x => x.text.includes('$'));
     expect(q?.text).toContain('$\\frac{1}{2}$');

@@ -242,3 +242,14 @@ html.a11y-contrast-yellow {
   --on-secondary: #000000;
   --on-tertiary: #000000;
 }
+/* Inline code in quiz Markdown: Typography wraps it in literal backticks,
+   which read as part of the code. A tinted background marks it instead. */
+.prose code::before,
+.prose code::after {
+  content: none;
+}
+.prose :not(pre) > code {
+  padding: 0.1em 0.35em;
+  border-radius: 0.3em;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
