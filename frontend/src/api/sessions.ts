@@ -56,3 +56,16 @@ export async function deleteSession(sessionId: number): Promise<{ ok: boolean }>
 export async function getLive(): Promise<{ sessions: LiveSession[] }> {
   return apiFetch<{ sessions: LiveSession[] }>('/teacher/live');
 }
+
+export async function publishResults(sessionId: number, showCorrect: boolean) {
+  return apiFetch<{ results_published_at: string | null; results_show_correct: boolean }>(
+    `/teacher/sessions/${sessionId}/results/publish`,
+    { method: 'POST', body: JSON.stringify({ show_correct: showCorrect }) },
+  );
+}
+
+export async function unpublishResults(sessionId: number) {
+  return apiFetch<{ results_published_at: string | null }>(
+    `/teacher/sessions/${sessionId}/results/unpublish`, { method: 'POST' },
+  );
+}

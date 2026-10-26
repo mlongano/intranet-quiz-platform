@@ -13,6 +13,7 @@ initTheme();
 import StartPage from './pages/StartPage';
 import QuizPage from './pages/QuizPage';
 import FinishPage from './pages/FinishPage';
+import MyResultsPage from './pages/MyResultsPage';
 import ErrorPage from './pages/ErrorPage';
 
 // Teacher auth pages
@@ -46,6 +47,8 @@ const router = createBrowserRouter([
   { path: '/', element: <StartPage />, errorElement: <ErrorPage /> },
   { path: '/quiz/:quizId', element: <QuizPage />, errorElement: <ErrorPage /> },
   { path: '/finish', element: <FinishPage />, errorElement: <ErrorPage /> },
+  { path: '/risultati', element: <MyResultsPage />, errorElement: <ErrorPage /> },
+  { path: '/risultati/:sessionId', element: <MyResultsPage />, errorElement: <ErrorPage /> },
 
   // ── teacher auth ────────────────────────────────────────────────────
   { path: '/teacher/login', element: <TeacherLoginPage />, errorElement: <ErrorPage /> },

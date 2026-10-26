@@ -58,6 +58,8 @@ def get_session_for_teacher(teacher_id: int, session_id: int) -> dict:
         'created_at': row[8].isoformat() if row[8] else None,
         'classes': row[9] if isinstance(row[9], list) else json.loads(row[9] or '[]'),
         'edit': edit,
+        'results_published_at': row[10].isoformat() if row[10] else None,
+        'results_show_correct': bool(row[11]),
     }
 
 

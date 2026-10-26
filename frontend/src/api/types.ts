@@ -138,6 +138,9 @@ export interface SessionMeta {
   score_count?: number;   // present on GET /sessions list only
   /** GET /sessions/<id> only: what the edit form may change (the server enforces it). */
   edit?: { quiz: boolean; locked_class_ids: number[] };
+  /** GET /sessions/<id> only: when the results were published to students. */
+  results_published_at?: string | null;
+  results_show_correct?: boolean;
 }
 
 export interface LiveStudent {

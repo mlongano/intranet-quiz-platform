@@ -1,4 +1,6 @@
-import { getTeacherToken, getStudentToken, clearTeacherSession } from '../lib/session';
+import {
+  getTeacherToken, getStudentToken, clearTeacherSession, getResultsSession, clearResultsSession,
+} from '../lib/session';
 
 export const API_BASE = '/api';
 
@@ -20,7 +22,7 @@ class ApiError extends Error {
 
 export { ApiError };
 
-export type TokenSource = 'teacher' | 'student' | 'none';
+export type TokenSource = 'teacher' | 'student' | 'results' | 'none';
 
 export async function apiFetch<T>(
   path: string,
@@ -38,6 +40,7 @@ export async function apiFetch<T>(
   const token =
     tokenSource === 'teacher' ? getTeacherToken() :
     tokenSource === 'student' ? getStudentToken() :
+    tokenSource === 'results' ? getResultsSession()?.token ?? null :
     null;
 
   if (token) {
@@ -62,6 +65,7 @@ export async function apiFetch<T>(
 
     if (response.status === 401 && code === 'TOKEN_EXPIRED') {
       if (tokenSource === 'teacher') clearTeacherSession();
+      if (tokenSource === 'results') clearResultsSession();
     }
 
     throw new ApiError(errorMsg, response.status, code, quizId);

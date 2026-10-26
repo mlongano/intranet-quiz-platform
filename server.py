@@ -75,11 +75,13 @@ from routes.auth import auth_bp
 from routes.quiz import quiz_bp
 from routes.teacher import teacher_bp
 from routes.super_admin import super_admin_bp
+from routes.student import student_bp
 
 APP.register_blueprint(auth_bp)
 APP.register_blueprint(quiz_bp)
 APP.register_blueprint(teacher_bp)
 APP.register_blueprint(super_admin_bp)
+APP.register_blueprint(student_bp)
 
 # ── static / image serving ────────────────────────────────────────────────────
 

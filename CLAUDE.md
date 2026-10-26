@@ -113,7 +113,7 @@ email_service.py         # SMTP result emails (live, optional)
 
 ### Roles and auth
 
-Three JWT roles: `teacher`, `super_admin` (same login flow, elevated role), `student` (joins with email + 6-char join code, token scoped to one session via `sid`). Tokens travel as `Authorization: Bearer <token>`. Decorators set `g.current_user`; teacher ID is `g.current_user['sub']` (stringified int).
+JWT roles: `teacher`, `super_admin` (same login flow, elevated role), `student` (joins with email + 6-char join code, token scoped to one session via `sid`), `student_results` (Google login of a provisioned student; opens only their own published results at `/risultati`, never a quiz). Tokens travel as `Authorization: Bearer <token>`. Decorators set `g.current_user`; teacher ID is `g.current_user['sub']` (stringified int).
 
 ### Critical patterns
 

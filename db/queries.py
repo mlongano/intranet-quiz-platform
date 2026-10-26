@@ -242,7 +242,8 @@ GET_SESSION = """
            COALESCE(
                json_agg(json_build_object('id', c.id, 'name', c.name))
                FILTER (WHERE c.id IS NOT NULL), '[]'
-           ) AS classes
+           ) AS classes,
+           qs.results_published_at, qs.results_show_correct
     FROM quiz_sessions qs
     LEFT JOIN session_classes sc ON sc.session_id = qs.id
     LEFT JOIN classes c ON c.id = sc.class_id
@@ -283,9 +284,10 @@ CLOSE_SESSION = """
     RETURNING id
 """
 
+# Reopening withdraws published results: they are about to change.
 REOPEN_SESSION = """
     UPDATE quiz_sessions
-    SET status = 'active', join_code = %s
+    SET status = 'active', join_code = %s, results_published_at = NULL
     WHERE id = %s AND teacher_id = %s AND status = 'closed'
     RETURNING id
 """
@@ -337,6 +339,40 @@ LIVE_ROSTER = """
     LEFT JOIN quiz_plans qp ON qp.session_id = r.session_id AND qp.student_id = st.id
     LEFT JOIN score_entries se ON se.session_id = r.session_id AND se.student_id = st.id
     ORDER BY r.session_id, st.display_name
+"""
+
+# ── results publication and the student's results page ───────────────────────
+
+LOCK_SESSION_STATUS = """
+    SELECT status FROM quiz_sessions WHERE id = %s AND teacher_id = %s FOR UPDATE
+"""
+
+SET_RESULTS_PUBLICATION = """
+    UPDATE quiz_sessions
+    SET results_published_at = %(published_at)s, results_show_correct = %(show_correct)s
+    WHERE id = %(id)s AND teacher_id = %(teacher_id)s
+"""
+
+STUDENT_RESULTS_LIST = """
+    SELECT qs.id, qs.title, t.display_name, se.submitted_at,
+           qs.results_published_at, se.percent, se.raw_points, se.max_points
+    FROM score_entries se
+    JOIN quiz_sessions qs ON qs.id = se.session_id
+    JOIN teachers t ON t.id = qs.teacher_id
+    WHERE se.student_id = %s
+    ORDER BY se.submitted_at DESC
+"""
+
+# Only the student's own entry, and only once published: anything else is
+# indistinguishable from "not found".
+STUDENT_RESULT_DETAIL = """
+    SELECT qs.title, t.display_name, se.submitted_at, qs.results_show_correct,
+           se.raw_points, se.max_points, se.percent, se.answers
+    FROM score_entries se
+    JOIN quiz_sessions qs ON qs.id = se.session_id
+    JOIN teachers t ON t.id = qs.teacher_id
+    WHERE se.session_id = %s AND se.student_id = %s
+      AND qs.results_published_at IS NOT NULL
 """
 
 # ── session editing ───────────────────────────────────────────────────────────

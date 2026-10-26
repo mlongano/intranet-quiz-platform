@@ -395,6 +395,14 @@ GET/:id/export, POST/:id/rename, image endpoints (POST/GET/DELETE/clear)
 
 **Classes:** GET (list for teacher), GET/:id/students
 
+**Student results** (`/api/student/*`, role `student_results` from
+`POST /api/auth/student-google-login` — the school Google account, a provisioned
+active student; it opens nothing else): GET /results (every submission; scores only
+once published), GET /results/:session_id (published only: per question the answer,
+points, motivation — `teacher_feedback` over `llm_feedback` — and the correct answer
+if the teacher chose to show it). Teachers: POST /sessions/:id/results/publish
+(`show_correct`; closed sessions only) and /unpublish; reopening withdraws.
+
 **Live:** GET /live — the dashboard's view of every active session: each expected
 student (class roster plus anyone who started or handed in) as `submitted`,
 `in_progress` (answered count, last activity, `writing` a draft) or `not_started`.

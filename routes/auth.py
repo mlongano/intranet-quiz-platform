@@ -3,6 +3,7 @@ Authentication endpoints — no ADMIN_PW; everything uses bcrypt + JWT.
 
 POST /api/auth/teacher-login
 POST /api/auth/teacher-google-login
+POST /api/auth/student-google-login   (a student's results page)
 POST /api/auth/teacher-change-password
 POST /api/auth/student-join
 GET  /api/auth/me
@@ -135,6 +136,47 @@ def teacher_google_login():
         conn.commit()
 
     return jsonify(_teacher_login_response(teacher_id, email, role, display_name)), 200
+
+
+@auth_bp.post('/student-google-login')
+def student_google_login():
+    """A student signs in with the school Google account to read their results.
+
+    Same verification as the teachers' login: Google's signature, the client
+    id, a verified email in the school domain. The account must be an active
+    student provisioned by Workspace sync.
+    """
+    data = request.get_json(silent=True) or {}
+    credential = data.get('credential') or ''
+    client_id = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '')
+    hosted_domain = os.environ.get('GOOGLE_OAUTH_HOSTED_DOMAIN', '')
+
+    if not client_id:
+        return jsonify({'error': 'GOOGLE_LOGIN_NOT_CONFIGURED'}), 503
+    if not credential:
+        return jsonify({'error': 'MISSING_CREDENTIAL'}), 400
+    try:
+        idinfo = google_id_token.verify_oauth2_token(credential, google_requests.Request(), client_id)
+    except ValueError:
+        return jsonify({'error': 'INVALID_GOOGLE_TOKEN'}), 401
+
+    email = (idinfo.get('email') or '').strip().lower()
+    if not email or not idinfo.get('email_verified'):
+        return jsonify({'error': 'GOOGLE_EMAIL_NOT_VERIFIED'}), 401
+    if hosted_domain and idinfo.get('hd') != hosted_domain:
+        return jsonify({'error': 'INVALID_GOOGLE_DOMAIN'}), 401
+
+    with db.get_conn() as conn:
+        row = conn.execute(Q.GET_STUDENT_BY_EMAIL, (email,)).fetchone()
+    if not row:
+        return jsonify({'error': 'STUDENT_NOT_PROVISIONED'}), 401
+    student_id, _, display_name, status = row
+    if status != 'active':
+        return jsonify({'error': 'ACCOUNT_DISABLED'}), 401
+
+    from auth.jwt_utils import encode_results_token
+    return jsonify({'token': encode_results_token(student_id), 'email': email,
+                    'display_name': display_name}), 200
 
 
 @auth_bp.post('/teacher-change-password')

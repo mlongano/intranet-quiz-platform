@@ -73,3 +73,29 @@ export function updateStudentToken(newToken: string): void {
   const s = getStudentSession();
   if (s) saveStudentSession({ ...s, token: newToken });
 }
+
+// ── student results page ──────────────────────────────────────────────────────
+// A Google login, separate from the quiz session: it opens the student's own
+// results and nothing else.
+
+const RESULTS_KEY = 'qp_results';
+
+export interface ResultsSession {
+  token: string;
+  email: string;
+  display_name: string;
+}
+
+export function saveResultsSession(s: ResultsSession): void {
+  sessionStorage.setItem(RESULTS_KEY, JSON.stringify(s));
+}
+
+export function getResultsSession(): ResultsSession | null {
+  const raw = sessionStorage.getItem(RESULTS_KEY);
+  if (!raw) return null;
+  try { return JSON.parse(raw) as ResultsSession; } catch { return null; }
+}
+
+export function clearResultsSession(): void {
+  sessionStorage.removeItem(RESULTS_KEY);
+}

@@ -13,7 +13,7 @@ import QuestionBreakdownView from '../components/scores/QuestionBreakdownView';
 import { buildQuestionSummary } from '../lib/questionSummary';
 import {
   getSessionScores, recalculateScores, archiveSessionScores, sendAllResultEmails,
-  getSession, type ScoreEntry, type ScoreOverride, type ResultEmailOptions, reviewScores,
+  getSession, publishResults, unpublishResults, type SessionMeta, type ScoreEntry, type ScoreOverride, type ResultEmailOptions, reviewScores,
   getLlmInfo, getLatestSessionLlmJob,
   getScoreHistory, revertChangeSet, type LlmJobStatus,
 } from '../api';
@@ -60,6 +60,65 @@ function LlmJobBanner({ job }: { job: LlmJobStatus }) {
   return <div className={`mb-4 p-3 rounded-lg text-sm border ${tone}`} role="status">{text}</div>;
 }
 
+/**
+ * Results to the students: published only for a closed session, after the
+ * teacher has reviewed points and motivations; can be withdrawn.
+ */
+function PublishPanel({ session, pendingAnswers }: { session: SessionMeta; pendingAnswers: number }) {
+  const queryClient = useQueryClient();
+  const [showCorrect, setShowCorrect] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const published = !!session.results_published_at;
+  const done = () => { setError(null); queryClient.invalidateQueries({ queryKey: ['session', session.id] }); };
+  const publish = useMutation({ mutationFn: () => publishResults(session.id, showCorrect), onSuccess: done, onError: (e: Error) => setError(e.message) });
+  const withdraw = useMutation({ mutationFn: () => unpublishResults(session.id), onSuccess: done, onError: (e: Error) => setError(e.message) });
+  const busy = publish.isPending || withdraw.isPending;
+
+  return (
+    <section className={`mb-4 rounded-xl border p-4 ${published ? 'border-tertiary/30 bg-tertiary/5' : 'border-outline-variant/25 bg-surface-container'}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-on-surface">Risultati agli studenti</h2>
+          <p className="text-xs text-on-surface-variant mt-0.5">
+            {published
+              ? <>Pubblicati il {new Date(session.results_published_at!).toLocaleString('it-IT')}
+                  {session.results_show_correct ? ', con le risposte corrette' : ', senza le risposte corrette'}.
+                  {' '}Gli studenti li vedono nella pagina <span className="font-mono">/risultati</span>; le tue modifiche successive si vedono subito.</>
+              : session.status === 'closed'
+                ? 'Non ancora pubblicati: gli studenti vedono solo di aver consegnato. Rivedi punteggi e motivazioni, poi pubblica.'
+                : 'Si possono pubblicare dopo aver chiuso la sessione.'}
+          </p>
+          {!published && session.status === 'closed' && pendingAnswers > 0 && (
+            <p className="text-xs text-secondary mt-1">
+              {pendingAnswers} {pendingAnswers === 1 ? 'risposta aperta è' : 'risposte aperte sono'} ancora in valutazione: gli studenti le vedrebbero «in valutazione».
+            </p>
+          )}
+          {error && <p className="text-xs text-error mt-1">{error}</p>}
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          {published ? (
+            <button onClick={() => withdraw.mutate()} disabled={busy}
+              className="px-3 py-1.5 text-sm border border-outline-variant/40 text-on-surface rounded-lg hover:bg-surface-container-high disabled:opacity-40">
+              Ritira
+            </button>
+          ) : session.status === 'closed' && (
+            <>
+              <label className="flex items-center gap-2 text-xs text-on-surface-variant cursor-pointer">
+                <input type="checkbox" checked={showCorrect} onChange={e => setShowCorrect(e.target.checked)} />
+                mostra anche le risposte corrette
+              </label>
+              <button onClick={() => publish.mutate()} disabled={busy}
+                className="px-3 py-1.5 text-sm bg-secondary text-on-secondary font-medium rounded-lg hover:bg-secondary/90 disabled:opacity-40">
+                Pubblica i risultati
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function SessionScoresPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
@@ -80,6 +139,8 @@ function SessionScoresPage() {
     enabled: !!id,
   });
 
+  const pendingAnswers = (scores ?? []).reduce((n, entry) =>
+    n + (entry.answers ?? []).filter(a => a.type === 'open' && a.llm_status === 'pending').length, 0);
   const { data: session } = useQuery({
     queryKey: ['session', id],
     queryFn: () => getSession(id),
@@ -253,6 +314,8 @@ function SessionScoresPage() {
         </button>
 
         {stats && <ScoreStatsPanel stats={stats} />}
+
+        {session && <PublishPanel session={session} pendingAnswers={pendingAnswers} />}
 
         {/* Action bar: view toggle + LLM info */}
         <div className="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">

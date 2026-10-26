@@ -25,6 +25,7 @@ Sessions:
     GET    /api/teacher/sessions
     POST   /api/teacher/sessions
     PATCH  /api/teacher/sessions/<id>           (title, quiz, classes, schedule)
+    POST   /api/teacher/sessions/<id>/results/publish   (and /unpublish)
     POST   /api/teacher/sessions/<id>/activate
     POST   /api/teacher/sessions/<id>/close
     POST   /api/teacher/sessions/<id>/regen-code
@@ -354,6 +355,23 @@ def edit_session(session_id: int):
     allowed = {'title', 'snapshot_id', 'class_ids', 'opens_at', 'closes_at'}
     qs_service.edit_session(session_id, _teacher_id(), {k: v for k, v in data.items() if k in allowed})
     return jsonify(ss_service.get_session_for_teacher(_teacher_id(), session_id)), 200
+
+
+@teacher_bp.post('/sessions/<int:session_id>/results/publish')
+@require_teacher
+def publish_results(session_id: int):
+    """Make a closed session's results visible to its students."""
+    from services import student_results
+    data = request.get_json(silent=True) or {}
+    return jsonify(student_results.set_publication(
+        session_id, _teacher_id(), published=True, show_correct=bool(data.get('show_correct')))), 200
+
+
+@teacher_bp.post('/sessions/<int:session_id>/results/unpublish')
+@require_teacher
+def unpublish_results(session_id: int):
+    from services import student_results
+    return jsonify(student_results.set_publication(session_id, _teacher_id(), published=False)), 200
 
 
 @teacher_bp.post('/sessions/<int:session_id>/activate')

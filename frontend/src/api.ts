@@ -15,4 +15,5 @@ export * from './api/sessions';
 export * from './api/scores';
 export * from './api/archives';
 export * from './api/studentSnapshots';
+export * from './api/studentResults';
 export * from './api/superAdmin';

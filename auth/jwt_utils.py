@@ -55,6 +55,22 @@ def encode_student_token(student_id: int, session_id: int, closes_at: datetime |
     return jwt.encode(payload, _secret(), algorithm='HS256')
 
 
+def encode_results_token(student_id: int) -> str:
+    """A student's access to their own results page, from a Google login.
+
+    Its own role: it opens the results and nothing else — never a quiz, whose
+    tokens are scoped to one session through the join code.
+    """
+    now = datetime.now(timezone.utc)
+    payload = {
+        'sub': str(student_id),
+        'role': 'student_results',
+        'iat': now,
+        'exp': now + timedelta(hours=2),
+    }
+    return jwt.encode(payload, _secret(), algorithm='HS256')
+
+
 def encode_change_password_token(teacher_id: int) -> str:
     now = datetime.now(timezone.utc)
     payload = {

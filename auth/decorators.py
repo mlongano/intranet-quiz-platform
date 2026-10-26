@@ -47,6 +47,10 @@ def require_student(f):
     return _auth_guard({'student'})(f)
 
 
+def require_student_results(f):
+    return _auth_guard({'student_results'})(f)
+
+
 def require_change_password_token(f):
     """Accepts only the short-lived change-password token."""
     @wraps(f)
