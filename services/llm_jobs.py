@@ -84,11 +84,11 @@ class _JobProgress:
         with self._lock:
             return self._total
 
-    def record(self, changed: bool) -> None:
-        if not changed:
+    def record(self, graded: int) -> None:
+        if not graded:
             return
         with self._lock:
-            self._total += 1
+            self._total += graded
             now = time.monotonic()
             if now - self._last_flush < self._flush_interval:
                 return
@@ -430,7 +430,7 @@ def _process_claimed_job(job: dict) -> None:
         _map_concurrently(
             lambda score_id: _process_next_answer_for_score(job, score_id, failures),
             score_ids,
-            on_result=lambda changed: progress.record(changed),
+            on_result=lambda graded: progress.record(graded),
         )
         processed = progress.total
 
@@ -569,8 +569,12 @@ def _process_next_answer_for_score(
     job: dict,
     score_id: int,
     failures: list[str] | None = None,
-) -> bool:
-    """Grade one score entry, optimistically.
+) -> int:
+    """Grade one score entry, optimistically; return how many answers got a grade.
+
+    That count is the job's progress: total_items counts answers, so progress
+    must too. An answer whose evaluation failed is written back (it carries
+    the error) but is not counted.
 
     An LLM call can take minutes, so it must not run inside a transaction
     holding row locks. The entry is read unlocked, graded in memory, and only
@@ -590,7 +594,7 @@ def _process_next_answer_for_score(
         ).fetchone()
         conn.commit()
     if not row:
-        return False
+        return 0
 
     read_answers = ensure_list(row[7])
 
@@ -605,7 +609,7 @@ def _process_next_answer_for_score(
         force_override_manual=bool(job.get('force_override_manual')),
     )
     if not changed:
-        return False
+        return 0
 
     # What we intend to write, and the revision each was graded against.
     proposals: dict[str, dict] = {}
@@ -616,7 +620,7 @@ def _process_next_answer_for_score(
                 'revision': before.get('answer_revision') or 0,
             }
     if not proposals:
-        return False
+        return 0
 
     # ── 3. write under lock, re-verifying every target answer ───────────────
     with db.get_conn() as conn:
@@ -626,7 +630,7 @@ def _process_next_answer_for_score(
         ).fetchone()
         if not locked:
             conn.commit()
-            return False
+            return 0
 
         current = ensure_list(locked[2])
         old_percent = float(locked[1]) if locked[1] is not None else None
@@ -634,6 +638,7 @@ def _process_next_answer_for_score(
         new_answers = [dict(a) for a in current]
 
         applied = 0
+        graded = 0
         for idx, cur in enumerate(new_answers):
             proposal = proposals.get(str(cur.get('question_id')))
             if proposal is None:
@@ -654,10 +659,12 @@ def _process_next_answer_for_score(
                 continue
             new_answers[idx] = proposal['answer']
             applied += 1
+            if proposal['answer'].get('llm_status') != 'pending':
+                graded += 1
 
         if not applied:
             conn.commit()
-            return False
+            return 0
 
         raw_points, max_points, percent = _score_totals(new_answers)
 
@@ -673,7 +680,7 @@ def _process_next_answer_for_score(
         )
         if not recorded:
             conn.commit()
-            return False
+            return 0
 
         conn.execute(Q.UPDATE_SCORE_ANSWERS, {
             'answers': json.dumps(new_answers),
@@ -684,7 +691,7 @@ def _process_next_answer_for_score(
             'teacher_id': job['teacher_id'],
         })
         conn.commit()
-    return True
+    return graded
 
 
 def _should_grade(answer: dict, *, scope: str, force_override_manual: bool) -> bool:

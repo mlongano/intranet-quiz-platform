@@ -165,7 +165,7 @@ React 19 + Vite + TanStack Query + Tailwind v4, SPA served by Flask from `fronte
 ## Environment Variables
 
 Required: `DATABASE_URL`, `JWT_SECRET` (32+ chars; app refuses to start without them), `POSTGRES_PASSWORD` (compose).
-Optional groups (see `.env.example`): Google Workspace sync (`GOOGLE_SA_KEY_PATH`, `GOOGLE_DELEGATED_SUBJECT`, `GOOGLE_TEACHER_GROUP`, `GOOGLE_STUDENT_OU_PATHS`…), Google OAuth (`GOOGLE_OAUTH_CLIENT_ID` + `VITE_…`), email (`EMAIL_SENDER`/`EMAIL_PASSWORD`/SMTP), LLM grading (`USE_LLM_EVAL=1`, `CREDENTIAL_ENCRYPTION_KEY` — required for teachers to store keys, `LLM_TIMEOUT_SECONDS`, `LLM_RETRIES`, worker concurrency; destinations and models come from `llm_endpoints`, keys from teachers — `.env` holds neither), `CONTAINER_DNS` for LAN-only endpoints, backups (`BACKUP_INTERVAL_SECONDS`, `BACKUP_RETENTION_DAYS`).
+Optional groups (see `.env.example`): Google Workspace sync (`GOOGLE_SA_KEY_PATH`, `GOOGLE_DELEGATED_SUBJECT`, `GOOGLE_TEACHER_GROUP`, `GOOGLE_STUDENT_OU_PATHS`…), Google OAuth (`GOOGLE_OAUTH_CLIENT_ID` + `VITE_…`), email (`EMAIL_SENDER`/`EMAIL_PASSWORD`/SMTP), LLM grading (`USE_LLM_EVAL=1`, `CREDENTIAL_ENCRYPTION_KEY` — required for teachers to store keys, `LLM_TIMEOUT_SECONDS` (120), `LLM_MAX_TOKENS` (4096 — reasoning models think inside it), `LLM_RETRIES`, worker concurrency; destinations and models come from `llm_endpoints`, keys from teachers — `.env` holds neither), `CONTAINER_DNS` for LAN-only endpoints, backups (`BACKUP_INTERVAL_SECONDS`, `BACKUP_RETENTION_DAYS`).
 
 Secrets live in `.env` and `secrets/` — both gitignored. Never commit them.
 

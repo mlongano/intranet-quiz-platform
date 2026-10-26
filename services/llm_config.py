@@ -62,6 +62,20 @@ def resolve_destination(teacher_id: int | None = None, conn=None) -> dict:
     return {'endpoint': endpoint, 'model': model}
 
 
+def call_params() -> dict:
+    """How each grading call is made; pinned on the job when it is enqueued.
+
+    The worker grades in the background, so a generous timeout costs the
+    student nothing; it must cover generating max_tokens, reasoning included.
+    """
+    from services.llm_provider import DEFAULT_MAX_TOKENS
+    return {
+        'timeout_seconds': float(os.getenv('LLM_TIMEOUT_SECONDS', '120')),
+        'retries': int(os.getenv('LLM_RETRIES', '0')),
+        'max_tokens': int(os.getenv('LLM_MAX_TOKENS', str(DEFAULT_MAX_TOKENS))),
+    }
+
+
 def resolve_llm_config(teacher_id: int | None = None, conn=None) -> dict:
     """Return {provider, model, api_key, base_url, params, endpoint_*} for a call.
 
@@ -89,10 +103,7 @@ def resolve_llm_config(teacher_id: int | None = None, conn=None) -> dict:
         'model': destination['model'],
         'api_key': api_key,
         'base_url': endpoint['base_url'],
-        'params': {
-            'timeout_seconds': float(os.getenv('LLM_TIMEOUT_SECONDS', '25')),
-            'retries': int(os.getenv('LLM_RETRIES', '0')),
-        },
+        'params': call_params(),
         # Recorded as provenance so a grade can name the endpoint that produced
         # it. The URL is still re-resolved from the table on every call.
         'endpoint_id': endpoint['id'],

@@ -282,3 +282,54 @@ def test_missing_api_key_is_configuration_error():
 def test_missing_model_is_configuration_error():
     with pytest.raises(LlmConfigurationError, match='model'):
         llm_provider.evaluate_open_question(provider='openai', model='', **BASE_KWARGS)
+
+
+# ── output budget ────────────────────────────────────────────────────────────
+
+def _openai_truncated(monkeypatch, recorder):
+    import openai
+
+    def create(**kwargs):
+        recorder.update(kwargs)
+        choice = types.SimpleNamespace(message=types.SimpleNamespace(content=''), finish_reason='length')
+        return types.SimpleNamespace(choices=[choice])
+
+    client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=create)))
+    monkeypatch.setattr(openai, 'OpenAI', lambda **_: client)
+
+
+def test_max_tokens_is_sent_and_recorded(patch_openai):
+    recorder = {}
+    patch_openai(text=json.dumps(GOOD_PAYLOAD), recorder=recorder)
+    result = llm_provider.evaluate_open_question(provider='openai', model='m', max_tokens=4096, **BASE_KWARGS)
+    assert recorder['max_tokens'] == 4096
+    assert result['params']['max_tokens'] == 4096
+
+
+def test_a_reply_cut_by_the_token_limit_says_so(monkeypatch):
+    """A reasoning model can spend the whole budget thinking: the content then
+    arrives empty, and "empty response" hid the actual cause."""
+    _openai_truncated(monkeypatch, {})
+    with pytest.raises(LlmInvalidResponseError, match=r'troncata.*1024'):
+        llm_provider.evaluate_open_question(provider='openai', model='m', max_tokens=1024, **BASE_KWARGS)
+
+
+def test_anthropic_cut_by_the_token_limit_says_so(monkeypatch):
+    import anthropic
+
+    def create(**_kwargs):
+        return types.SimpleNamespace(content=[], stop_reason='max_tokens')
+
+    monkeypatch.setattr(anthropic, 'Anthropic',
+                        lambda **_: types.SimpleNamespace(messages=types.SimpleNamespace(create=create)))
+    with pytest.raises(LlmInvalidResponseError, match='troncata'):
+        llm_provider.evaluate_open_question(provider='anthropic', model='m', max_tokens=512, **BASE_KWARGS)
+
+
+def test_call_params_default_to_room_for_reasoning_models(monkeypatch):
+    from services.llm_config import call_params
+    monkeypatch.delenv('LLM_MAX_TOKENS', raising=False)
+    monkeypatch.delenv('LLM_TIMEOUT_SECONDS', raising=False)
+    assert call_params() == {'timeout_seconds': 120.0, 'retries': 0, 'max_tokens': 4096}
+    monkeypatch.setenv('LLM_MAX_TOKENS', '8192')
+    assert call_params()['max_tokens'] == 8192

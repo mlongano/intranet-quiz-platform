@@ -47,6 +47,8 @@ def grade_open_answer(user_ans: str, q: dict, *, evaluation: dict | None = None)
         user_prompt_template=resolved['user_prompt_template'],
         timeout_seconds=float(params.get('timeout_seconds', 25)),
         retries=int(params.get('retries', 0)),
+        # Jobs enqueued before max_tokens was pinned fall back to the default.
+        **({'max_tokens': int(params['max_tokens'])} if params.get('max_tokens') else {}),
     )
 
     open_score_fraction = max(0.0, min(1.0, float(llm_result.get('score', 0))))

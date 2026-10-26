@@ -67,13 +67,20 @@ LLM_OPEN_QUESTION_USER_PROMPT_PATH=prompts/open-question-user.md
 The user prompt supports `{{QUESTION}}`, `{{ACCEPTABLE_ANSWER}}`, and
 `{{STUDENT_ANSWER}}`.
 
-LLM calls are guarded by a per-answer timeout. Tune it with:
+LLM calls are guarded by a per-answer timeout and an output budget. Tune them with:
 
 ```env
-LLM_TIMEOUT_SECONDS=25
+LLM_TIMEOUT_SECONDS=120   # background worker: a long wait costs students nothing
 LLM_RETRIES=0
 LLM_BACKOFF_FACTOR=0.5
+LLM_MAX_TOKENS=4096       # reasoning models think before the verdict
 ```
+
+Both are pinned on the job when it is enqueued. A reasoning model (the
+school's Qwen3) spends part of `LLM_MAX_TOKENS` thinking; if it runs out the
+reply arrives empty and the answer stays pending with "Risposta troncata…".
+Raise `LLM_MAX_TOKENS`, and `LLM_TIMEOUT_SECONDS` with it: generating 1024
+tokens took about 12 s on the school server.
 
 ## LLM Grading Worker
 

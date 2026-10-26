@@ -352,3 +352,52 @@ def test_regrade_open_recognizes_legacy_answers_without_top_level_type(
     updated_answer = row[1][0]
     assert updated_answer['type'] == 'open'
     assert updated_answer['llm_status'] == 'graded'
+
+
+def test_job_progress_counts_answers_like_its_total(client, db_conn, monkeypatch):
+    """total_items counts answers, so processed_items must too: "1/5" for a
+    single student whose 4 answers were graded read as one in five."""
+    import services.llm_jobs as llm_jobs
+    from services.llm_errors import LlmInvalidResponseError
+
+    teacher_id = make_teacher(db_conn, email='teacher-progress@test.it')
+    student_id = make_student(db_conn, email='student-progress@test.it')
+    questions = [{'id': f'open-{i}', 'type': 'open', 'text': f'Domanda {i}',
+                  'acceptable': ['x'], 'weight': 1} for i in (1, 2, 3)]
+    snapshot_id = make_snapshot(db_conn, teacher_id, jsonc=json.dumps({'title': 'P', 'questions': questions}))
+    session_id = make_session(db_conn, teacher_id, snapshot_id, status='active')
+    answers = [{
+        'question_id': q['id'], 'type': 'open', 'question_snapshot': q, 'question_text': q['text'],
+        'student_answer': 'r', 'raw_student_answer': 'r', 'correct_answer': 'x',
+        'raw_correct_answer': ['x'], 'weight': 1, 'points_awarded': 0, 'raw_points': 0,
+        'llm_feedback': None, 'llm_verdict': None, 'llm_status': 'pending', 'llm_error': None,
+        'option_order': [],
+    } for q in questions]
+    db_conn.execute(
+        """INSERT INTO score_entries
+           (session_id, student_id, teacher_id, raw_points, max_points, percent, answers)
+           VALUES (%s, %s, %s, 0, 3, 0, %s::jsonb)""",
+        (session_id, student_id, teacher_id, json.dumps(answers)),
+    )
+    db_conn.commit()
+
+    def grader(user_ans, q, **_kwargs):
+        if q['id'] == 'open-2':
+            raise LlmInvalidResponseError('Model returned an empty response.')
+        return {'points': 1, 'llm_feedback': 'ok', 'llm_verdict': 'correct',
+                'llm_provider': 'openai', 'llm_model': 'm', 'prompt_version': 'v1-test0000'}
+
+    monkeypatch.setattr(llm_jobs, 'grade_open_answer', grader)
+    r = client.post(
+        f'/api/teacher/sessions/{session_id}/scores/regrade-open',
+        headers={'Authorization': f"Bearer {teacher_token(teacher_id, email='teacher-progress@test.it')}"},
+    )
+    assert r.get_json()['total_items'] == 3
+    assert llm_jobs.process_next_job() is True
+
+    status, processed, total, error = db_conn.execute(
+        "SELECT status, processed_items, total_items, error FROM llm_grading_jobs WHERE id = %s",
+        (r.get_json()['id'],),
+    ).fetchone()
+    assert (status, processed, total) == ('completed', 2, 3)
+    assert 'q=open-2: Model returned an empty response.' in error

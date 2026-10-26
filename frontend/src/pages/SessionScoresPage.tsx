@@ -20,6 +20,46 @@ import {
 import { useConfirmModal } from '../lib/useConfirmModal';
 import { computeStats } from '../lib/scoreStats';
 
+/**
+ * Outcome of the latest grading job. Counts are answers (total_items and
+ * processed_items share that unit), and a job that left answers ungraded is
+ * a warning, not a success: those answers stay pending until retried.
+ */
+function LlmJobBanner({ job }: { job: LlmJobStatus }) {
+  const what = job.job_type === 'submission' ? 'Valutazione' : 'Rivalutazione';
+  const missed = Math.max(0, job.total_items - job.processed_items);
+  // "N risposte non valutate: q=11: <reason>; ..." → the reasons, for the teacher.
+  const reasons = job.error?.replace(/^\d+ risposte non valutate:\s*/, '');
+  let tone = 'bg-secondary/10 border-secondary/30 text-secondary';
+  let text: React.ReactNode;
+  if (job.status === 'pending') text = `${what} in coda.`;
+  else if (job.status === 'running') text = `${what} in corso: ${job.processed_items} risposte valutate su ${job.total_items}.`;
+  else if (job.status === 'failed') {
+    tone = 'bg-error/10 border-error/30 text-error';
+    text = `${what} non riuscita: ${job.error ?? 'errore sconosciuto'}`;
+  } else if (job.status === 'completed' && (job.error || missed > 0) && job.total_items > 0) {
+    tone = 'bg-error/10 border-error/30 text-error';
+    text = (
+      <>
+        {what} terminata con problemi: {job.processed_items} risposte valutate su {job.total_items}
+        {missed > 0 && <>, {missed} non {missed === 1 ? 'valutata' : 'valutate'}</>}.
+        {reasons && <span className="block mt-1 text-xs opacity-90">Motivo: {reasons}</span>}
+        <span className="block mt-1 text-xs opacity-90">
+          Le risposte non valutate restano «in attesa»: puoi riprovare con «Rivaluta risposte aperte».
+        </span>
+      </>
+    );
+  } else if (job.status === 'completed') {
+    tone = 'bg-tertiary/10 border-tertiary/30 text-tertiary';
+    text = job.total_items > 0
+      ? `${what} completata: ${job.processed_items} ${job.processed_items === 1 ? 'risposta valutata' : 'risposte valutate'}.`
+      : 'Nessuna risposta da rivalutare.';
+  } else {
+    text = `${what} annullata.`;
+  }
+  return <div className={`mb-4 p-3 rounded-lg text-sm border ${tone}`} role="status">{text}</div>;
+}
+
 function SessionScoresPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
@@ -276,20 +316,7 @@ function SessionScoresPage() {
         </div>
       )}
 
-      {latestLlmJob && (
-        <div className={`mb-4 p-3 rounded-lg text-sm border ${
-          latestLlmJob.status === 'failed'
-            ? 'bg-error/10 border-error/30 text-error'
-            : latestLlmJob.status === 'completed'
-              ? 'bg-tertiary/10 border-tertiary/30 text-tertiary'
-              : 'bg-secondary/10 border-secondary/30 text-secondary'
-        }`}>
-          {latestLlmJob.status === 'pending' && 'Rivalutazione in coda.'}
-          {latestLlmJob.status === 'running' && `Rivalutazione in corso: ${latestLlmJob.processed_items}/${latestLlmJob.total_items}.`}
-          {latestLlmJob.status === 'completed' && `Rivalutazione completata: ${latestLlmJob.processed_items}/${latestLlmJob.total_items}.`}
-          {latestLlmJob.status === 'failed' && `Rivalutazione non riuscita: ${latestLlmJob.error ?? 'errore sconosciuto'}`}
-        </div>
-      )}
+      {latestLlmJob && <LlmJobBanner job={latestLlmJob} />}
 
       <ScoreHistoryPanel
         history={scoreHistory ?? []}

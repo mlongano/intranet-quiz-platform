@@ -38,7 +38,10 @@ SUPPORTED_PROVIDERS = tuple(OPENAI_COMPATIBLE) + ('anthropic',)
 # Grading must be as reproducible as the provider allows: no sampling.
 # Recorded per evaluation so a stored grade states the parameters that produced it.
 DEFAULT_TEMPERATURE = 0.0
-DEFAULT_MAX_TOKENS = 1024
+# Output budget. A reasoning model (the school's Qwen3) spends part of it
+# thinking before the verdict; at 1024 a long answer used it all up and the
+# reply arrived empty. The job pins the value it was enqueued with.
+DEFAULT_MAX_TOKENS = 4096
 
 
 def evaluate_open_question(
@@ -54,6 +57,7 @@ def evaluate_open_question(
     base_url: str | None = None,
     timeout_seconds: float = 25.0,
     retries: int = 0,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
 ) -> dict:
     """Grade one open answer.
 
@@ -79,7 +83,7 @@ def evaluate_open_question(
     )
     params = {
         'temperature': DEFAULT_TEMPERATURE,
-        'max_tokens': DEFAULT_MAX_TOKENS,
+        'max_tokens': max_tokens,
         'timeout_seconds': timeout_seconds,
     }
     call = _anthropic_call if provider == 'anthropic' else _openai_call
@@ -93,6 +97,7 @@ def evaluate_open_question(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             timeout_seconds=timeout_seconds,
+            max_tokens=max_tokens,
         ),
         retries=retries,
     )
@@ -128,8 +133,15 @@ def _with_retries(call, *, retries: int, backoff: float = 0.5) -> dict:
     raise LlmTemporaryError(message)
 
 
+def _truncated(max_tokens: int) -> LlmInvalidResponseError:
+    return LlmInvalidResponseError(
+        f"Risposta troncata: il modello ha esaurito i {max_tokens} token di uscita "
+        f"prima di dare il giudizio (aumentare LLM_MAX_TOKENS)."
+    )
+
+
 def _openai_call(
-    *, model, api_key, base_url, system_prompt, user_prompt, timeout_seconds
+    *, model, api_key, base_url, system_prompt, user_prompt, timeout_seconds, max_tokens
 ) -> dict:
     import openai
 
@@ -138,7 +150,7 @@ def _openai_call(
         response = client.chat.completions.create(
             model=model,
             temperature=DEFAULT_TEMPERATURE,
-            max_tokens=DEFAULT_MAX_TOKENS,
+            max_tokens=max_tokens,
             response_format={'type': 'json_object'},
             messages=[
                 {'role': 'system', 'content': system_prompt},
@@ -149,14 +161,17 @@ def _openai_call(
         raise _map_sdk_error(exc, 'openai')
 
     try:
-        text = response.choices[0].message.content
+        choice = response.choices[0]
+        text = choice.message.content
     except (AttributeError, IndexError, TypeError) as exc:
         raise LlmInvalidResponseError(f"Unexpected OpenAI response shape: {exc}")
+    if getattr(choice, 'finish_reason', None) == 'length' and not (text or '').strip():
+        raise _truncated(max_tokens)
     return parse_response(text)
 
 
 def _anthropic_call(
-    *, model, api_key, base_url, system_prompt, user_prompt, timeout_seconds
+    *, model, api_key, base_url, system_prompt, user_prompt, timeout_seconds, max_tokens
 ) -> dict:
     import anthropic
 
@@ -168,7 +183,7 @@ def _anthropic_call(
             model=model,
             system=system_prompt,
             temperature=DEFAULT_TEMPERATURE,
-            max_tokens=DEFAULT_MAX_TOKENS,
+            max_tokens=max_tokens,
             messages=[{'role': 'user', 'content': user_prompt}],
         )
     except Exception as exc:
@@ -180,6 +195,8 @@ def _anthropic_call(
         )
     except (AttributeError, TypeError) as exc:
         raise LlmInvalidResponseError(f"Unexpected Anthropic response shape: {exc}")
+    if getattr(response, 'stop_reason', None) == 'max_tokens' and not text.strip():
+        raise _truncated(max_tokens)
     return parse_response(text)
 
 
