@@ -290,6 +290,55 @@ REOPEN_SESSION = """
     RETURNING id
 """
 
+# ── live progress (dashboard) ─────────────────────────────────────────────────
+
+LIVE_ACTIVE_SESSIONS = """
+    SELECT qs.id, qs.title, qs.join_code, qs.opens_at, qs.closes_at,
+           jsonb_array_length(COALESCE(snap.content->'questions', '[]'::jsonb)) AS question_count
+    FROM quiz_sessions qs
+    JOIN question_snapshots snap ON snap.id = qs.snapshot_id
+    WHERE qs.teacher_id = %s AND qs.status = 'active'
+    ORDER BY qs.created_at DESC
+"""
+
+# Everyone expected in the given sessions: active students of their classes,
+# plus anyone who started or handed in (they stay visible even if their class
+# membership changed since). One row per session and student.
+LIVE_ROSTER = """
+    WITH roster AS (
+        SELECT sc.session_id, cs.student_id
+        FROM session_classes sc
+        JOIN class_students cs ON cs.class_id = sc.class_id
+        JOIN students st ON st.id = cs.student_id AND st.status = 'active'
+        WHERE sc.session_id = ANY(%(ids)s)
+        UNION
+        SELECT session_id, student_id FROM quiz_plans WHERE session_id = ANY(%(ids)s)
+        UNION
+        SELECT session_id, student_id FROM score_entries WHERE session_id = ANY(%(ids)s)
+    )
+    SELECT r.session_id, st.id, st.display_name, st.email,
+           COALESCE((
+               SELECT array_agg(DISTINCT c.name ORDER BY c.name)
+               FROM session_classes sc
+               JOIN class_students cs ON cs.class_id = sc.class_id
+               JOIN classes c ON c.id = sc.class_id
+               WHERE sc.session_id = r.session_id AND cs.student_id = st.id
+           ), '{}') AS classes,
+           qp.progression, qp.last_updated,
+           (qp.draft IS NOT NULL
+            AND qp.draft->>'index' = qp.progression->>'current_index') AS writing,
+           se.submitted_at, se.percent,
+           EXISTS (
+               SELECT 1 FROM jsonb_array_elements(COALESCE(se.answers, '[]'::jsonb)) a
+               WHERE a->>'type' = 'open' AND a->>'llm_status' = 'pending'
+           ) AS grading_pending
+    FROM roster r
+    JOIN students st ON st.id = r.student_id
+    LEFT JOIN quiz_plans qp ON qp.session_id = r.session_id AND qp.student_id = st.id
+    LEFT JOIN score_entries se ON se.session_id = r.session_id AND se.student_id = st.id
+    ORDER BY r.session_id, st.display_name
+"""
+
 # ── session editing ───────────────────────────────────────────────────────────
 
 LOCK_SESSION_FOR_EDIT = """

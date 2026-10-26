@@ -128,3 +128,56 @@ def archive_session_scores(
         }).fetchone()
         conn.commit()
     return {'archive_id': row[0], 'archived_at': row[1].isoformat()}
+
+
+def live_progress(teacher_id: int) -> dict:
+    """Who handed in, who is working and who has not started, per active session.
+
+    For the dashboard, polled every few seconds: two queries whatever the
+    number of sessions and students. Only the teacher's own sessions.
+    """
+    with db.get_conn() as conn:
+        sessions = conn.execute(Q.LIVE_ACTIVE_SESSIONS, (teacher_id,)).fetchall()
+        ids = [r[0] for r in sessions]
+        rows = conn.execute(Q.LIVE_ROSTER, {'ids': ids}).fetchall() if ids else []
+
+    by_session: dict[int, list[dict]] = {sid: [] for sid in ids}
+    for (session_id, student_id, name, email, classes, progression, last_updated,
+         writing, submitted_at, percent, grading_pending) in rows:
+        if submitted_at is not None:
+            state = 'submitted'
+        elif progression is not None:
+            state = 'in_progress'
+        else:
+            state = 'not_started'
+        progression = progression if isinstance(progression, dict) else (
+            json.loads(progression) if progression else {})
+        by_session[session_id].append({
+            'id': student_id,
+            'name': name,
+            'email': email,
+            'classes': list(classes or []),
+            'state': state,
+            'answered': int(progression.get('current_index', 0)) if state == 'in_progress' else None,
+            'last_activity': last_updated.isoformat() if state == 'in_progress' and last_updated else None,
+            'writing': bool(writing) if state == 'in_progress' else False,
+            'submitted_at': submitted_at.isoformat() if submitted_at else None,
+            'percent': float(percent) if percent is not None else None,
+            'grading_pending': bool(grading_pending) if state == 'submitted' else False,
+        })
+
+    result = []
+    for sid, title, join_code, opens_at, closes_at, question_count in sessions:
+        students = by_session[sid]
+        counts = {'expected': len(students), 'submitted': 0, 'in_progress': 0, 'not_started': 0}
+        for st in students:
+            counts[st['state']] += 1
+        result.append({
+            'id': sid, 'title': title, 'join_code': join_code,
+            'opens_at': opens_at.isoformat() if opens_at else None,
+            'closes_at': closes_at.isoformat() if closes_at else None,
+            'question_count': question_count,
+            'counts': counts,
+            'students': students,
+        })
+    return {'sessions': result}

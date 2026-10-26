@@ -136,6 +136,31 @@ export interface SessionMeta {
   edit?: { quiz: boolean; locked_class_ids: number[] };
 }
 
+export interface LiveStudent {
+  id: number;
+  name: string;
+  email: string;
+  classes: string[];
+  state: 'submitted' | 'in_progress' | 'not_started';
+  answered: number | null;          // in_progress: questions answered so far
+  last_activity: string | null;     // in_progress: last answer or draft autosave
+  writing: boolean;                 // in_progress: a draft of the current open answer exists
+  submitted_at: string | null;
+  percent: number | null;
+  grading_pending: boolean;         // submitted: open answers still being graded
+}
+
+export interface LiveSession {
+  id: number;
+  title: string;
+  join_code: string | null;
+  opens_at: string | null;
+  closes_at: string | null;
+  question_count: number;
+  counts: { expected: number; submitted: number; in_progress: number; not_started: number };
+  students: LiveStudent[];
+}
+
 export interface UpdateSessionPayload {
   title?: string;
   snapshot_id?: number;

@@ -21,6 +21,7 @@ Classes:
     POST   /api/teacher/classroom/sync
 
 Sessions:
+    GET    /api/teacher/live                    (dashboard: progress of active sessions)
     GET    /api/teacher/sessions
     POST   /api/teacher/sessions
     PATCH  /api/teacher/sessions/<id>           (title, quiz, classes, schedule)
@@ -282,6 +283,13 @@ def sync_classroom_courses():
 def list_sessions():
     sessions = ss_service.list_sessions_for_teacher(_teacher_id(), request.args.get('status'))
     return jsonify(sessions), 200
+
+
+@teacher_bp.get('/live')
+@require_teacher
+def live():
+    """Dashboard: who handed in, is working or has not started, per active session."""
+    return jsonify(ss_service.live_progress(_teacher_id())), 200
 
 
 @teacher_bp.get('/sessions/<int:session_id>')

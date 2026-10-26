@@ -1,5 +1,5 @@
 import { apiFetch } from './client';
-import type { CreateSessionPayload, SessionMeta, UpdateSessionPayload } from './types';
+import type { CreateSessionPayload, LiveSession, SessionMeta, UpdateSessionPayload } from './types';
 
 export async function listSessions(status?: string): Promise<SessionMeta[]> {
   const qs = status ? `?status=${encodeURIComponent(status)}` : '';
@@ -50,4 +50,9 @@ export async function regenJoinCode(sessionId: number): Promise<{ join_code: str
 
 export async function deleteSession(sessionId: number): Promise<{ ok: boolean }> {
   return apiFetch<{ ok: boolean }>(`/teacher/sessions/${sessionId}`, { method: 'DELETE' });
+}
+
+/** Dashboard: who handed in, is working or has not started, per active session. */
+export async function getLive(): Promise<{ sessions: LiveSession[] }> {
+  return apiFetch<{ sessions: LiveSession[] }>('/teacher/live');
 }

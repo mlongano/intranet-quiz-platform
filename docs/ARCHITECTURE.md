@@ -395,6 +395,11 @@ GET/:id/export, POST/:id/rename, image endpoints (POST/GET/DELETE/clear)
 
 **Classes:** GET (list for teacher), GET/:id/students
 
+**Live:** GET /live — the dashboard's view of every active session: each expected
+student (class roster plus anyone who started or handed in) as `submitted`,
+`in_progress` (answered count, last activity, `writing` a draft) or `not_started`.
+Polled every 10 s; two queries regardless of size.
+
 **Sessions:** GET (list), GET/:id (includes `edit`: what may change), POST (create),
 PATCH/:id (title, quiz, classes, `opens_at`/`closes_at`), POST/:id/activate,
 POST/:id/close, POST/:id/reopen, POST/:id/regen-code, DELETE/:id
