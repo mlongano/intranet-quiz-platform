@@ -411,7 +411,7 @@ started (409 `QUIZ_IN_USE` / `CLASS_IN_USE`); closed — only the title (409
 `SESSION_CLOSED`). `opens_at`/`closes_at` bound when the join code works; they
 must carry a time zone (the browser converts the teacher's local time).
 
-**Scores:** GET/:id/scores, POST/:id/scores/review, POST/:id/scores/recalculate,
+**Scores:** GET/:id/scores, POST/:id/scores/review (points and/or `feedback`: the motivation), POST/:id/scores/recalculate,
 POST/:id/scores/regrade-open (202 — enqueues a job), POST/:id/archive
 
 **Score history:** GET/:id/score-history,

@@ -25,13 +25,15 @@ function FormattedSummary({ value }: { value: any }) {
 interface Props {
   questionSummary: QuestionSummary[];
   savingStudent: string | null;
-  onSaveOverride: (studentKey: string, questionId: string, points: number) => void;
+  onSaveOverride: (studentKey: string, questionId: string, change: { points?: number; feedback?: string }) => void;
 }
 
-/** Per-question accordion: aggregate stats + inline per-student point overrides. */
+/** Per-question accordion: aggregate stats + inline per-student points and motivation. */
 function QuestionBreakdownView({ questionSummary, savingStudent, onSaveOverride }: Props) {
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
   const [questionOverrides, setQuestionOverrides] = useState<Record<string, number>>({});
+  // Edited motivations, by student; absent means unchanged.
+  const [feedbackDrafts, setFeedbackDrafts] = useState<Record<string, string>>({});
 
   const handleOverrideChange = (studentKey: string, newPoints: string, maxPoints: number) => {
     const pts = newPoints === '' ? undefined : parseFloat(newPoints);
@@ -45,9 +47,11 @@ function QuestionBreakdownView({ questionSummary, savingStudent, onSaveOverride 
 
   const handleSave = (studentKey: string, questionId: string) => {
     const newPoints = questionOverrides[studentKey];
-    if (newPoints === undefined) return;
-    onSaveOverride(studentKey, questionId, newPoints);
+    const newFeedback = feedbackDrafts[studentKey];
+    if (newPoints === undefined && newFeedback === undefined) return;
+    onSaveOverride(studentKey, questionId, { points: newPoints, feedback: newFeedback });
     setQuestionOverrides(prev => { const next = { ...prev }; delete next[studentKey]; return next; });
+    setFeedbackDrafts(prev => { const next = { ...prev }; delete next[studentKey]; return next; });
   };
 
   return (
@@ -61,6 +65,7 @@ function QuestionBreakdownView({ questionSummary, savingStudent, onSaveOverride 
               onClick={() => {
                 setExpandedQuestionId(isExpanded ? null : q.questionId);
                 setQuestionOverrides({});
+                setFeedbackDrafts({});
               }}
             >
               <div className="flex justify-between items-start">
@@ -91,8 +96,11 @@ function QuestionBreakdownView({ questionSummary, savingStudent, onSaveOverride 
                     const studentKey = email ?? student;
                     const currentPoints = answer?.points_awarded ?? 0;
                     const maxPoints = answer?.weight ?? q.weight;
-                    const hasOverride = questionOverrides[studentKey] !== undefined;
-                    const displayPoints = hasOverride ? questionOverrides[studentKey] : currentPoints;
+                    const hasOverride = questionOverrides[studentKey] !== undefined
+                      || feedbackDrafts[studentKey] !== undefined;
+                    const shownFeedback = answer?.teacher_feedback || answer?.llm_feedback || '';
+                    const feedbackValue = feedbackDrafts[studentKey] ?? shownFeedback;
+                    const displayPoints = questionOverrides[studentKey] ?? currentPoints;
                     const isSaving = savingStudent === studentKey;
                     const isCorrect = currentPoints === maxPoints;
                     const isPartial = currentPoints > 0 && !isCorrect;
@@ -178,14 +186,49 @@ function QuestionBreakdownView({ questionSummary, savingStudent, onSaveOverride 
                                     {answer.llm_verdict}
                                   </span>
                                 )}
-                                {answer.llm_feedback && (
-                                  <span className="text-secondary italic">{answer.llm_feedback}</span>
-                                )}
                                 {answer.llm_error && (
                                   <span className="text-error italic">{answer.llm_error}</span>
                                 )}
                               </div>
                             )}
+                            <div>
+                              <div className="flex items-baseline justify-between gap-2">
+                                <label htmlFor={`fb-${q.questionId}-${studentKey}`} className="text-xs font-medium text-on-surface-variant">
+                                  Motivazione per lo studente
+                                  <span className="font-normal">
+                                    {feedbackDrafts[studentKey] !== undefined ? ' · modificata, da salvare'
+                                      : answer.teacher_feedback ? ' · scritta da te'
+                                      : answer.llm_feedback ? ' · del modello' : ''}
+                                  </span>
+                                </label>
+                                {answer.teacher_feedback && answer.llm_feedback && feedbackDrafts[studentKey] === undefined && (
+                                  <button type="button" className="text-[11px] text-primary hover:underline"
+                                    title={answer.llm_feedback}
+                                    onClick={() => setFeedbackDrafts(prev => ({ ...prev, [studentKey]: '' }))}>
+                                    Torna a quella del modello
+                                  </button>
+                                )}
+                              </div>
+                              <textarea
+                                id={`fb-${q.questionId}-${studentKey}`}
+                                value={feedbackValue}
+                                onChange={e => {
+                                  const v = e.target.value;
+                                  setFeedbackDrafts(prev => {
+                                    const next = { ...prev };
+                                    if (v === shownFeedback) delete next[studentKey]; else next[studentKey] = v;
+                                    return next;
+                                  });
+                                }}
+                                rows={Math.min(6, Math.max(2, Math.ceil(feedbackValue.length / 90)))}
+                                maxLength={4000}
+                                placeholder={answer.llm_status === 'pending' ? 'In attesa della valutazione: puoi anche scriverla tu.' : 'Spiega allo studente il punteggio.'}
+                                className="mt-1 w-full rounded border border-outline-variant/30 bg-surface-container-low px-2 py-1.5 text-xs text-on-surface focus:border-primary/50 focus:outline-none"
+                              />
+                              {feedbackDrafts[studentKey] === '' && answer.llm_feedback && (
+                                <p className="text-[11px] text-on-surface-variant">Salvando, torna quella del modello: «{answer.llm_feedback}»</p>
+                              )}
+                            </div>
                           </div>
                         )}
                       </div>

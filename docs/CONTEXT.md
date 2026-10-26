@@ -84,7 +84,10 @@ Re-running the LLM evaluation on only open-ended answers in a session. Used afte
 _Avoid_: rescore, re-evaluate.
 
 **Review (score review)**:
-Manually overriding per-question points for specific score entries. Teacher provides `{score_id → {question_id → new_points}}`. Does not re-run grading — points are set explicitly.
+Manually overriding per-question points and/or the **Motivation** for specific score entries. Teacher provides `{score_id → {question_id → new_points}}` and/or `{score_id → {question_id → text}}`. Does not re-run grading — points and text are set explicitly. A reviewed answer is `manual_override`, so automatic regrades leave it alone.
+
+**Motivation** (`teacher_feedback` / `llm_feedback`):
+Why an answer got its points, written to the student. The model writes `llm_feedback` (prompt v2: specific, second person, no filler); the teacher may write `teacher_feedback`, which then is what the student reads. `llm_feedback` is kept for the record; an empty teacher text goes back to it.
 _Avoid_: override, correction, adjustment.
 
 **Override**:

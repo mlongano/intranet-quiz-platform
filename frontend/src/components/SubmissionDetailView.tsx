@@ -115,8 +115,13 @@ function AnswerRow({
           <p className={`min-h-[2rem] rounded border px-2 py-1.5 text-xs text-on-surface ${studentAnswerClass}`}>
             <FormattedAnswer value={answer.student_answer} />
           </p>
-          {answer.llm_feedback && (
-            <p className="text-xs text-secondary mt-1 italic">{answer.llm_feedback}</p>
+          {(answer.teacher_feedback || answer.llm_feedback) && (
+            <p className="text-xs text-secondary mt-1">
+              <span className="font-medium not-italic">
+                Motivazione{answer.teacher_feedback ? ' (docente)' : ' (modello)'}:{' '}
+              </span>
+              <span className="italic">{answer.teacher_feedback || answer.llm_feedback}</span>
+            </p>
           )}
           {answer.llm_error && (
             <p className="text-xs text-error mt-1 italic">{answer.llm_error}</p>

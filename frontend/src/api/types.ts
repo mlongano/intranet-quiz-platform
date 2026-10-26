@@ -42,6 +42,8 @@ export interface DetailedAnswer {
   raw_student_answer: any;
   raw_correct_answer: any;
   llm_feedback?: string | null;
+  /** The teacher's motivation; when set, it is what the student reads instead of llm_feedback. */
+  teacher_feedback?: string | null;
   llm_verdict?: string | null;
   llm_status?: 'not_applicable' | 'pending' | 'graded' | 'fallback' | 'error' | null;
   llm_error?: string | null;
@@ -89,7 +91,9 @@ export interface ScoreChangeSet {
 
 export interface ScoreOverride {
   score_id: number;
-  per_question: Record<string, number>;
+  per_question?: Record<string, number>;
+  /** question_id → motivation; an empty string goes back to the model's. */
+  feedback?: Record<string, string>;
 }
 
 // ── snapshots ────────────────────────────────────────────────────────────────

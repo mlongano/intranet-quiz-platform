@@ -402,6 +402,9 @@ def session_scores(session_id: int):
     return jsonify(ss_service.list_session_scores(_teacher_id(), session_id)), 200
 
 
+MAX_FEEDBACK_CHARS = 4000
+
+
 @teacher_bp.post('/sessions/<int:session_id>/scores/review')
 @require_teacher
 def review_scores(session_id: int):
@@ -410,26 +413,49 @@ def review_scores(session_id: int):
     overrides = data.get('overrides', [])
     teacher_id = _teacher_id()
 
-    # Build lookup: {score_entry_id -> {question_id -> new_points}}
+    # Build lookups: {score_entry_id -> {question_id -> new_points}} and
+    # {score_entry_id -> {question_id -> motivation or None}}.
     overrides_by_id: dict[int, dict[str, float]] = {}
+    feedback_by_id: dict[int, dict[str, str | None]] = {}
     for o in overrides:
         sid = o.get('score_id')
-        if sid is not None:
-            overrides_by_id[int(sid)] = {str(k): float(v) for k, v in o.get('per_question', {}).items()}
+        if sid is None:
+            continue
+        overrides_by_id[int(sid)] = {str(k): float(v) for k, v in o.get('per_question', {}).items()}
+        feedback = {}
+        for k, v in (o.get('feedback') or {}).items():
+            if not isinstance(v, str):
+                return jsonify({'error': 'La motivazione deve essere un testo.', 'code': 'BAD_REQUEST'}), 400
+            if len(v) > MAX_FEEDBACK_CHARS:
+                return jsonify({'error': f'La motivazione supera i {MAX_FEEDBACK_CHARS} caratteri.',
+                                'code': 'BAD_REQUEST'}), 400
+            feedback[str(k)] = v.strip() or None
+        if feedback:
+            feedback_by_id[int(sid)] = feedback
 
     def _review_fn(score_id: int, answers: list[dict], _qbank_map: dict) -> list[dict] | None:
-        per_q = overrides_by_id.get(score_id)
-        if not per_q:
+        per_q = overrides_by_id.get(score_id) or {}
+        per_fb = feedback_by_id.get(score_id) or {}
+        if not per_q and not per_fb:
             return None
         for ans in answers:
             q_id = str(ans.get('question_id'))
+            if q_id not in per_q and q_id not in per_fb:
+                continue
+            # A reviewed answer is the teacher's: points and motivation alike
+            # are then left alone by automatic regrades.
+            if not ans.get('manual_override') and ans.get('original_points_awarded') is None:
+                ans['original_points_awarded'] = ans.get('points_awarded')
             if q_id in per_q:
-                if not ans.get('manual_override') and ans.get('original_points_awarded') is None:
-                    ans['original_points_awarded'] = ans.get('points_awarded')
                 ans['points_awarded'] = ans['raw_points'] = per_q[q_id]
-                ans['manual_override'] = True
-                if ans.get('type') == 'open':
-                    ans['llm_status'] = 'graded'
+            if q_id in per_fb:
+                # What the student reads; the model's llm_feedback is kept.
+                ans['teacher_feedback'] = per_fb[q_id]
+            ans['manual_override'] = True
+            # Only points make a pending answer graded: a motivation alone
+            # must not turn it into a graded zero.
+            if q_id in per_q and ans.get('type') == 'open':
+                ans['llm_status'] = 'graded'
         return answers
 
     updated = score_transforms.transform_scores(

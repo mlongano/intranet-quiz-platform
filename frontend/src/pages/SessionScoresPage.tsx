@@ -188,14 +188,17 @@ function SessionScoresPage() {
     URL.revokeObjectURL(url);
   };
 
-  const handleSaveOverride = (studentKey: string, questionId: string, points: number) => {
+  const handleSaveOverride = (
+    studentKey: string, questionId: string, change: { points?: number; feedback?: string },
+  ) => {
     const scoreEntry = scores?.find(s =>
       (s.student_email ?? s.student ?? s.student_display_name) === studentKey
     );
     setSavingStudent(studentKey);
     saveOverrideMutation.mutate([{
       score_id: scoreEntry?.id ?? 0,
-      per_question: { [questionId]: points },
+      ...(change.points !== undefined && { per_question: { [questionId]: change.points } }),
+      ...(change.feedback !== undefined && { feedback: { [questionId]: change.feedback } }),
     }]);
   };
 
