@@ -134,7 +134,9 @@ function QuestionCard({ q, n }: { q: MyResultQuestion; n: number }) {
         </div>
         {'correct_answer' in q && (
           <div>
-            <p className="text-xs font-medium text-on-surface-variant mb-1">Risposta corretta</p>
+            <p className="text-xs font-medium text-on-surface-variant mb-1">
+              {q.type === 'open' ? 'Risposta accettabile' : 'Risposta corretta'}
+            </p>
             <div className="rounded-lg border border-tertiary/30 bg-tertiary/5 px-3 py-2 text-sm"><AnswerText value={q.correct_answer} /></div>
           </div>
         )}

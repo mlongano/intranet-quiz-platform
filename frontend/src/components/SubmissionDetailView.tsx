@@ -128,7 +128,9 @@ function AnswerRow({
           )}
         </div>
         <div>
-          <p className="text-xs font-medium text-on-surface-variant mb-1">Risposta corretta</p>
+          <p className="text-xs font-medium text-on-surface-variant mb-1">
+            {questionType === 'open' ? 'Risposta accettabile' : 'Risposta corretta'}
+          </p>
           <p className="min-h-[2rem] rounded border border-tertiary/60 bg-tertiary/10 px-2 py-1.5 text-xs text-on-surface">
             <FormattedAnswer value={answer.correct_answer} />
           </p>
