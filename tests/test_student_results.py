@@ -152,7 +152,8 @@ def test_correct_answers_only_when_the_teacher_chooses(world):
         f"/api/student/results/{world['session_id']}", headers=auth).get_json()['questions']}
     assert q['q1']['correct_answer'] == 'Roma'
     assert q['q2']['correct_answer'] == ['2', '5']
-    assert q['q3']['correct_answer'] == 'Aggiorna solo i campi inviati.'
+    assert 'correct_answer' not in q['q3']                       # the rubric stays with the teacher
+    assert 'Aggiorna solo i campi inviati.' not in json.dumps(q)
 
 
 def test_the_models_motivation_when_the_teacher_wrote_none(world):

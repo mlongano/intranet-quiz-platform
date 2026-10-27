@@ -120,6 +120,9 @@ def _question_view(answer: dict, show_correct: bool) -> dict:
         'pending': pending,
         'motivation': motivation,
     }
+    # Only closed questions have a correct answer to show. An open question's
+    # acceptable answer is the grader's rubric (weights, partial-credit notes):
+    # the student reads the motivation instead, never the rubric.
     if show_correct:
         correct = q.get('correct')
         if q_type == 'single' and isinstance(correct, int) and 0 <= correct < len(options):
@@ -127,6 +130,4 @@ def _question_view(answer: dict, show_correct: bool) -> dict:
         elif q_type == 'multiple' and isinstance(correct, list):
             view['correct_answer'] = [_option_text(options[i]) for i in correct
                                       if isinstance(i, int) and 0 <= i < len(options)]
-        elif q_type == 'open':
-            view['correct_answer'] = q.get('acceptable')
     return view

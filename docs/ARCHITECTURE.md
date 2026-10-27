@@ -399,8 +399,9 @@ GET/:id/export, POST/:id/rename, image endpoints (POST/GET/DELETE/clear)
 `POST /api/auth/student-google-login` — the school Google account, a provisioned
 active student; it opens nothing else): GET /results (every submission; scores only
 once published), GET /results/:session_id (published only: per question the answer,
-points, motivation — `teacher_feedback` over `llm_feedback` — and the correct answer
-if the teacher chose to show it). Teachers: POST /sessions/:id/results/publish
+points, motivation — `teacher_feedback` over `llm_feedback` — and, for closed
+questions only, the correct answer if the teacher chose to show it; an open
+question's acceptable answer is the grader's rubric and never reaches the student). Teachers: POST /sessions/:id/results/publish
 (`show_correct`; closed sessions only) and /unpublish; reopening withdraws.
 
 **Live:** GET /live — the dashboard's view of every active session: each expected

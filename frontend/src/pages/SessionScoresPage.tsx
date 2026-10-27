@@ -82,10 +82,10 @@ function PublishPanel({ session, pendingAnswers }: { session: SessionMeta; pendi
           <p className="text-xs text-on-surface-variant mt-0.5">
             {published
               ? <>Pubblicati il {new Date(session.results_published_at!).toLocaleString('it-IT')}
-                  {session.results_show_correct ? ', con le risposte corrette' : ', senza le risposte corrette'}.
+                  {session.results_show_correct ? ', con le risposte corrette delle domande chiuse' : ', senza le risposte corrette'}.
                   {' '}Gli studenti li vedono nella pagina <span className="font-mono">/risultati</span>; le tue modifiche successive si vedono subito.</>
               : session.status === 'closed'
-                ? 'Non ancora pubblicati: gli studenti vedono solo di aver consegnato. Rivedi punteggi e motivazioni, poi pubblica.'
+                ? 'Non ancora pubblicati: gli studenti vedono solo di aver consegnato. Rivedi punteggi e motivazioni, poi pubblica. Per le domande aperte lo studente vede la motivazione, mai la risposta accettabile.'
                 : 'Si possono pubblicare dopo aver chiuso la sessione.'}
           </p>
           {!published && session.status === 'closed' && pendingAnswers > 0 && (
@@ -105,7 +105,7 @@ function PublishPanel({ session, pendingAnswers }: { session: SessionMeta; pendi
             <>
               <label className="flex items-center gap-2 text-xs text-on-surface-variant cursor-pointer">
                 <input type="checkbox" checked={showCorrect} onChange={e => setShowCorrect(e.target.checked)} />
-                mostra anche le risposte corrette
+                mostra le risposte corrette delle domande chiuse
               </label>
               <button onClick={() => publish.mutate()} disabled={busy}
                 className="px-3 py-1.5 text-sm bg-secondary text-on-secondary font-medium rounded-lg hover:bg-secondary/90 disabled:opacity-40">
