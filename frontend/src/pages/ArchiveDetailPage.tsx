@@ -11,7 +11,7 @@ function ScoreRow({ score }: { score: ScoreEntry }) {
     <div className="bg-surface-container rounded-lg border border-outline-variant/30 p-4 flex items-center justify-between gap-4">
       <div className="flex-1 min-w-0">
         <p className="font-medium text-on-surface truncate">
-          {score.student_display_name ?? score.student_email ?? score.student ?? '—'}
+          {score.student_name ?? score.student_display_name ?? score.student_email ?? score.student ?? '—'}
         </p>
         <p className="text-xs text-on-surface-variant truncate">
           {score.student_email ?? score.student}

@@ -37,7 +37,7 @@ export function buildQuestionSummary(scores: ScoreEntry[]): QuestionSummary[] {
 
   return Array.from(questionMap.entries()).map(([qid, q]) => {
     const answers = scores.map(entry => ({
-      student: entry.student_display_name ?? entry.student ?? entry.student_email ?? '—',
+      student: entry.student_name ?? entry.student_display_name ?? entry.student ?? entry.student_email ?? '—',
       email: entry.student_email ?? entry.student,
       answer: entry.answers?.find(a => String(a.question_id) === qid),
     }));

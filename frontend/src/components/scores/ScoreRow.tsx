@@ -22,7 +22,7 @@ function ScoreRow({ score, onClick }: Props) {
       className="w-full bg-surface-container rounded-lg border border-outline-variant/30 p-4 flex items-center justify-between gap-4 hover:bg-surface-container-high transition-colors text-left"
     >
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-on-surface truncate">{score.student_display_name ?? score.student_email ?? score.student ?? '—'}</p>
+        <p className="font-medium text-on-surface truncate">{score.student_name ?? score.student_display_name ?? score.student_email ?? score.student ?? '—'}</p>
         <p className="text-xs text-on-surface-variant truncate">{score.student_email ?? score.student}</p>
       </div>
       <div className="flex items-center gap-3 flex-shrink-0">

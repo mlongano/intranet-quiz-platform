@@ -14,13 +14,19 @@ function AnswerRow({
   answer,
   override,
   onChange,
+  feedbackDraft,
+  onFeedbackChange,
 }: {
   answer: DetailedAnswer;
   override: number | undefined;
   onChange: (points: number) => void;
+  /** Edited motivation; undefined means unchanged. */
+  feedbackDraft: string | undefined;
+  onFeedbackChange: (text: string | undefined) => void;
 }) {
   const current = override !== undefined ? override : answer.points_awarded;
-  const isDirty = override !== undefined && override !== answer.points_awarded;
+  const pointsDirty = override !== undefined && override !== answer.points_awarded;
+  const isDirty = pointsDirty || feedbackDraft !== undefined;
   const isCorrect = current >= answer.weight;
   const isPartial = current > 0 && !isCorrect;
   const statusLabel = isCorrect ? 'Corretta' : isPartial ? 'Parzialmente corretta' : 'Errata';
@@ -81,7 +87,7 @@ function AnswerRow({
               Punteggio iniziale: {answer.original_points_awarded}
             </span>
           )}
-          {isDirty && (
+          {pointsDirty && (
             <button
               onClick={() => onChange(answer.points_awarded)}
               className="text-on-surface-variant hover:text-on-surface transition-colors"
@@ -115,14 +121,6 @@ function AnswerRow({
           <p className={`min-h-[2rem] rounded border px-2 py-1.5 text-xs text-on-surface ${studentAnswerClass}`}>
             <FormattedAnswer value={answer.student_answer} />
           </p>
-          {(answer.teacher_feedback || answer.llm_feedback) && (
-            <p className="text-xs text-secondary mt-1">
-              <span className="font-medium not-italic">
-                Motivazione{answer.teacher_feedback ? ' (docente)' : ' (modello)'}:{' '}
-              </span>
-              <span className="italic">{answer.teacher_feedback || answer.llm_feedback}</span>
-            </p>
-          )}
           {answer.llm_error && (
             <p className="text-xs text-error mt-1 italic">{answer.llm_error}</p>
           )}
@@ -136,6 +134,9 @@ function AnswerRow({
           </p>
         </div>
       </div>
+
+      <FeedbackEditor answer={answer} isOpen={questionType === 'open'}
+        draft={feedbackDraft} onChange={onFeedbackChange} />
 
       {answer.llm_verdict && (
         <p className="text-xs mt-2">
@@ -153,6 +154,63 @@ function AnswerRow({
           {answer.llm_provider ? ` (${answer.llm_provider})` : ''}
           {answer.llm_updated_at ? ` il ${formatEvaluatedAt(answer.llm_updated_at)}` : ''}
         </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The motivation the student reads: the teacher's when written, else the
+ * model's. Always open for open questions; on a closed one it is optional.
+ */
+function FeedbackEditor({ answer, isOpen, draft, onChange }: {
+  answer: DetailedAnswer;
+  isOpen: boolean;
+  draft: string | undefined;
+  onChange: (text: string | undefined) => void;
+}) {
+  const shown = answer.teacher_feedback || answer.llm_feedback || '';
+  const value = draft ?? shown;
+  const [adding, setAdding] = useState(false);
+  if (!isOpen && !shown && draft === undefined && !adding) {
+    return (
+      <button type="button" onClick={() => setAdding(true)}
+        className="mt-3 text-xs text-primary hover:underline">
+        Aggiungi una motivazione per lo studente
+      </button>
+    );
+  }
+  return (
+    <div className="mt-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <label htmlFor={`fb-${answer.question_id}`} className="text-xs font-medium text-on-surface-variant">
+          Motivazione per lo studente
+          <span className="font-normal">
+            {draft !== undefined ? ' · modificata, da salvare'
+              : answer.teacher_feedback ? ' · scritta da te'
+              : answer.llm_feedback ? ' · del modello' : ''}
+          </span>
+        </label>
+        {answer.teacher_feedback && answer.llm_feedback && draft === undefined && (
+          <button type="button" className="text-[11px] text-primary hover:underline"
+            title={answer.llm_feedback} onClick={() => onChange('')}>
+            Torna a quella del modello
+          </button>
+        )}
+      </div>
+      <textarea
+        id={`fb-${answer.question_id}`}
+        value={value}
+        onChange={e => onChange(e.target.value === shown ? undefined : e.target.value)}
+        rows={Math.min(6, Math.max(2, Math.ceil(value.length / 90)))}
+        maxLength={4000}
+        placeholder={answer.llm_status === 'pending'
+          ? 'In attesa della valutazione: puoi anche scriverla tu.'
+          : 'Spiega allo studente il punteggio.'}
+        className="mt-1 w-full rounded border border-outline-variant/30 bg-surface-container-low px-2 py-1.5 text-xs text-on-surface focus:border-primary/50 focus:outline-none"
+      />
+      {draft === '' && answer.llm_feedback && (
+        <p className="text-[11px] text-on-surface-variant">Salvando, torna quella del modello: «{answer.llm_feedback}»</p>
       )}
     </div>
   );
@@ -187,14 +245,15 @@ function FormattedAnswer({ value }: { value: any }) {
 function SubmissionDetailView({ score, sessionId, onClose }: Props) {
   const queryClient = useQueryClient();
   const [overrides, setOverrides] = useState<Record<string, number>>({});
+  const [feedbackDrafts, setFeedbackDrafts] = useState<Record<string, string>>({});
 
   const answers: DetailedAnswer[] = score.answers ?? [];
-  const studentName = score.student_display_name ?? score.student_email ?? score.student ?? '—';
-  const studentId = score.student_id;
+  const studentName = score.student_name ?? score.student_display_name ?? score.student_email ?? score.student ?? '—';
 
-  const dirtyCount = Object.keys(overrides).filter(
+  const changedPoints = Object.keys(overrides).filter(
     qid => overrides[qid] !== answers.find(a => String(a.question_id) === qid)?.points_awarded
-  ).length;
+  );
+  const dirtyCount = new Set([...changedPoints, ...Object.keys(feedbackDrafts)]).size;
 
   const computedRaw = answers.reduce((sum, a) => {
     const ov = overrides[String(a.question_id)];
@@ -205,20 +264,14 @@ function SubmissionDetailView({ score, sessionId, onClose }: Props) {
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      if (studentId == null) throw new Error('student_id mancante nel punteggio');
       if (score.id == null) throw new Error('id punteggio mancante');
-      const payload: ScoreOverride[] = answers
-        .filter(a => {
-          const ov = overrides[String(a.question_id)];
-          return ov !== undefined && ov !== a.points_awarded;
-        })
-        .map(a => ({
-          score_id: score.id!,
-          per_question: {
-            [String(a.question_id)]: overrides[String(a.question_id)],
-          },
-        }));
-      return reviewScores(sessionId, payload);
+      // One review for the whole submission: points and motivations together.
+      const payload: ScoreOverride = {
+        score_id: score.id,
+        per_question: Object.fromEntries(changedPoints.map(qid => [qid, overrides[qid]])),
+        feedback: feedbackDrafts,
+      };
+      return reviewScores(sessionId, [payload]);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['session-scores', sessionId] });
@@ -242,7 +295,7 @@ function SubmissionDetailView({ score, sessionId, onClose }: Props) {
               <p className={`text-2xl font-bold ${pctColor}`}>{computedPct.toFixed(1)}%</p>
               <p className="text-xs text-on-surface-variant">
                 {computedRaw.toFixed(1)} / {maxPts.toFixed(1)}
-                {dirtyCount > 0 && <span className="text-secondary ml-1">(modificato)</span>}
+                {changedPoints.length > 0 && <span className="text-secondary ml-1">(modificato)</span>}
               </p>
             </div>
             <button
@@ -268,6 +321,13 @@ function SubmissionDetailView({ score, sessionId, onClose }: Props) {
                 ...prev,
                 [String(a.question_id)]: Math.max(0, Math.min(pts, a.weight)),
               }))}
+              feedbackDraft={feedbackDrafts[String(a.question_id)]}
+              onFeedbackChange={text => setFeedbackDrafts(prev => {
+                const next = { ...prev };
+                if (text === undefined) delete next[String(a.question_id)];
+                else next[String(a.question_id)] = text;
+                return next;
+              })}
             />
           ))}
         </div>

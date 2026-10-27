@@ -62,6 +62,8 @@ export interface ScoreEntry {
   student_id?: number;
   student?: string;           // email (legacy compat)
   student_email?: string;
+  /** The student's name, as the scores endpoints return it. */
+  student_name?: string;
   student_display_name?: string;
   session_id?: number;
   quiz_id?: string;

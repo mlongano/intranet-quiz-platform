@@ -396,6 +396,11 @@ function SessionScoresPage() {
 
       {viewBy === 'student' ? (
         <div className="space-y-2">
+          {!!scores?.length && (
+            <p className="text-xs text-on-surface-variant">
+              Apri uno studente per rivedere punti e motivazioni domanda per domanda; «Per domanda» mostra una domanda per tutti gli studenti.
+            </p>
+          )}
           {scores?.sort((a, b) => b.percent - a.percent).map((score, i) => (
             <ScoreRow key={score.id ?? i} score={score} onClick={() => setReviewScore(score)} />
           ))}
