@@ -89,3 +89,14 @@ def test_user_prompt_has_the_placeholders_the_builder_fills():
 
     for placeholder in ('{{QUESTION}}', '{{ACCEPTABLE_ANSWER}}', '{{STUDENT_ANSWER}}'):
         assert placeholder in user_prompt
+
+
+def test_system_prompt_grades_code_on_logic_not_typing():
+    """A correct program with a cosmetic difference or a slip keeps full credit;
+    only errors in logic cost points, unless exact format is asked for."""
+    _version, system_prompt = prompts.load_active_prompt(prompts.SYSTEM_PROMPT_NAME)
+
+    assert 'never lower a score just' in system_prompt
+    assert 'Do not deduct for cosmetic differences' in system_prompt
+    assert 'Do deduct for errors in logic' in system_prompt
+    assert 'explicitly asks for it' in system_prompt
