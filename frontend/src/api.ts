@@ -11,6 +11,7 @@ export * from './api/auth';
 export * from './api/quiz';
 export * from './api/snapshots';
 export * from './api/classes';
+export * from './api/history';
 export * from './api/sessions';
 export * from './api/scores';
 export * from './api/archives';

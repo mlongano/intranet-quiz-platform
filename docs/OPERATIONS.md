@@ -461,6 +461,19 @@ refers to them. Quiz content stays. Never touched: an active session, or one
 with grading queued. Backups still hold deleted data until they are pruned
 (`BACKUP_RETENTION_DAYS`).
 
+**Anonymous history.** Before a session is deleted, `services/history.py`
+copies into `history_quizzes/questions/answers` the quiz's questions and every
+answer with points, motivation, the model's score when the teacher changed it,
+model and prompt version — with no student id or per-student code, no link
+between one student's answers (stored shuffled per question), no session date
+or class name (only the school year and, when unambiguous, the year of course),
+and free text scrubbed of the e-mail addresses and names the directory knows.
+Sessions with fewer than `HISTORY_MIN_SUBMISSIONS` (5) submissions are not
+copied. Being anonymous it does not expire; teachers see and export their own
+(Archivi › Storico anonimo). To keep only statistics and closed answers
+(dropping open-answer text), clear `history_answers.answer` and `motivation`
+for open questions.
+
 `DATA_RETENTION` = `report` (default: compute only), `apply` (the worker
 deletes, checking at most every `DATA_RETENTION_CHECK_SECONDS`, 6 h), `off`.
 Each run records counts only in `retention_runs`. Check what is due:

@@ -29,6 +29,7 @@ import SnapshotEditorPage from './pages/SnapshotEditorPage';
 import SnapshotImagesPage from './pages/SnapshotImagesPage';
 import ClassesPage from './pages/ClassesPage';
 import ArchivesPage from './pages/ArchivesPage';
+import HistoryPage from './pages/HistoryPage';
 import ArchiveDetailPage from './pages/ArchiveDetailPage';
 import LlmSettingsPage from './pages/LlmSettingsPage';
 import StudentSnapshotsPage from './pages/StudentSnapshotsPage';
@@ -63,6 +64,8 @@ const router = createBrowserRouter([
   { path: '/teacher/snapshots/:id/images', element: <RequireAuth><SnapshotImagesPage /></RequireAuth>, errorElement: <ErrorPage /> },
   { path: '/teacher/classes', element: <RequireAuth><ClassesPage /></RequireAuth>, errorElement: <ErrorPage /> },
   { path: '/teacher/archives', element: <RequireAuth><ArchivesPage /></RequireAuth>, errorElement: <ErrorPage /> },
+  { path: '/teacher/history', element: <RequireAuth><HistoryPage /></RequireAuth>, errorElement: <ErrorPage /> },
+  { path: '/teacher/history/:historyId', element: <RequireAuth><HistoryPage /></RequireAuth>, errorElement: <ErrorPage /> },
   { path: '/teacher/archives/:archiveId', element: <RequireAuth><ArchiveDetailPage /></RequireAuth>, errorElement: <ErrorPage /> },
   { path: '/teacher/student-snapshots', element: <RequireAuth><StudentSnapshotsPage /></RequireAuth>, errorElement: <ErrorPage /> },
   { path: '/teacher/llm-settings', element: <RequireAuth><LlmSettingsPage /></RequireAuth>, errorElement: <ErrorPage /> },

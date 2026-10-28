@@ -7,7 +7,8 @@ migration 016). With the session go everything that hangs off it — answers,
 scores, motivations, score history, grading jobs, published results — and so
 do the score archives copied from it and the teachers' saved student lists of
 that year. Quiz content (questions) is the teacher's, not student data: it
-stays. A class of an expired year that no session uses goes too, and so does
+stays, and so does an anonymous copy of what serves the long run
+(``services/history.py``). A class of an expired year that no session uses goes too, and so does
 a student no longer at the school once nothing refers to them.
 
 ``DATA_RETENTION`` decides what happens: ``report`` (the default) only
@@ -27,6 +28,7 @@ from zoneinfo import ZoneInfo
 
 import db
 from db import queries as Q
+from services import history
 
 SCHOOL_TZ = ZoneInfo('Europe/Rome')  # the time zone migration 016 counts school years in
 
@@ -73,6 +75,9 @@ def apply(now: datetime | None = None) -> dict:
         # Recomputed kind by kind: deleting sessions frees classes and students.
         for kind, sql in _KINDS:
             ids = [r[0] for r in conn.execute(sql, {'now': now}).fetchall()]
+            if kind == 'sessions':
+                # What outlives them goes to the anonymous history first.
+                deleted['history'] = sum(history.archive_session(conn, sid) for sid in ids)
             if ids:
                 conn.execute(Q.RETENTION_DELETE[kind], (ids,))
             deleted[kind] = len(ids)

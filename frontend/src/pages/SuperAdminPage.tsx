@@ -185,7 +185,7 @@ const fmtDay = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('
 
 function countsText(c: RetentionCounts): string {
   const parts = [
-    [c.sessions, 'sessioni'], [c.archives, 'archivi di punteggi'], [c.student_lists, 'elenchi studenti salvati'],
+    [c.history ?? 0, 'copiate nello storico anonimo'], [c.sessions, 'sessioni'], [c.archives, 'archivi di punteggi'], [c.student_lists, 'elenchi studenti salvati'],
     [c.classes, 'classi'], [c.students, 'studenti usciti dalla scuola'],
   ].filter(([n]) => (n as number) > 0).map(([n, label]) => `${n} ${label}`);
   return parts.length ? parts.join(', ') : 'niente';

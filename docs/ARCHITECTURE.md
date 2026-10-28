@@ -427,7 +427,9 @@ otherwise). Adding reports addresses that are `unknown` or `disabled`.
 **Data retention:** a session's student data is kept through 31 December after its
 school year ends, then deleted by the worker (`services/retention.py`, migration
 016); GET /sessions/:id reports `data_kept_until`; super-admin GET /retention shows
-what is due and next. See OPERATIONS › Data retention.
+what is due and next. Before deletion a session is copied, anonymised, to
+the history (`services/history.py`): GET /history, GET /history/:id (`?answers=1`
+exports every answer), DELETE /history/:id. See OPERATIONS › Data retention.
 
 **Live:** GET /live — the dashboard's view of every active session: each expected
 student (class roster plus anyone who started or handed in) as `submitted`,

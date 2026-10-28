@@ -108,6 +108,8 @@ export async function deleteLlmEndpoint(id: number): Promise<{ ok: boolean }> {
 // ── data retention ────────────────────────────────────────────────────────────
 
 export interface RetentionCounts {
+  /** Sessions copied to the anonymous history before deletion. */
+  history?: number;
   sessions: number;
   archives: number;
   student_lists: number;

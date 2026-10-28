@@ -18,6 +18,8 @@ Classes:
     GET    /api/teacher/classes
     GET    /api/teacher/classes/<id>/students
     POST   /api/teacher/classes                 (a class of the teacher's own)
+    GET    /api/teacher/history[/<id>]          (anonymous history; ?answers=1 to export)
+    DELETE /api/teacher/history/<id>
     PATCH  /api/teacher/classes/<id>            (name, archived)
     DELETE /api/teacher/classes/<id>            (only while no session uses it)
     POST   /api/teacher/classes/<id>/students   (manual classes: add by email)
@@ -318,6 +320,41 @@ def sync_classroom_courses():
         course_ids=[str(course_id) for course_id in course_ids] if course_ids else None,
     )
     return jsonify(result), 200
+
+
+# ── anonymous history ─────────────────────────────────────────────────────────
+
+@teacher_bp.get('/history')
+@require_teacher
+def list_history():
+    """The anonymous history of the teacher's quizzes (services/history.py)."""
+    from services import history
+    with db.get_conn() as conn:
+        return jsonify(history.list_for_teacher(conn, _teacher_id())), 200
+
+
+@teacher_bp.get('/history/<int:quiz_id>')
+@require_teacher
+def get_history(quiz_id: int):
+    """Per-question statistics; ?answers=1 adds every anonymous answer (export)."""
+    from services import history
+    with db.get_conn() as conn:
+        detail = history.detail_for_teacher(conn, _teacher_id(), quiz_id,
+                                            with_answers=request.args.get('answers') in ('1', 'true'))
+    if detail is None:
+        raise NotFound(description="Storico non trovato.")
+    return jsonify(detail), 200
+
+
+@teacher_bp.delete('/history/<int:quiz_id>')
+@require_teacher
+def delete_history(quiz_id: int):
+    with db.get_conn() as conn:
+        deleted = conn.execute(Q.DELETE_HISTORY_QUIZ, (quiz_id, _teacher_id())).rowcount
+        conn.commit()
+    if not deleted:
+        raise NotFound(description="Storico non trovato.")
+    return jsonify({'ok': True}), 200
 
 
 # ── sessions ──────────────────────────────────────────────────────────────────

@@ -33,6 +33,7 @@ const NAV_ITEMS: NavItem[] = [
       { label: 'Domande', path: '/teacher/snapshots', accent: 'primary' },
       { label: 'Punteggi', path: '/teacher/archives', accent: 'secondary' },
       { label: 'Studenti', path: '/teacher/student-snapshots', accent: 'tertiary' },
+      { label: 'Storico anonimo', path: '/teacher/history', accent: 'primary' },
     ],
   },
   { label: 'Classi', Icon: Users, path: '/teacher/classes', accent: 'tertiary' },

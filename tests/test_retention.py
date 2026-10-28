@@ -54,7 +54,7 @@ def _exists(conn, table, id_):
 def test_nothing_due_before_1_january(db_conn, year_2025):
     from services import retention
     assert retention.apply(now=at(2026, 12, 31, 23, 59)) == {
-        'sessions': 0, 'archives': 0, 'student_lists': 0, 'classes': 0, 'students': 0}
+        'history': 0, 'sessions': 0, 'archives': 0, 'student_lists': 0, 'classes': 0, 'students': 0}
     assert _exists(db_conn, 'quiz_sessions', year_2025['session'])
 
 

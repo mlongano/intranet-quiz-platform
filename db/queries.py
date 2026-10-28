@@ -1097,3 +1097,82 @@ LAST_RETENTION_RUN = """
 SESSION_PURGE_AFTER = """
     SELECT quizparty_purge_after(quizparty_session_reference(%s))
 """
+
+# ── anonymous history ─────────────────────────────────────────────────────────
+
+HISTORY_SESSION_META = """
+    SELECT qs.teacher_id, COALESCE(NULLIF(qsn.title, ''), 'Quiz'), quizparty_session_reference(qs.id)
+    FROM quiz_sessions qs JOIN question_snapshots qsn ON qsn.id = qs.snapshot_id
+    WHERE qs.id = %s
+"""
+
+HISTORY_SESSION_ENTRIES = """
+    SELECT answers FROM score_entries WHERE session_id = %s
+"""
+
+HISTORY_SESSION_CLASSES = """
+    SELECT c.name, c.academic_year FROM session_classes sc JOIN classes c ON c.id = sc.class_id
+    WHERE sc.session_id = %s
+"""
+
+HISTORY_ALL_PEOPLE = """
+    SELECT display_name FROM students UNION SELECT display_name FROM teachers
+"""
+
+# Whoever a text from this session is likely to name: those who handed in,
+# their classmates in the session's classes, and the teacher.
+HISTORY_SESSION_PEOPLE = """
+    SELECT s.display_name FROM score_entries se JOIN students s ON s.id = se.student_id
+    WHERE se.session_id = %(session_id)s
+    UNION
+    SELECT s.display_name FROM session_classes sc
+    JOIN class_students cs ON cs.class_id = sc.class_id JOIN students s ON s.id = cs.student_id
+    WHERE sc.session_id = %(session_id)s
+    UNION
+    SELECT t.display_name FROM quiz_sessions qs JOIN teachers t ON t.id = qs.teacher_id
+    WHERE qs.id = %(session_id)s
+"""
+
+INSERT_HISTORY_QUIZ = """
+    INSERT INTO history_quizzes (teacher_id, title, school_year, grade, submissions)
+    VALUES (%(teacher_id)s, %(title)s, %(school_year)s, %(grade)s, %(submissions)s)
+    RETURNING id
+"""
+
+INSERT_HISTORY_QUESTION = """
+    INSERT INTO history_questions (quiz_id, position, question_key, type, question)
+    VALUES (%(quiz_id)s, %(position)s, %(question_key)s, %(type)s, %(question)s)
+    RETURNING id
+"""
+
+INSERT_HISTORY_ANSWER = """
+    INSERT INTO history_answers (question_id, answer, points, max_points, motivation, model_points,
+                                 teacher_reviewed, llm_model, prompt_version)
+    VALUES (%(question_id)s, %(answer)s, %(points)s, %(max_points)s, %(motivation)s, %(model_points)s,
+            %(teacher_reviewed)s, %(llm_model)s, %(prompt_version)s)
+"""
+
+LIST_HISTORY_FOR_TEACHER = """
+    SELECT h.id, h.title, h.school_year, h.grade, h.submissions, h.archived_at,
+           (SELECT count(*) FROM history_questions q WHERE q.quiz_id = h.id)
+    FROM history_quizzes h WHERE h.teacher_id = %s
+    ORDER BY h.school_year DESC, h.title
+"""
+
+GET_HISTORY_QUIZ = """
+    SELECT id, title, school_year, grade, submissions, archived_at
+    FROM history_quizzes WHERE id = %s AND teacher_id = %s
+"""
+
+LIST_HISTORY_QUESTIONS = """
+    SELECT id, question_key, type, question FROM history_questions WHERE quiz_id = %s ORDER BY position
+"""
+
+LIST_HISTORY_ANSWERS = """
+    SELECT answer, points, max_points, motivation, teacher_reviewed, model_points, llm_model, prompt_version
+    FROM history_answers WHERE question_id = %s ORDER BY id
+"""
+
+DELETE_HISTORY_QUIZ = """
+    DELETE FROM history_quizzes WHERE id = %s AND teacher_id = %s
+"""
