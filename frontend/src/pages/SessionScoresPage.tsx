@@ -317,6 +317,14 @@ function SessionScoresPage() {
 
         {session && <PublishPanel session={session} pendingAnswers={pendingAnswers} />}
 
+        {session?.data_kept_until && (
+          <p className="mb-4 text-xs text-on-surface-variant">
+            Conservazione dei dati: risposte e punteggi degli studenti di questa sessione restano fino al{' '}
+            {new Date(`${session.data_kept_until}T12:00:00`).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' })},
+            poi vengono cancellati. Se ti serve una copia, esporta il CSV.
+          </p>
+        )}
+
         {/* Action bar: view toggle + LLM info */}
         <div className="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">

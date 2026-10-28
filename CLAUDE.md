@@ -143,6 +143,8 @@ JWT roles: `teacher`, `super_admin` (same login flow, elevated role), `student` 
 
 13. **A session is edited only as far as its status allows.** `PATCH /api/teacher/sessions/<id>` (`edit_session`) changes title, quiz, classes and the join window (`opens_at`/`closes_at`, time-zone aware). Draft: everything. Active: the quiz only before any student has started or handed in; classes may be added, and removed unless that strands a student who has started. Closed: only the title — its schedule sets the grace window and its results belong to the quiz and classes it had. `GET /sessions/<id>` returns `edit` so the form disables what the server would refuse.
 
+14. **Student data expires.** A session's student data is kept through 31 December after its school year ends, then the worker deletes it (`services/retention.py`, `DATA_RETENTION=report|apply|off`; dates from `quizparty_purge_after()` in migration 016). Anything new that stores student data must expire with it: hang it off the session (cascade) or add it to retention's list. Never record whose data a run deleted.
+
 ### Data model (PostgreSQL — see `db/migrations/`)
 
 `teachers`, `students`, `classes`, `class_teachers`, `class_students` (identity);

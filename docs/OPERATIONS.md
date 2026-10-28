@@ -444,6 +444,35 @@ Check backup logs:
 docker compose logs backup --tail=100
 ```
 
+## Data retention
+
+Students' data serves the assessment of one school year (the official grade is
+in the school register), so it is kept through **31 December after the school
+year ends** (September–August, Europe/Rome) and deleted on 1 January. The
+period is the school's decision, recorded in its register of processing.
+
+What goes, per session whose latest submission (or creation) falls in that
+year: the session with its answers, scores, motivations, score history,
+grading jobs and published results; the score archives copied from it (they
+expire with the session, not with the day they were made); teachers' saved
+student lists of that year. Then classes of an expired year that no session
+uses, and students no longer at the school (`disabled`) with nothing left that
+refers to them. Quiz content stays. Never touched: an active session, or one
+with grading queued. Backups still hold deleted data until they are pruned
+(`BACKUP_RETENTION_DAYS`).
+
+`DATA_RETENTION` = `report` (default: compute only), `apply` (the worker
+deletes, checking at most every `DATA_RETENTION_CHECK_SECONDS`, 6 h), `off`.
+Each run records counts only in `retention_runs`. Check what is due:
+
+```bash
+$DC exec worker python -m services.retention          # report
+$DC exec worker python -m services.retention apply    # delete now
+```
+
+The super-admin page (Conservazione dati) shows the same report; each
+session's scores page tells the teacher until when its data is kept.
+
 ## Production data-loss guard
 
 Migration `004_block_production_truncate.sql` installs a `BEFORE TRUNCATE`

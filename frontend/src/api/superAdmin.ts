@@ -104,3 +104,26 @@ export async function deleteLlmEndpoint(id: number): Promise<{ ok: boolean }> {
     method: 'DELETE',
   });
 }
+
+// ── data retention ────────────────────────────────────────────────────────────
+
+export interface RetentionCounts {
+  sessions: number;
+  archives: number;
+  student_lists: number;
+  classes: number;
+  students: number;
+}
+
+export interface RetentionReport {
+  /** off: nothing; report: only computes; apply: deletes. */
+  mode: 'off' | 'report' | 'apply';
+  due: RetentionCounts;
+  /** Next deletion dates: data is kept through `date` (ISO), deleted the day after. */
+  upcoming: { date: string; sessions: number; archives: number }[];
+  last_run: { ran_at: string; deleted: RetentionCounts } | null;
+}
+
+export async function getRetention(): Promise<RetentionReport> {
+  return apiFetch<RetentionReport>('/super-admin/retention');
+}

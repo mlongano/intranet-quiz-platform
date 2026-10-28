@@ -143,6 +143,8 @@ export interface SessionMeta {
   /** GET /sessions/<id> only: when the results were published to students. */
   results_published_at?: string | null;
   results_show_correct?: boolean;
+  /** Data retention: the students' data of this session is deleted after this day (ISO date). */
+  data_kept_until?: string | null;
 }
 
 export interface LiveStudent {

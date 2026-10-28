@@ -4,7 +4,7 @@ import { RefreshCw, Plus, ToggleLeft, ToggleRight, KeyRound } from 'lucide-react
 import TeacherLayout from '../layouts/TeacherLayout';
 import {
   listTeachers, createTeacher, updateTeacher, resetTeacherPassword,
-  triggerSync, getSyncStatus, SyncStatus,
+  triggerSync, getSyncStatus, SyncStatus, getRetention, type RetentionCounts,
 } from '../api';
 import { useConfirmModal } from '../lib/useConfirmModal';
 import LlmEndpointsTab from '../components/LlmEndpointsTab';
@@ -181,10 +181,65 @@ function SyncTab() {
   );
 }
 
+const fmtDay = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+
+function countsText(c: RetentionCounts): string {
+  const parts = [
+    [c.sessions, 'sessioni'], [c.archives, 'archivi di punteggi'], [c.student_lists, 'elenchi studenti salvati'],
+    [c.classes, 'classi'], [c.students, 'studenti usciti dalla scuola'],
+  ].filter(([n]) => (n as number) > 0).map(([n, label]) => `${n} ${label}`);
+  return parts.length ? parts.join(', ') : 'niente';
+}
+
+/** Data retention (GDPR): what goes, when, and what went. Counts only. */
+function RetentionTab() {
+  const { data, isLoading, isError, error } = useQuery({ queryKey: ['sa-retention'], queryFn: getRetention });
+  if (isLoading) return <p className="text-on-surface-variant">Caricamento...</p>;
+  if (isError || !data) return <p className="text-error text-sm">{String((error as Error)?.message ?? 'Errore')}</p>;
+  const modeText = {
+    apply: 'Attiva: i dati scaduti vengono cancellati automaticamente (controllo ogni 6 ore).',
+    report: 'Solo calcolo: niente viene cancellato finché non si imposta DATA_RETENTION=apply.',
+    off: 'Disattivata (DATA_RETENTION=off).',
+  }[data.mode];
+  return (
+    <div className="space-y-4 max-w-2xl">
+      <p className="text-sm text-on-surface-variant">
+        I dati degli studenti di una sessione (risposte, punteggi, motivazioni, cronologia, risultati pubblicati, archivi
+        copiati da essa) si conservano fino al 31 dicembre successivo alla fine dell'anno scolastico, poi si cancellano.
+        Le domande dei quiz restano. Con loro vanno le classi di quell'anno non più usate e gli studenti usciti dalla
+        scuola senza più dati. Le copie di sicurezza scadono dopo 30 giorni.
+      </p>
+      <div className={`rounded-lg border p-3 text-sm ${data.mode === 'apply' ? 'border-tertiary/30 bg-tertiary/5 text-on-surface' : 'border-secondary/30 bg-secondary/5 text-on-surface'}`}>
+        {modeText}
+      </div>
+      <div className="rounded-lg border border-outline-variant/30 bg-surface-container p-3 text-sm">
+        <p className="font-medium text-on-surface">Da cancellare adesso</p>
+        <p className="text-on-surface-variant">{countsText(data.due)}</p>
+      </div>
+      <div className="rounded-lg border border-outline-variant/30 bg-surface-container p-3 text-sm">
+        <p className="font-medium text-on-surface">Prossime scadenze</p>
+        {data.upcoming.length === 0 ? <p className="text-on-surface-variant">Nessuna.</p> : (
+          <ul className="mt-1 space-y-0.5 text-on-surface-variant">
+            {data.upcoming.map(u => (
+              <li key={u.date}>Conservati fino al {fmtDay(u.date)}: {u.sessions} {u.sessions === 1 ? 'sessione' : 'sessioni'}{u.archives ? `, ${u.archives} ${u.archives === 1 ? 'archivio' : 'archivi'}` : ''}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {data.last_run && (
+        <p className="text-xs text-on-surface-variant">
+          Ultima cancellazione: {new Date(data.last_run.ran_at).toLocaleString('it-IT')} — {countsText(data.last_run.deleted)}.
+        </p>
+      )}
+    </div>
+  );
+}
+
 const TAB_LABELS = {
   teachers: 'Docenti',
   sync: 'Sincronizzazione',
   llm: 'Endpoint LLM',
+  retention: 'Conservazione dati',
 } as const;
 
 function SuperAdminPage() {
@@ -208,6 +263,7 @@ function SuperAdminPage() {
       {tab === 'teachers' && <TeachersTab />}
       {tab === 'sync' && <SyncTab />}
       {tab === 'llm' && <LlmEndpointsTab />}
+      {tab === 'retention' && <RetentionTab />}
     </TeacherLayout>
   );
 }

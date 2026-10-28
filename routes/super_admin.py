@@ -300,6 +300,16 @@ def get_sync_status(run_id: int):
     }), 200
 
 
+# ── data retention ────────────────────────────────────────────────────────────
+
+@super_admin_bp.get('/retention')
+@require_super_admin
+def retention_report():
+    """What retention deletes now and next, and what it last deleted (counts only)."""
+    from services import retention
+    return jsonify(retention.report()), 200
+
+
 # ── global scores view ────────────────────────────────────────────────────────
 
 @super_admin_bp.get('/scores')

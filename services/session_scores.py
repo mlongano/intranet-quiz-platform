@@ -8,6 +8,7 @@ from werkzeug.exceptions import Conflict, Forbidden, NotFound
 
 import db
 from db import queries as Q
+from services import retention
 
 
 def assert_session_owner(conn, session_id: int, teacher_id: int) -> None:
@@ -50,6 +51,7 @@ def get_session_for_teacher(teacher_id: int, session_id: int) -> dict:
         if not row:
             raise NotFound(description="Session not found.")
         edit = edit_constraints(conn, session_id, row[5])
+        kept_until = retention.session_kept_until(conn, session_id)
     return {
         'id': row[0], 'snapshot_id': row[2], 'title': row[3],
         'join_code': row[4], 'status': row[5],
@@ -60,6 +62,8 @@ def get_session_for_teacher(teacher_id: int, session_id: int) -> dict:
         'edit': edit,
         'results_published_at': row[10].isoformat() if row[10] else None,
         'results_show_correct': bool(row[11]),
+        # Data retention: the students' data of this session is deleted after this day.
+        'data_kept_until': kept_until,
     }
 
 

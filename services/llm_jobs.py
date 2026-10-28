@@ -20,6 +20,7 @@ from werkzeug.exceptions import BadRequest, Forbidden, NotFound
 
 import db
 from db import queries as Q
+from services import retention
 from services.grading import grade_open_answer
 from services.llm_errors import LlmConfigurationError, llm_enabled, validate_llm_env
 from utils import ensure_list
@@ -479,6 +480,7 @@ def worker_loop(*, poll_seconds: float = 2.0, error_backoff_seconds: float = 5.0
         f"{worker_max_jobs_per_teacher()} per teacher.",
         flush=True,
     )
+    print(f"[RETENTION] Mode: {retention.mode()}.", flush=True)
     requeue_running_jobs()
 
     # Several jobs at once, because a class handing in produces one job per
@@ -500,6 +502,7 @@ def worker_loop(*, poll_seconds: float = 2.0, error_backoff_seconds: float = 5.0
                 time.sleep(error_backoff_seconds)
                 continue
             if not job:
+                retention.tick()
                 time.sleep(poll_seconds)
                 continue
             in_flight.add(jobs.submit(_run_claimed_job, job))

@@ -766,9 +766,11 @@ LIST_SCORE_ENTRY_IDS_FOR_LLM_SESSION = """
 
 # ── score archives ────────────────────────────────────────────────────────────
 
+# reference_at: the copied session's date, so the archive expires with it.
 INSERT_ARCHIVE = """
-    INSERT INTO score_archives (teacher_id, title, source_session_id, content, notes)
-    VALUES (%(teacher_id)s, %(title)s, %(source_session_id)s, %(content)s, %(notes)s)
+    INSERT INTO score_archives (teacher_id, title, source_session_id, content, notes, reference_at)
+    VALUES (%(teacher_id)s, %(title)s, %(source_session_id)s, %(content)s, %(notes)s,
+            COALESCE(quizparty_session_reference(%(source_session_id)s), now()))
     RETURNING id, archived_at
 """
 
@@ -1024,4 +1026,74 @@ UPDATE_TEACHER_LLM_CREDENTIAL_CIPHERTEXT = """
     UPDATE teacher_llm_credentials
     SET ciphertext = %(ciphertext)s, key_version = %(key_version)s, updated_at = now()
     WHERE teacher_id = %(teacher_id)s AND endpoint_id = %(endpoint_id)s
+"""
+
+
+# ── data retention ────────────────────────────────────────────────────────────
+# Every query takes %(now)s: the run's clock, so a plan and its deletion agree.
+# An active session, or one with grading still queued, is never touched.
+
+RETENTION_SESSIONS = """
+    SELECT qs.id FROM quiz_sessions qs
+    WHERE qs.status <> 'active'
+      AND quizparty_purge_after(quizparty_session_reference(qs.id)) <= %(now)s
+      AND NOT EXISTS (SELECT 1 FROM llm_grading_jobs j
+                      WHERE j.session_id = qs.id AND j.status IN ('pending', 'running'))
+"""
+
+RETENTION_ARCHIVES = """
+    SELECT id FROM score_archives WHERE quizparty_purge_after(reference_at) <= %(now)s
+"""
+
+RETENTION_STUDENT_LISTS = """
+    SELECT id FROM student_list_snapshots WHERE quizparty_purge_after(created_at) <= %(now)s
+"""
+
+# A class's year is in its name ('2025-2026'): it goes with that year's data,
+# once no session uses it.
+RETENTION_CLASSES = """
+    SELECT c.id FROM classes c
+    WHERE c.academic_year ~ '^[0-9]{4}-[0-9]{4}$'
+      AND make_timestamptz(split_part(c.academic_year, '-', 2)::int + 1, 1, 1, 0, 0, 0, 'Europe/Rome') <= %(now)s
+      AND NOT EXISTS (SELECT 1 FROM session_classes sc WHERE sc.class_id = c.id)
+"""
+
+# A student no longer at the school, with nothing left that refers to them.
+RETENTION_STUDENTS = """
+    SELECT s.id FROM students s
+    WHERE s.status = 'disabled'
+      AND NOT EXISTS (SELECT 1 FROM score_entries se WHERE se.student_id = s.id)
+      AND NOT EXISTS (SELECT 1 FROM quiz_plans p WHERE p.student_id = s.id)
+"""
+
+RETENTION_DELETE = {
+    'sessions': "DELETE FROM quiz_sessions WHERE id = ANY(%s)",
+    'archives': "DELETE FROM score_archives WHERE id = ANY(%s)",
+    'student_lists': "DELETE FROM student_list_snapshots WHERE id = ANY(%s)",
+    'classes': "DELETE FROM classes WHERE id = ANY(%s)",
+    'students': "DELETE FROM students WHERE id = ANY(%s)",
+}
+
+# The next deletion dates, for the administrator: what goes when.
+RETENTION_UPCOMING = """
+    SELECT d, sum(sessions)::int, sum(archives)::int FROM (
+        SELECT quizparty_purge_after(quizparty_session_reference(id)) AS d, 1 AS sessions, 0 AS archives
+        FROM quiz_sessions
+        UNION ALL
+        SELECT quizparty_purge_after(reference_at), 0, 1 FROM score_archives
+    ) x
+    WHERE d > %(now)s
+    GROUP BY d ORDER BY d LIMIT 3
+"""
+
+INSERT_RETENTION_RUN = """
+    INSERT INTO retention_runs (deleted) VALUES (%s) RETURNING ran_at
+"""
+
+LAST_RETENTION_RUN = """
+    SELECT ran_at, deleted FROM retention_runs ORDER BY id DESC LIMIT 1
+"""
+
+SESSION_PURGE_AFTER = """
+    SELECT quizparty_purge_after(quizparty_session_reference(%s))
 """
