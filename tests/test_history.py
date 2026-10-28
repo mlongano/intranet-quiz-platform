@@ -116,3 +116,16 @@ def test_the_teacher_reads_and_exports_their_history(client, db_conn, expired):
     oauth = {'Authorization': f"Bearer {teacher_token(other, email='hist-other@test.it')}"}
     assert client.get(f'/api/teacher/history/{hid}', headers=oauth).status_code == 404
     assert client.delete(f'/api/teacher/history/{hid}', headers=expired['auth']).status_code == 200
+
+
+@pytest.mark.parametrize('raw, clean', [
+    ('20250430_074731_3CI-finale', 'finale'),
+    ('Was: 20250427_214034_UF07-WEB-finale', 'UF07-WEB-finale'),
+    ('Verifica HTTP 4BI 23/05/2025', 'Verifica HTTP'),
+    ('20251023_203303_5anno_servizi_rest', '5anno_servizi_rest'),
+    ('Verifica protocolli', 'Verifica protocolli'),
+    ('3AI', 'Quiz'),
+])
+def test_quiz_titles_lose_dates_and_classes(raw, clean):
+    from services.history import clean_title
+    assert clean_title(raw) == clean

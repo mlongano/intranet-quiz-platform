@@ -29,6 +29,25 @@ _EMAIL = re.compile(r'[\w.+-]+@[\w-]+(\.[\w-]+)+')
 _GRADE = re.compile(r'(?<![0-9A-Za-z])([1-5])\s?[A-Za-z]{1,3}(?![A-Za-z])')
 
 
+# Dates, times and class codes in a quiz title ('20250430_074731_3CI-finale')
+# say when and who: they go.
+_TITLE_NOISE = (
+    re.compile(r'(?<!\d)\d{8}(?:[_T-]?\d{4,6})?(?!\d)'),          # 20250430, 20250430_074731
+    re.compile(r'(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)'),                # 2025-04-30
+    re.compile(r'(?<!\d)\d{1,2}[/.]\d{1,2}(?:[/.]\d{2,4})?(?!\d)'),  # 30/4, 30/04/2025
+    re.compile(r'(?<!\d)\d{6}(?!\d)'),                              # 074731
+    _GRADE,                                                         # 3CI, 4 BI
+)
+
+
+def clean_title(title: str) -> str:
+    for pattern in _TITLE_NOISE:
+        title = pattern.sub(' ', title)
+    title = re.sub(r'^\s*Was:\s*', '', title)
+    title = re.sub(r'[\s_\-]{2,}|^[\s_\-]+|[\s_\-]+$', lambda m: '' if m.start() == 0 or m.end() == len(title) else ' ', title)
+    return title.strip(' _-') or 'Quiz'
+
+
 def min_submissions() -> int:
     return int(os.environ.get('HISTORY_MIN_SUBMISSIONS', 5))
 
@@ -146,7 +165,7 @@ def archive_session(conn, session_id: int) -> bool:
             slot['rows'].append(a)
 
     quiz_id = conn.execute(Q.INSERT_HISTORY_QUIZ, {
-        'teacher_id': teacher_id, 'title': scrub(quiz_title), 'school_year': school_year,
+        'teacher_id': teacher_id, 'title': clean_title(scrub(quiz_title)), 'school_year': school_year,
         'grade': _grade(classes, school_year), 'submissions': len(entries),
     }).fetchone()[0]
 
