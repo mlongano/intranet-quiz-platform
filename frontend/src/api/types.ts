@@ -193,6 +193,18 @@ export interface ClassMeta {
   name: string;
   academic_year: string;
   student_count: number;
+  /** Where the members come from: Classroom, a Workspace group, or the teacher. */
+  kind?: 'classroom' | 'workspace' | 'manual';
+  archived?: boolean;
+  /** A class some session used can be archived but not deleted. */
+  used_in_sessions?: boolean;
+}
+
+/** Addresses given for a class: added, not a provisioned student, or disabled. */
+export interface ClassMembersReport {
+  added: number;
+  unknown: string[];
+  disabled: string[];
 }
 
 export interface ClassroomCourse {

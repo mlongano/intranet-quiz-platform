@@ -17,6 +17,11 @@ Snapshots:
 Classes:
     GET    /api/teacher/classes
     GET    /api/teacher/classes/<id>/students
+    POST   /api/teacher/classes                 (a class of the teacher's own)
+    PATCH  /api/teacher/classes/<id>            (name, archived)
+    DELETE /api/teacher/classes/<id>            (only while no session uses it)
+    POST   /api/teacher/classes/<id>/students   (manual classes: add by email)
+    DELETE /api/teacher/classes/<id>/students/<student_id>
     GET    /api/teacher/classroom/courses
     POST   /api/teacher/classroom/sync
 
@@ -246,7 +251,45 @@ def clear_images(snapshot_id: int):
 @teacher_bp.get('/classes')
 @require_teacher
 def list_classes():
-    return jsonify(class_service.list_classes_for_teacher(_teacher_id())), 200
+    """The teacher's classes; archived ones only with ?archived=1."""
+    include = request.args.get('archived') in ('1', 'true')
+    return jsonify(class_service.list_classes_for_teacher(_teacher_id(), include_archived=include)), 200
+
+
+@teacher_bp.post('/classes')
+@require_teacher
+def create_class():
+    data = request.get_json(silent=True) or {}
+    result = class_service.create_class(_teacher_id(), data.get('name'), data.get('academic_year'),
+                                        data.get('emails'))
+    return jsonify(result), 201
+
+
+@teacher_bp.patch('/classes/<int:class_id>')
+@require_teacher
+def update_class(class_id: int):
+    data = request.get_json(silent=True) or {}
+    changes = {k: data[k] for k in ('name', 'archived') if k in data}
+    return jsonify(class_service.update_class(_teacher_id(), class_id, changes)), 200
+
+
+@teacher_bp.delete('/classes/<int:class_id>')
+@require_teacher
+def delete_class(class_id: int):
+    return jsonify(class_service.delete_class(_teacher_id(), class_id)), 200
+
+
+@teacher_bp.post('/classes/<int:class_id>/students')
+@require_teacher
+def add_class_students(class_id: int):
+    data = request.get_json(silent=True) or {}
+    return jsonify(class_service.add_students(_teacher_id(), class_id, data.get('emails'))), 200
+
+
+@teacher_bp.delete('/classes/<int:class_id>/students/<int:student_id>')
+@require_teacher
+def remove_class_student(class_id: int, student_id: int):
+    return jsonify(class_service.remove_student(_teacher_id(), class_id, student_id)), 200
 
 
 @teacher_bp.get('/classes/<int:class_id>/students')

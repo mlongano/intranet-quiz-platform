@@ -139,10 +139,23 @@ migrations (`python -m db.migrate up`), then runs `server.py [--debug]`.
 teachers (id, email, google_id, display_name, role, password_hash,
           password_must_change, status, created_at, last_login_at, last_synced_at)
 students (id, email, google_id, display_name, status, created_at, last_synced_at)
-classes  (id, name, academic_year, google_group_id, created_at)
-class_teachers   (class_id FK, teacher_id FK)  -- M:N
+classes  (id, name, academic_year, google_group_id, google_classroom_course_id,
+          classroom_owner_teacher_id, name_locked, created_at)
+class_teachers   (class_id FK, teacher_id FK, archived_at)  -- M:N
 class_students   (class_id FK, student_id FK)  -- M:N  (indexed on student_id)
 ```
+
+A class's **kind** follows from its origin: `classroom` (course id), `workspace`
+(group id, matched by id) or `manual` (created by a teacher, or migrated from
+v2.6.0). Synced members are Google's: each sync replaces them, so only a manual
+class has students edited by hand — chosen among provisioned students by email,
+never created. Any class can be renamed (`name_locked` keeps the name across
+syncs) and archived; archiving is per teacher (`class_teachers.archived_at`) and
+only hides the class from lists and from a new session's class choice. A class is
+deleted only while no session uses it. Students are never deleted by a sync: one
+missing from Workspace is `disabled` (no quiz, no results page), keeps every score,
+and is shown in a class roster as no longer enrolled. A sync whose user or teacher
+listing fails or comes back empty stops before touching the database.
 
 ### Question content
 
@@ -403,6 +416,13 @@ points, motivation — `teacher_feedback` over `llm_feedback` — and, for close
 questions only, the correct answer if the teacher chose to show it; an open
 question's acceptable answer is the grader's rubric and never reaches the student). Teachers: POST /sessions/:id/results/publish
 (`show_correct`; closed sessions only) and /unpublish; reopening withdraws.
+
+**Classes:** GET /classes (`?archived=1` includes archived; each with `kind`,
+`archived`, `used_in_sessions`), POST /classes (`name`, `academic_year`, `emails`),
+PATCH /classes/:id (`name`, `archived`), DELETE /classes/:id (409 `CLASS_IN_USE`
+once a session used it), GET /classes/:id/students, POST /classes/:id/students and
+DELETE /classes/:id/students/:student_id (manual classes; 409 `CLASS_SYNCED`
+otherwise). Adding reports addresses that are `unknown` or `disabled`.
 
 **Live:** GET /live — the dashboard's view of every active session: each expected
 student (class roster plus anyone who started or handed in) as `submitted`,

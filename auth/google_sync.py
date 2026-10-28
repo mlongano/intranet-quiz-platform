@@ -178,18 +178,24 @@ def run_sync(triggered_by: int | None = None) -> dict:
     sync_start = datetime.now(timezone.utc)
 
     # 1. Determine who is a teacher via the teacher group
+    # Without the teacher group every teacher would be filed as a student, and
+    # without the user list every account would look gone: either failure
+    # stops the sync before it touches the database.
     try:
         teacher_emails = set(_list_group_members(svc, teacher_group))
     except Exception as e:
         result['errors'].append(f"Could not fetch teacher group: {e}")
-        teacher_emails = set()
+        return result
 
     # 2. All users
     try:
         all_users = _list_all_users(svc, domain)
     except Exception as e:
         result['errors'].append(f"Could not list users: {e}")
-        all_users = []
+        return result
+    if not all_users or not teacher_emails:
+        result['errors'].append("Elenco utenti o gruppo docenti vuoto: sincronizzazione annullata.")
+        return result
 
     with db.get_conn() as conn:
         # 3. Upsert teachers and students
@@ -203,7 +209,8 @@ def run_sync(triggered_by: int | None = None) -> dict:
             else:
                 _upsert_student(conn, email, google_id, display_name, result)
 
-        # 4. Disable accounts not seen in this sync
+        # 4. Disable accounts not seen in this sync (the listing is complete:
+        # a failed or empty one returned above).
         conn.execute(Q.DISABLE_UNSYNCED_TEACHERS, (sync_start,))
         conn.execute(Q.DISABLE_UNSYNCED_STUDENTS, (sync_start,))
 
@@ -230,7 +237,10 @@ def run_sync(triggered_by: int | None = None) -> dict:
                 if row[1]:  # xmax = 0 means new row was inserted
                     result['classes_added'] += 1
 
+                # Members follow the group: fetched first, so a failed listing
+                # leaves the class as it was rather than emptied.
                 members = _list_group_members(svc, email_addr)
+                conn.execute("DELETE FROM class_students WHERE class_id = %s", (class_id,))
                 for member_email in members:
                     # Attach as student or teacher to the class
                     student_row = conn.execute(

@@ -1,8 +1,35 @@
 import { apiFetch } from './client';
-import type { ClassMeta, ClassroomCourse, ClassroomSyncResult, StudentMeta } from './types';
+import type { ClassMeta, ClassMembersReport, ClassroomCourse, ClassroomSyncResult, StudentMeta } from './types';
 
-export async function listClasses(): Promise<ClassMeta[]> {
-  return apiFetch<ClassMeta[]>('/teacher/classes');
+/** The teacher's classes; archived ones too with includeArchived. */
+export async function listClasses(includeArchived = false): Promise<ClassMeta[]> {
+  return apiFetch<ClassMeta[]>(`/teacher/classes${includeArchived ? '?archived=1' : ''}`);
+}
+
+export async function createClass(body: { name: string; academic_year: string; emails: string[] }) {
+  return apiFetch<ClassMembersReport & { id: number }>('/teacher/classes', {
+    method: 'POST', body: JSON.stringify(body),
+  });
+}
+
+export async function updateClass(classId: number, changes: { name?: string; archived?: boolean }) {
+  return apiFetch<{ ok: boolean }>(`/teacher/classes/${classId}`, {
+    method: 'PATCH', body: JSON.stringify(changes),
+  });
+}
+
+export async function deleteClass(classId: number) {
+  return apiFetch<{ deleted: boolean }>(`/teacher/classes/${classId}`, { method: 'DELETE' });
+}
+
+export async function addClassStudents(classId: number, emails: string[]) {
+  return apiFetch<ClassMembersReport>(`/teacher/classes/${classId}/students`, {
+    method: 'POST', body: JSON.stringify({ emails }),
+  });
+}
+
+export async function removeClassStudent(classId: number, studentId: number) {
+  return apiFetch<{ ok: boolean }>(`/teacher/classes/${classId}/students/${studentId}`, { method: 'DELETE' });
 }
 
 export async function getClassStudents(classId: number): Promise<StudentMeta[]> {

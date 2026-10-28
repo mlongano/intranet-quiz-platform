@@ -263,9 +263,13 @@ def trigger_sync():
         from auth.google_sync import run_sync
         result = run_sync(triggered_by=triggered_by)
         status = 'error' if result.get('errors') else 'success'
+        # The temporary passwords are shown once, in this response; the stored
+        # run keeps only who got one.
+        stored = {**result, 'new_teacher_credentials': [
+            {'email': c['email']} for c in result.get('new_teacher_credentials', [])]}
         with db.get_conn() as conn:
             conn.execute(Q.FINISH_SYNC_RUN, {
-                'id': run_id, 'status': status, 'result': json.dumps(result)
+                'id': run_id, 'status': status, 'result': json.dumps(stored)
             })
             conn.commit()
         return jsonify({'run_id': run_id, 'status': status, 'result': result}), 200

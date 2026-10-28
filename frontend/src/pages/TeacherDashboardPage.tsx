@@ -211,7 +211,7 @@ function TeacherDashboardPage() {
   });
   const { data: sessions } = useQuery({ queryKey: ['sessions'], queryFn: () => listSessions() });
   const { data: snapshots } = useQuery({ queryKey: ['snapshots'], queryFn: listSnapshots });
-  const { data: classes } = useQuery({ queryKey: ['classes'], queryFn: listClasses });
+  const { data: classes } = useQuery({ queryKey: ['classes'], queryFn: () => listClasses() });
   const { data: archives } = useQuery({ queryKey: ['archives'], queryFn: listArchives });
 
   const active = live?.sessions ?? [];

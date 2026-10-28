@@ -48,7 +48,7 @@ function SessionFormModal({ sessionId, onClose }: { sessionId?: number; onClose:
   const queryClient = useQueryClient();
   const editing = sessionId !== undefined;
   const { data: snapshots } = useQuery({ queryKey: ['snapshots'], queryFn: listSnapshots });
-  const { data: classes } = useQuery({ queryKey: ['classes'], queryFn: listClasses });
+  const { data: classes } = useQuery({ queryKey: ['classes'], queryFn: () => listClasses() });
   const { data: session } = useQuery({
     queryKey: ['session', sessionId],
     queryFn: () => getSession(sessionId as number),

@@ -97,7 +97,7 @@ LIST_STUDENTS_FOR_TEACHER = """
 """
 
 LIST_STUDENTS_FOR_CLASS = """
-    SELECT s.id, s.email, s.display_name, s.status
+    SELECT s.id, s.email::text, s.display_name, s.status
     FROM students s
     JOIN class_students cs ON cs.student_id = s.id
     WHERE cs.class_id = %s
@@ -108,20 +108,84 @@ LIST_STUDENTS_FOR_CLASS = """
 
 LIST_CLASSES_FOR_TEACHER = """
     SELECT c.id, c.name, c.academic_year,
-           COUNT(cs.student_id) AS student_count
+           (SELECT COUNT(*) FROM class_students cs WHERE cs.class_id = c.id) AS student_count,
+           CASE WHEN c.google_classroom_course_id IS NOT NULL THEN 'classroom'
+                WHEN c.google_group_id IS NOT NULL THEN 'workspace'
+                ELSE 'manual' END AS kind,
+           ct.archived_at,
+           EXISTS (SELECT 1 FROM session_classes sc WHERE sc.class_id = c.id) AS used_in_sessions
     FROM classes c
     JOIN class_teachers ct ON ct.class_id = c.id
-    LEFT JOIN class_students cs ON cs.class_id = c.id
-    WHERE ct.teacher_id = %s
-    GROUP BY c.id, c.name, c.academic_year
-    ORDER BY c.name
+    WHERE ct.teacher_id = %(teacher_id)s
+      AND (%(include_archived)s OR ct.archived_at IS NULL)
+    ORDER BY c.academic_year DESC, c.name
 """
 
+# ── class management ──────────────────────────────────────────────────────────
+
+LOCK_TEACHER_CLASS = """
+    SELECT c.id, c.name, c.academic_year,
+           CASE WHEN c.google_classroom_course_id IS NOT NULL THEN 'classroom'
+                WHEN c.google_group_id IS NOT NULL THEN 'workspace'
+                ELSE 'manual' END AS kind
+    FROM classes c
+    JOIN class_teachers ct ON ct.class_id = c.id
+    WHERE c.id = %s AND ct.teacher_id = %s
+    FOR UPDATE OF c
+"""
+
+TEACHER_CLASS_NAME_TAKEN = """
+    SELECT 1
+    FROM classes c
+    JOIN class_teachers ct ON ct.class_id = c.id
+    WHERE ct.teacher_id = %(teacher_id)s AND ct.archived_at IS NULL
+      AND lower(c.name) = lower(%(name)s) AND c.academic_year = %(academic_year)s
+      AND c.id IS DISTINCT FROM %(exclude_id)s
+"""
+
+INSERT_MANUAL_CLASS = """
+    INSERT INTO classes (name, academic_year) VALUES (%s, %s) RETURNING id
+"""
+
+RENAME_CLASS = """
+    UPDATE classes SET name = %(name)s, name_locked = %(locked)s WHERE id = %(id)s
+"""
+
+SET_CLASS_ARCHIVED = """
+    UPDATE class_teachers SET archived_at = %(archived_at)s
+    WHERE class_id = %(class_id)s AND teacher_id = %(teacher_id)s
+"""
+
+STUDENTS_BY_EMAIL = """
+    SELECT id, email::text, status FROM students WHERE email = ANY(%s::citext[])
+"""
+
+DELETE_CLASS_STUDENT = """
+    DELETE FROM class_students WHERE class_id = %s AND student_id = %s
+"""
+
+CLASS_USED_IN_SESSIONS = """
+    SELECT 1 FROM session_classes WHERE class_id = %s LIMIT 1
+"""
+
+DELETE_CLASS_TEACHER = """
+    DELETE FROM class_teachers WHERE class_id = %s AND teacher_id = %s
+"""
+
+DELETE_CLASS_IF_ORPHAN = """
+    DELETE FROM classes c
+    WHERE c.id = %s
+      AND NOT EXISTS (SELECT 1 FROM class_teachers ct WHERE ct.class_id = c.id)
+      AND NOT EXISTS (SELECT 1 FROM session_classes sc WHERE sc.class_id = c.id)
+"""
+
+# A class renamed by a teacher (name_locked) keeps its name across syncs.
 UPSERT_CLASS = """
     INSERT INTO classes (name, academic_year, google_group_id)
     VALUES (%(name)s, %(academic_year)s, %(google_group_id)s)
-    ON CONFLICT (name, academic_year) DO UPDATE
-        SET google_group_id = EXCLUDED.google_group_id
+    ON CONFLICT (google_group_id) WHERE google_group_id IS NOT NULL DO UPDATE
+        SET name = CASE WHEN classes.name_locked THEN classes.name ELSE EXCLUDED.name END,
+            academic_year = EXCLUDED.academic_year
     RETURNING id, (xmax = 0) AS inserted
 """
 
@@ -141,7 +205,7 @@ UPSERT_CLASSROOM_CLASS = """
     ON CONFLICT (google_classroom_course_id)
         WHERE google_classroom_course_id IS NOT NULL
     DO UPDATE
-        SET name = EXCLUDED.name,
+        SET name = CASE WHEN classes.name_locked THEN classes.name ELSE EXCLUDED.name END,
             academic_year = EXCLUDED.academic_year,
             classroom_owner_teacher_id = EXCLUDED.classroom_owner_teacher_id
     RETURNING id, (xmax = 0) AS inserted
