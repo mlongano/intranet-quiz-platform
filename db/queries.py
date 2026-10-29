@@ -307,7 +307,8 @@ GET_SESSION = """
                json_agg(json_build_object('id', c.id, 'name', c.name))
                FILTER (WHERE c.id IS NOT NULL), '[]'
            ) AS classes,
-           qs.results_published_at, qs.results_show_correct
+           qs.results_published_at, qs.results_show_correct,
+           qs.results_show_acceptable, qs.results_emailed_at, qs.results_emailed_count
     FROM quiz_sessions qs
     LEFT JOIN session_classes sc ON sc.session_id = qs.id
     LEFT JOIN classes c ON c.id = sc.class_id
@@ -413,7 +414,8 @@ LOCK_SESSION_STATUS = """
 
 SET_RESULTS_PUBLICATION = """
     UPDATE quiz_sessions
-    SET results_published_at = %(published_at)s, results_show_correct = %(show_correct)s
+    SET results_published_at = %(published_at)s, results_show_correct = %(show_correct)s,
+        results_show_acceptable = %(show_acceptable)s
     WHERE id = %(id)s AND teacher_id = %(teacher_id)s
 """
 
@@ -431,7 +433,7 @@ STUDENT_RESULTS_LIST = """
 # indistinguishable from "not found".
 STUDENT_RESULT_DETAIL = """
     SELECT qs.title, t.display_name, se.submitted_at, qs.results_show_correct,
-           se.raw_points, se.max_points, se.percent, se.answers
+           se.raw_points, se.max_points, se.percent, se.answers, qs.results_show_acceptable
     FROM score_entries se
     JOIN quiz_sessions qs ON qs.id = se.session_id
     JOIN teachers t ON t.id = qs.teacher_id
@@ -1175,4 +1177,24 @@ LIST_HISTORY_ANSWERS = """
 
 DELETE_HISTORY_QUIZ = """
     DELETE FROM history_quizzes WHERE id = %s AND teacher_id = %s
+"""
+
+
+# ── results link e-mail ───────────────────────────────────────────────────────
+
+RESULTS_EMAIL_CONTEXT = """
+    SELECT qs.title, qs.results_published_at, t.email::text, t.display_name
+    FROM quiz_sessions qs JOIN teachers t ON t.id = qs.teacher_id
+    WHERE qs.id = %s AND qs.teacher_id = %s
+"""
+
+# Everyone who handed in and is still at the school.
+RESULTS_EMAIL_RECIPIENTS = """
+    SELECT s.email::text FROM score_entries se JOIN students s ON s.id = se.student_id
+    WHERE se.session_id = %s AND s.status = 'active'
+    ORDER BY s.email
+"""
+
+MARK_RESULTS_EMAILED = """
+    UPDATE quiz_sessions SET results_emailed_at = now(), results_emailed_count = %s WHERE id = %s
 """

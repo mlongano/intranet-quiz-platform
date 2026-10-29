@@ -62,6 +62,9 @@ def get_session_for_teacher(teacher_id: int, session_id: int) -> dict:
         'edit': edit,
         'results_published_at': row[10].isoformat() if row[10] else None,
         'results_show_correct': bool(row[11]),
+        'results_show_acceptable': bool(row[12]),
+        'results_emailed_at': row[13].isoformat() if row[13] else None,
+        'results_emailed_count': row[14],
         # Data retention: the students' data of this session is deleted after this day.
         'data_kept_until': kept_until,
     }

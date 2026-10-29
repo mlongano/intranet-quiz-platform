@@ -57,10 +57,17 @@ export async function getLive(): Promise<{ sessions: LiveSession[] }> {
   return apiFetch<{ sessions: LiveSession[] }>('/teacher/live');
 }
 
-export async function publishResults(sessionId: number, showCorrect: boolean) {
+export async function publishResults(sessionId: number, showCorrect: boolean, showAcceptable = false) {
   return apiFetch<{ results_published_at: string | null; results_show_correct: boolean }>(
     `/teacher/sessions/${sessionId}/results/publish`,
-    { method: 'POST', body: JSON.stringify({ show_correct: showCorrect }) },
+    { method: 'POST', body: JSON.stringify({ show_correct: showCorrect, show_acceptable: showAcceptable }) },
+  );
+}
+
+/** Each student who handed in gets the link to their results, from the teacher's Gmail. */
+export async function emailResultsLink(sessionId: number) {
+  return apiFetch<{ sent: number; errors: { email: string; error: string }[]; link: string }>(
+    `/teacher/sessions/${sessionId}/results/email`, { method: 'POST' },
   );
 }
 

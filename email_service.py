@@ -1,369 +1,74 @@
-"""
-Email service for sending quiz results to students.
-Uses Gmail SMTP with Google Workspace credentials.
+"""The results-link e-mail, sent from the teacher's own Gmail.
+
+It carries the least it can: that the results of a quiz are available, and the
+link to the student's results page — no score, no answer. Everything else is
+behind the school Google login on that page.
+
+Sent through the Gmail API as the teacher: the Workspace service account
+(GOOGLE_SA_KEY_PATH, the one the Directory and Classroom syncs use) impersonates
+them with the ``gmail.send`` scope, which a Workspace administrator must
+authorise for the account's client ID under domain-wide delegation. The
+server never sends SMTP (tokenator blocks it), and holds no mail password.
 """
 
+from __future__ import annotations
+
+import base64
 import os
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from datetime import datetime, timezone
-import re
-from typing import Optional
+from email.message import EmailMessage
+from email.utils import formataddr
 
-# Load email configuration from environment
-EMAIL_SENDER = os.getenv("EMAIL_SENDER", "")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
-SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.send']
 
 
-def is_valid_email(email: str) -> bool:
-    """Validate email format."""
-    pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-    return bool(re.match(pattern, email))
+class EmailNotAvailable(Exception):
+    """Sending from this teacher's mailbox is not possible; ``code`` for the API."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
 
 
-def format_quiz_results_html(
-    submission: dict,
-    include_details: bool = True,
-    subject: str = "Risultati del Quiz",
-    show_admin_feedback: bool = False,
-) -> str:
-    """
-    Format quiz submission data as HTML email content.
+def results_message(*, teacher_name: str, teacher_email: str, student_email: str,
+                    title: str, link: str) -> EmailMessage:
+    msg = EmailMessage()
+    msg['From'] = formataddr((teacher_name, teacher_email))
+    msg['To'] = student_email
+    msg['Subject'] = f"Risultati: {title}"
+    msg.set_content(
+        f"I risultati di «{title}» sono disponibili.\n\n"
+        f"Per vederli apri questo link e accedi con il tuo account della scuola:\n"
+        f"{link}\n\n"
+        f"{teacher_name}\n"
+    )
+    return msg
 
-    Args:
-        submission: Score entry dict with student, quiz_id, answers, raw_points, etc.
-        include_details: Whether to include detailed question-by-question results. Default: True
-        subject: Email subject to use as the header title. Default: "Risultati del Quiz"
 
-    Returns:
-        HTML string for email body
-    """
-    student = submission.get("student", "Student")
-    quiz_id = submission.get("quiz_id", "N/A")
-    raw_points = submission.get("raw_points", 0)
-    max_points = submission.get("max_points", 0)
-    percent = submission.get("percent", 0)
-    timestamp = submission.get("timestamp", "")
-    answers = submission.get("answers", [])
+def gmail_service(teacher_email: str):
+    """A Gmail client acting as *teacher_email*; raises EmailNotAvailable."""
+    path = os.environ.get('GOOGLE_SA_KEY_PATH')
+    if not path or not os.path.isfile(path):
+        raise EmailNotAvailable('EMAIL_NOT_CONFIGURED',
+                                "Invio email non configurato: manca l'account di servizio Google.")
+    from google.auth.exceptions import RefreshError
+    from google.auth.transport.requests import Request
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build
 
-    # Format timestamp
+    creds = service_account.Credentials.from_service_account_file(
+        path, scopes=GMAIL_SCOPES).with_subject(teacher_email)
     try:
-        dt = datetime.fromisoformat(timestamp)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        local_dt = dt.astimezone()
-        formatted_time = local_dt.strftime("%d/%m/%Y %H:%M:%S")
-    except:
-        formatted_time = timestamp
-
-    # Build HTML
-    html = f"""
-    <html>
-    <head>
-        <style>
-            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-            .header {{ background-color: #4CAF50; color: white; padding: 20px; text-align: center; }}
-            .summary {{ background-color: #f4f4f4; padding: 15px; margin: 20px 0; border-radius: 5px; }}
-            .question {{ margin: 20px 0; padding: 15px; border-left: 4px solid #2196F3; background-color: #f9f9f9; }}
-            .correct {{ color: #4CAF50; font-weight: bold; }}
-            .incorrect {{ color: #f44336; font-weight: bold; }}
-            .partial {{ color: #FF9800; font-weight: bold; }}
-            .answer {{ margin: 10px 0; padding: 10px; background-color: white; border-radius: 3px; }}
-            .footer {{ margin-top: 30px; padding: 20px; background-color: #f4f4f4; text-align: center; font-size: 0.9em; }}
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>{subject}</h1>
-        </div>
-
-        <div class="summary">
-            <h2>Riepilogo</h2>
-            <p><strong>Studente:</strong> {student}</p>
-            <p><strong>ID Quiz:</strong> {quiz_id}</p>
-            <p><strong>Data di Consegna:</strong> {formatted_time}</p>
-            <p><strong>Punteggio:</strong> {raw_points} / {max_points} ({percent}%)</p>
-        </div>
-
-        <h2>Risultati Dettagliati</h2>
-    """
-
-    # Add detailed results only if include_details is True
-    if include_details:
-        # Add each question
-        for idx, answer in enumerate(answers, 1):
-            q_text = answer.get("question_text", "Question")
-            student_ans = answer.get("student_answer", "No answer")
-            correct_ans = answer.get("correct_answer", "N/A")
-            points = answer.get("points_awarded", 0)
-            weight = answer.get("weight", 1)
-
-            # Determine if answer is correct, incorrect, or partial
-            if points == 0:
-                status_class = "incorrect"
-                status_text = "✗ Errato"
-            elif points >= weight:
-                status_class = "correct"
-                status_text = "✓ Corretto"
-            else:
-                status_class = "partial"
-                status_text = "◐ Parziale"
-
-            # Format answers (handle lists for multiple choice)
-            if isinstance(student_ans, list):
-                student_ans_str = (
-                    "<ul>" + "".join(f"<li>{ans}</li>" for ans in student_ans) + "</ul>"
-                )
-            else:
-                student_ans_str = str(student_ans)
-
-            if isinstance(correct_ans, list):
-                correct_ans_str = (
-                    "<ul>" + "".join(f"<li>{ans}</li>" for ans in correct_ans) + "</ul>"
-                )
-            else:
-                correct_ans_str = str(correct_ans)
-
-            # Add LLM feedback/verdict only if explicitly allowed (admin view)
-            admin_feedback_html = ""
-            if show_admin_feedback:
-                llm_fb = answer.get("llm_feedback")
-                llm_vd = answer.get("llm_verdict")
-                if llm_fb or llm_vd:
-                    admin_feedback_html = f"<p><em>Feedback (teacher only):</em> {llm_vd or ''} - {llm_fb or ''}</p>"
-
-            html += f"""
-        <div class="question">
-            <h3>Domanda {idx}</h3>
-            <p><strong>{q_text}</strong></p>
-
-            <div class="answer">
-                <p><strong>La Tua Risposta:</strong></p>
-                {student_ans_str}
-            </div>
-
-            <div class="answer">
-                <p><strong>Risposta Corretta:</strong></p>
-                {correct_ans_str}
-            </div>
-
-            <p class="{status_class}">
-                {status_text} - Punteggio: {points}/{weight} punti
-            </p>
-        </div>
-            """
-    else:
-        html += """
-        <p><em>I risultati dettagliati domanda per domanda non sono stati inclusi in questa email.</em></p>
-        """
-
-    html += """
-        <div class="footer">
-            <p>Questo è un messaggio automatico. Si prega di non rispondere a questa email.</p>
-        </div>
-    </body>
-    </html>
-    """
-
-    return html
+        creds.refresh(Request())   # fails here, once, when delegation is missing
+    except RefreshError as exc:
+        raise EmailNotAvailable(
+            'EMAIL_NOT_AUTHORIZED',
+            "L'invio dalla tua casella non è autorizzato: l'amministratore di Google Workspace "
+            "deve abilitare per l'account di servizio di QuizParty l'ambito "
+            "https://www.googleapis.com/auth/gmail.send (delega a livello di dominio).",
+        ) from exc
+    return build('gmail', 'v1', credentials=creds, cache_discovery=False)
 
 
-def send_quiz_result_email(
-    student_email: str,
-    submission: dict,
-    custom_subject: Optional[str] = None,
-    include_details: bool = True,
-    show_admin_feedback: bool = False,
-) -> tuple[bool, str]:
-    """
-    Send quiz results to student via email.
-
-    Args:
-        student_email: Student's email address
-        submission: Score entry dict with quiz results
-        custom_subject: Optional custom email subject. If not provided, generates default subject.
-        include_details: Whether to include detailed question-by-question results. Default: True
-
-    Returns:
-        Tuple of (success: bool, message: str)
-    """
-    print(f"[EMAIL] Starting to send email to: {student_email}")
-    print(f"[EMAIL] Include details: {include_details}")
-
-    # Validate configuration
-    if not EMAIL_SENDER or not EMAIL_PASSWORD:
-        print("[EMAIL] Error: Email service not configured")
-        return (
-            False,
-            "Email service not configured. Please set EMAIL_SENDER and EMAIL_PASSWORD in .env",
-        )
-
-    print(f"[EMAIL] Using SMTP server: {SMTP_SERVER}:{SMTP_PORT}")
-    print(f"[EMAIL] Sender: {EMAIL_SENDER}")
-
-    # Validate recipient email
-    if not is_valid_email(student_email):
-        print(f"[EMAIL] Invalid email format: {student_email}")
-        return False, f"Invalid email address: {student_email}"
-
-    try:
-        # Create message
-        msg = MIMEMultipart("alternative")
-        msg["From"] = EMAIL_SENDER
-        msg["To"] = student_email
-
-        # Use custom subject if provided, otherwise generate default
-        if custom_subject:
-            msg["Subject"] = custom_subject
-        else:
-            msg["Subject"] = f"Quiz Results - Score: {submission.get('percent', 0)}%"
-
-        print(f"[EMAIL] Message created with subject: {msg['Subject']}")
-
-        # Generate HTML content with or without details
-        html_content = format_quiz_results_html(
-            submission, include_details, msg["Subject"], show_admin_feedback
-        )
-        html_part = MIMEText(html_content, "html")
-        msg.attach(html_part)
-
-        print(f"[EMAIL] HTML content generated, length: {len(html_content)} chars")
-
-        # Connect to SMTP server and send
-        print(f"[EMAIL] Connecting to SMTP server...")
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            print(f"[EMAIL] Starting TLS...")
-            server.starttls()  # Enable TLS encryption
-            print(f"[EMAIL] Logging in as {EMAIL_SENDER}...")
-            server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-            print(f"[EMAIL] Sending message...")
-            server.send_message(msg)
-            print(f"[EMAIL] Message sent successfully!")
-
-        return True, f"Email sent successfully to {student_email}"
-
-    except smtplib.SMTPAuthenticationError as e:
-        print(f"[EMAIL] Authentication error: {e}")
-        return (
-            False,
-            "Email authentication failed. Check EMAIL_SENDER and EMAIL_PASSWORD",
-        )
-    except smtplib.SMTPException as e:
-        print(f"[EMAIL] SMTP error: {e}")
-        return False, f"SMTP error: {str(e)}"
-    except Exception as e:
-        print(f"[EMAIL] Unexpected error: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return False, f"Error sending email: {str(e)}"
-
-
-def send_result_to_student(
-    student_email: str,
-    student_name: str,
-    quiz_title: str,
-    score: float,
-    max_score: float,
-    percent: float,
-    answers: list[dict],
-    teacher_email: str = "",
-    custom_subject: Optional[str] = None,
-    include_details: bool = True,
-    show_admin_feedback: bool = False,
-) -> tuple[bool, str]:
-    """
-    Send quiz result to one student.
-
-    The From: header uses teacher_email (the logged-in teacher).
-    EMAIL_SENDER is used only for SMTP authentication.
-    If SMTP auth and teacher_email differ, Gmail requires domain-wide
-    'Send mail as' delegation on the authenticated account.
-    """
-    submission = {
-        "student": student_name or student_email,
-        "raw_points": score,
-        "max_points": max_score,
-        "percent": percent,
-        "answers": answers,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-    subject = custom_subject or f"{quiz_title} — Punteggio: {percent}%"
-
-    if not EMAIL_SENDER or not EMAIL_PASSWORD:
-        return False, "Email service not configured."
-    if not is_valid_email(student_email):
-        return False, f"Invalid email: {student_email}"
-
-    try:
-        msg = MIMEMultipart("alternative")
-        # From = the logged-in teacher; SMTP auth = EMAIL_SENDER
-        sender = teacher_email or EMAIL_SENDER
-        msg["From"] = sender
-        msg["To"] = student_email
-        msg["Reply-To"] = sender
-        msg["Subject"] = subject
-
-        html_content = format_quiz_results_html(
-            submission,
-            include_details=include_details,
-            subject=subject,
-            show_admin_feedback=show_admin_feedback,
-        )
-        msg.attach(MIMEText(html_content, "html"))
-
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()
-            server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-            server.send_message(msg)
-
-        return True, f"Email sent to {student_email}"
-
-    except smtplib.SMTPAuthenticationError:
-        return False, "SMTP auth failed. Check EMAIL_SENDER / EMAIL_PASSWORD."
-    except smtplib.SMTPException as e:
-        return False, f"SMTP error: {e}"
-    except Exception as e:
-        return False, f"Error: {e}"
-
-
-def send_bulk_quiz_results(
-    submissions: list[dict],
-    custom_subject: Optional[str] = None,
-    include_details: bool = True,
-) -> dict:
-    """
-    Send quiz results to multiple students.
-
-    Args:
-        submissions: List of score entry dicts
-        custom_subject: Optional custom email subject for all emails
-        include_details: Whether to include detailed question-by-question results. Default: True
-
-    Returns:
-        Dict with success_count, failed_count, and errors list
-    """
-    results = {"success_count": 0, "failed_count": 0, "errors": []}
-
-    for submission in submissions:
-        student_email = submission.get("student", "")
-
-        if not student_email:
-            results["failed_count"] += 1
-            results["errors"].append("Missing student email")
-            continue
-
-        success, message = send_quiz_result_email(
-            student_email, submission, custom_subject, include_details
-        )
-
-        if success:
-            results["success_count"] += 1
-        else:
-            results["failed_count"] += 1
-            results["errors"].append(f"{student_email}: {message}")
-
-    return results
+def send(service, msg: EmailMessage) -> None:
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    service.users().messages().send(userId='me', body={'raw': raw}).execute()

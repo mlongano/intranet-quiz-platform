@@ -143,6 +143,10 @@ export interface SessionMeta {
   /** GET /sessions/<id> only: when the results were published to students. */
   results_published_at?: string | null;
   results_show_correct?: boolean;
+  /** Open questions' acceptable answer shown to students. */
+  results_show_acceptable?: boolean;
+  results_emailed_at?: string | null;
+  results_emailed_count?: number | null;
   /** Data retention: the students' data of this session is deleted after this day (ISO date). */
   data_kept_until?: string | null;
 }
@@ -320,14 +324,6 @@ export interface SubmitResponse {
   grading_complete: boolean;
   pending_open_count: number;
   pending_open_weight: number;
-}
-
-// ── email ────────────────────────────────────────────────────────────────────
-
-export interface ResultEmailOptions {
-  subject?: string;
-  include_details: boolean;
-  include_feedback: boolean;
 }
 
 // ── llm ──────────────────────────────────────────────────────────────────────

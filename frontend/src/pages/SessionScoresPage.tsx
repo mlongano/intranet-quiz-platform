@@ -8,12 +8,11 @@ import ScoreRow from '../components/scores/ScoreRow';
 import ScoreStatsPanel from '../components/scores/ScoreStatsPanel';
 import ScoreHistoryPanel from '../components/scores/ScoreHistoryPanel';
 import RegradePanel from '../components/scores/RegradePanel';
-import EmailResultsDialog from '../components/scores/EmailResultsDialog';
 import QuestionBreakdownView from '../components/scores/QuestionBreakdownView';
 import { buildQuestionSummary } from '../lib/questionSummary';
 import {
-  getSessionScores, recalculateScores, archiveSessionScores, sendAllResultEmails,
-  getSession, publishResults, unpublishResults, type SessionMeta, type ScoreEntry, type ScoreOverride, type ResultEmailOptions, reviewScores,
+  getSessionScores, recalculateScores, archiveSessionScores, emailResultsLink,
+  getSession, publishResults, unpublishResults, type SessionMeta, type ScoreEntry, type ScoreOverride, reviewScores,
   getLlmInfo, getLatestSessionLlmJob,
   getScoreHistory, revertChangeSet, type LlmJobStatus,
 } from '../api';
@@ -67,10 +66,11 @@ function LlmJobBanner({ job }: { job: LlmJobStatus }) {
 function PublishPanel({ session, pendingAnswers }: { session: SessionMeta; pendingAnswers: number }) {
   const queryClient = useQueryClient();
   const [showCorrect, setShowCorrect] = useState(false);
+  const [showAcceptable, setShowAcceptable] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const published = !!session.results_published_at;
   const done = () => { setError(null); queryClient.invalidateQueries({ queryKey: ['session', session.id] }); };
-  const publish = useMutation({ mutationFn: () => publishResults(session.id, showCorrect), onSuccess: done, onError: (e: Error) => setError(e.message) });
+  const publish = useMutation({ mutationFn: () => publishResults(session.id, showCorrect, showAcceptable), onSuccess: done, onError: (e: Error) => setError(e.message) });
   const withdraw = useMutation({ mutationFn: () => unpublishResults(session.id), onSuccess: done, onError: (e: Error) => setError(e.message) });
   const busy = publish.isPending || withdraw.isPending;
 
@@ -82,10 +82,14 @@ function PublishPanel({ session, pendingAnswers }: { session: SessionMeta; pendi
           <p className="text-xs text-on-surface-variant mt-0.5">
             {published
               ? <>Pubblicati il {new Date(session.results_published_at!).toLocaleString('it-IT')}
-                  {session.results_show_correct ? ', con le risposte corrette delle domande chiuse' : ', senza le risposte corrette'}.
-                  {' '}Gli studenti li vedono nella pagina <span className="font-mono">/risultati</span>; le tue modifiche successive si vedono subito.</>
+                  {session.results_show_correct ? ', con le risposte corrette delle domande chiuse' : ', senza le risposte corrette'}
+                  {session.results_show_acceptable ? ' e con la risposta accettabile delle aperte' : ''}.
+                  {' '}Gli studenti li vedono nella pagina <span className="font-mono">/risultati</span>; le tue modifiche successive si vedono subito.
+                  {session.results_emailed_at
+                    ? ` Link inviato via email il ${new Date(session.results_emailed_at).toLocaleString('it-IT')} a ${session.results_emailed_count} studenti.`
+                    : ' Con «Invia email» mandi a ciascuno il link.'}</>
               : session.status === 'closed'
-                ? 'Non ancora pubblicati: gli studenti vedono solo di aver consegnato. Rivedi punteggi e motivazioni, poi pubblica. Per le domande aperte lo studente vede la motivazione, mai la risposta accettabile.'
+                ? 'Non ancora pubblicati: gli studenti vedono solo di aver consegnato. Rivedi punteggi e motivazioni, poi pubblica. Per le domande aperte lo studente vede domanda, risposta, punti e motivazione.'
                 : 'Si possono pubblicare dopo aver chiuso la sessione.'}
           </p>
           {!published && session.status === 'closed' && pendingAnswers > 0 && (
@@ -106,6 +110,11 @@ function PublishPanel({ session, pendingAnswers }: { session: SessionMeta; pendi
               <label className="flex items-center gap-2 text-xs text-on-surface-variant cursor-pointer">
                 <input type="checkbox" checked={showCorrect} onChange={e => setShowCorrect(e.target.checked)} />
                 mostra le risposte corrette delle domande chiuse
+              </label>
+              <label className="flex items-center gap-2 text-xs text-on-surface-variant cursor-pointer"
+                title="Il testo della risposta accettabile com'è scritto nel quiz: togli eventuali note per la correzione prima di mostrarlo.">
+                <input type="checkbox" checked={showAcceptable} onChange={e => setShowAcceptable(e.target.checked)} />
+                mostra la risposta accettabile delle aperte
               </label>
               <button onClick={() => publish.mutate()} disabled={busy}
                 className="px-3 py-1.5 text-sm bg-secondary text-on-secondary font-medium rounded-lg hover:bg-secondary/90 disabled:opacity-40">
@@ -128,7 +137,6 @@ function SessionScoresPage() {
   const [reviewScore, setReviewScore] = useState<ScoreEntry | null>(null);
   const [viewBy, setViewBy] = useState<'student' | 'question'>('student');
   const [savingStudent, setSavingStudent] = useState<string | null>(null);
-  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [queuedJob, setQueuedJob] = useState<LlmJobStatus | null>(null);
 
   // ── server state ────────────────────────────────────────────────────────────
@@ -181,9 +189,10 @@ function SessionScoresPage() {
   });
 
   const emailMutation = useMutation({
-    mutationFn: (options: ResultEmailOptions) => sendAllResultEmails(id, options),
-    onSuccess: () => setEmailDialogOpen(false),
+    mutationFn: () => emailResultsLink(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session', id] }),
   });
+  const published = !!session?.results_published_at;
 
   const revertMutation = useMutation({
     mutationFn: (changeSetId: string) => revertChangeSet(id, changeSetId),
@@ -287,12 +296,15 @@ function SessionScoresPage() {
             Ricalcola
           </button>
           <button
-            onClick={() => setEmailDialogOpen(true)}
-            disabled={emailMutation.isPending || !scores?.length}
+            onClick={() => askConfirm(
+              `Mandare a ${scores?.length ?? 0} studenti, dal tuo indirizzo Gmail, il link ai loro risultati? L'email contiene solo il titolo e il link: punti e risposte si vedono sulla pagina, dopo l'accesso con l'account della scuola.`,
+              () => emailMutation.mutate(), { confirmLabel: 'Invia' })}
+            disabled={emailMutation.isPending || !scores?.length || !published}
+            title={published ? 'Manda a ogni studente il link ai suoi risultati' : 'Pubblica prima i risultati'}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-outline-variant/40 text-on-surface rounded-lg hover:bg-surface-container-high disabled:opacity-40 transition-colors"
           >
             <Mail size={14} />
-            Invia Email
+            {emailMutation.isPending ? 'Invio...' : 'Invia email'}
           </button>
           <button
             onClick={() => askConfirm('Archiviare i punteggi di questa sessione?', () => archiveMutation.mutate())}
@@ -316,6 +328,20 @@ function SessionScoresPage() {
         {stats && <ScoreStatsPanel stats={stats} />}
 
         {session && <PublishPanel session={session} pendingAnswers={pendingAnswers} />}
+
+        {emailMutation.isError && (
+          <p className="mb-4 rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error">{(emailMutation.error as Error).message}</p>
+        )}
+        {emailMutation.data && (
+          <div className="mb-4 rounded-lg border border-tertiary/30 bg-tertiary/10 p-3 text-sm text-tertiary">
+            Link inviato a {emailMutation.data.sent} {emailMutation.data.sent === 1 ? 'studente' : 'studenti'}.
+            {emailMutation.data.errors.length > 0 && (
+              <ul className="mt-1 list-disc pl-5 text-error">
+                {emailMutation.data.errors.map(e => <li key={e.email}>{e.email}: {e.error}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
 
         {session?.data_kept_until && (
           <p className="mb-4 text-xs text-on-surface-variant">
@@ -430,18 +456,6 @@ function SessionScoresPage() {
       )}
       {confirmModal}
     </TeacherLayout>
-
-    {emailDialogOpen && (
-      <EmailResultsDialog
-        defaultSubject={session?.title ? `${session.title} - risultati` : 'Risultati del quiz'}
-        recipientCount={scores?.length ?? 0}
-        sending={emailMutation.isPending}
-        error={emailMutation.isError ? String((emailMutation.error as Error).message) : null}
-        sendErrors={emailMutation.data?.errors ?? []}
-        onSend={options => emailMutation.mutate(options)}
-        onClose={() => setEmailDialogOpen(false)}
-      />
-    )}
 
     {reviewScore && (
       <SubmissionDetailView

@@ -173,7 +173,7 @@ The design system is defined as CSS custom properties (`@theme`) in `frontend/sr
 │
 ├── images/                 # Active quiz images (served as static files)
 │
-├── email_service.py        # SMTP email composition + sending
+├── email_service.py        # results-link e-mail via the teacher's Gmail (API)
 ├── llm_evaluator.py        # Optional LLM grading for open-ended questions
 ├── git_sync.py             # Git-based cloud sync for banks/
 │
@@ -601,11 +601,11 @@ Keyword matching remains the default and fallback — LLM grading is additive.
 
 ### Email (`email_service.py`)
 
-Configured via SMTP environment variables. Sends HTML-formatted emails in Italian containing:
-- Student name, quiz title, score, percentage, submission date
-- Optional question-by-question breakdown
-
-Gmail requires an App Password (2FA must be enabled). Other SMTP providers are supported via `SMTP_SERVER` / `SMTP_PORT`.
+Sends each student who handed in the link to their results page, from the
+teacher's own Gmail (Gmail API, Workspace service account with domain-wide
+delegation for `gmail.send`). The message holds only the quiz title and the
+link; scores and answers are on the page, behind the school Google login.
+Sent on demand («Invia email»), only once the results are published.
 
 ---
 

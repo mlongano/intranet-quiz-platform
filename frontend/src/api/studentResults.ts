@@ -23,6 +23,8 @@ export interface MyResultQuestion {
   pending: boolean;
   motivation: string | null;
   correct_answer?: string | string[] | null;   // only if the teacher chose to show it
+  /** Open questions: the acceptable answer, only if the teacher chose to show it. */
+  acceptable_answer?: string | null;
 }
 
 export interface MyResultDetail {

@@ -460,7 +460,15 @@ POST/:id/score-history/:change_set_id/revert (400 on the submission baseline,
 
 **Student list snapshots:** GET (list), POST, GET/:id, DELETE/:id
 
-**Misc:** GET /llm-info, POST /email/send-result, POST /sessions/:id/email/send-all
+**Misc:** GET /llm-info.
+
+**Results e-mail:** POST /sessions/:id/results/email — published sessions only
+(409 `RESULTS_NOT_PUBLISHED`); each student who handed in and is still active gets
+«Risultati: <title>» with the link to `/risultati/<id>`, nothing more, sent from the
+teacher's Gmail through the Gmail API (service account, domain-wide delegation for
+`gmail.send`; 503 `EMAIL_NOT_AUTHORIZED` until a Workspace admin grants it).
+Publishing takes `show_correct` (closed questions) and `show_acceptable` (open
+questions' acceptable answer, labelled as such, never as correct).
 
 ### Super-admin (`/api/super-admin/`)
 

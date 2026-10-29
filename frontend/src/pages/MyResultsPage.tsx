@@ -132,6 +132,12 @@ function QuestionCard({ q, n }: { q: MyResultQuestion; n: number }) {
           <p className="text-xs font-medium text-on-surface-variant mb-1">La tua risposta</p>
           <div className="rounded-lg border border-outline-variant/25 bg-surface-container-low px-3 py-2 text-sm"><AnswerText value={q.your_answer} /></div>
         </div>
+        {q.acceptable_answer && (
+          <div>
+            <p className="text-xs font-medium text-on-surface-variant mb-1">Risposta accettabile</p>
+            <div className="rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-2 text-sm"><AnswerText value={q.acceptable_answer} /></div>
+          </div>
+        )}
         {'correct_answer' in q && (
           <div>
             <p className="text-xs font-medium text-on-surface-variant mb-1">

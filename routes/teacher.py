@@ -33,6 +33,7 @@ Sessions:
     POST   /api/teacher/sessions
     PATCH  /api/teacher/sessions/<id>           (title, quiz, classes, schedule)
     POST   /api/teacher/sessions/<id>/results/publish   (and /unpublish)
+    POST   /api/teacher/sessions/<id>/results/email     (the link, from the teacher's Gmail)
     POST   /api/teacher/sessions/<id>/activate
     POST   /api/teacher/sessions/<id>/close
     POST   /api/teacher/sessions/<id>/regen-code
@@ -60,13 +61,12 @@ Student list snapshots:
 
 Misc:
     GET    /api/teacher/llm-info
-    POST   /api/teacher/email/send-result
-    POST   /api/teacher/sessions/<id>/email/send-all
 """
 
 from __future__ import annotations
 
 import json
+import os
 
 from flask import Blueprint, Response, g, jsonify, request
 from werkzeug.exceptions import BadRequest, Conflict, Forbidden, NotFound
@@ -444,7 +444,59 @@ def publish_results(session_id: int):
     from services import student_results
     data = request.get_json(silent=True) or {}
     return jsonify(student_results.set_publication(
-        session_id, _teacher_id(), published=True, show_correct=bool(data.get('show_correct')))), 200
+        session_id, _teacher_id(), published=True, show_correct=bool(data.get('show_correct')),
+        show_acceptable=bool(data.get('show_acceptable')))), 200
+
+
+def _public_base_url() -> str:
+    """The address students open: PUBLIC_BASE_URL, else what the proxy says."""
+    configured = os.environ.get('PUBLIC_BASE_URL', '').strip().rstrip('/')
+    if configured:
+        return configured
+    scheme = request.headers.get('X-Forwarded-Proto') or request.scheme
+    return f"{scheme}://{request.host}"
+
+
+@teacher_bp.post('/sessions/<int:session_id>/results/email')
+@require_teacher
+def email_results_link(session_id: int):
+    """Send each student who handed in the link to their results, from the teacher's Gmail.
+
+    Only once published: the link would otherwise open onto nothing. The
+    message holds no score or answer (email_service.results_message).
+    """
+    import email_service
+    with db.get_conn() as conn:
+        ctx = conn.execute(Q.RESULTS_EMAIL_CONTEXT, (session_id, _teacher_id())).fetchone()
+        if not ctx:
+            raise NotFound(description="Session not found.")
+        title, published_at, teacher_email, teacher_name = ctx
+        if not published_at:
+            raise qs_service.EditRefused('RESULTS_NOT_PUBLISHED',
+                                         "Pubblica i risultati prima di mandare il link.")
+        recipients = [r[0] for r in conn.execute(Q.RESULTS_EMAIL_RECIPIENTS, (session_id,)).fetchall()]
+
+    try:
+        service = email_service.gmail_service(teacher_email)
+    except email_service.EmailNotAvailable as exc:
+        return jsonify({'error': str(exc), 'code': exc.code}), 503
+
+    link = f"{_public_base_url()}/risultati/{session_id}"
+    sent, errors = 0, []
+    for student_email in recipients:
+        try:
+            email_service.send(service, email_service.results_message(
+                teacher_name=teacher_name, teacher_email=teacher_email,
+                student_email=student_email, title=title, link=link))
+            sent += 1
+        except Exception as exc:   # one bad address must not stop the class
+            errors.append({'email': student_email, 'error': str(exc)[:300]})
+
+    if sent:
+        with db.get_conn() as conn:
+            conn.execute(Q.MARK_RESULTS_EMAILED, (sent, session_id))
+            conn.commit()
+    return jsonify({'sent': sent, 'errors': errors, 'link': link}), 200
 
 
 @teacher_bp.post('/sessions/<int:session_id>/results/unpublish')
@@ -988,100 +1040,3 @@ def llm_info():
     from services.llm_config import public_llm_info
 
     return jsonify(public_llm_info(_teacher_id())), 200
-
-
-@teacher_bp.post('/email/send-result')
-@require_teacher
-def send_result_email():
-    data = request.get_json(silent=True) or {}
-    score_id = data.get('score_id')
-    if not score_id:
-        return jsonify({'error': 'MISSING_SCORE_ID'}), 400
-    custom_subject = (data.get('subject') or '').strip() or None
-    include_details = bool(data.get('include_details', True))
-    include_feedback = bool(data.get('include_feedback', False))
-    teacher_id = _teacher_id()
-
-    with db.get_conn() as conn:
-        row = conn.execute(
-            """SELECT se.raw_points, se.max_points, se.percent, se.answers,
-                      se.submitted_at, s.email, s.display_name, qs.title
-               FROM score_entries se
-               JOIN students s ON s.id = se.student_id
-               JOIN quiz_sessions qs ON qs.id = se.session_id
-               WHERE se.id = %s AND se.teacher_id = %s""",
-            (score_id, teacher_id),
-        ).fetchone()
-    if not row:
-        return jsonify({'error': 'NOT_FOUND'}), 404
-
-    try:
-        from email_service import send_result_to_student  # type: ignore[import]
-        teacher_email = g.current_user.get('email', '')
-        answers = row[3] if isinstance(row[3], list) else json.loads(row[3] or '[]')
-        ok, msg = send_result_to_student(
-            student_email=row[5],
-            student_name=row[6],
-            quiz_title=row[7],
-            score=float(row[0]),
-            max_score=float(row[1]),
-            percent=float(row[2]),
-            answers=answers,
-            teacher_email=teacher_email,
-            custom_subject=custom_subject,
-            include_details=include_details,
-            show_admin_feedback=include_feedback,
-        )
-        if not ok:
-            return jsonify({'error': msg}), 500
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-    return jsonify({'ok': True, 'sent_to': row[5]}), 200
-
-
-@teacher_bp.post('/sessions/<int:session_id>/email/send-all')
-@require_teacher
-def send_all_emails(session_id: int):
-    data = request.get_json(silent=True) or {}
-    custom_subject = (data.get('subject') or '').strip() or None
-    include_details = bool(data.get('include_details', True))
-    include_feedback = bool(data.get('include_feedback', False))
-    teacher_id = _teacher_id()
-    teacher_email = g.current_user.get('email', '')
-    sent = 0
-    errors = []
-
-    with db.get_conn() as conn:
-        _assert_session_owner(conn, session_id, teacher_id)
-        sess_row = conn.execute(
-            "SELECT title FROM quiz_sessions WHERE id = %s", (session_id,)
-        ).fetchone()
-        quiz_title = sess_row[0] if sess_row else ''
-        score_rows = conn.execute(Q.LIST_SCORES_FOR_SESSION, (session_id,)).fetchall()
-
-    for r in score_rows:
-        try:
-            from email_service import send_result_to_student  # type: ignore[import]
-            answers = r[4] if isinstance(r[4], list) else json.loads(r[4] or '[]')
-            ok, msg = send_result_to_student(
-                student_email=r[6],
-                student_name=r[7],
-                quiz_title=quiz_title,
-                score=float(r[1]),
-                max_score=float(r[2]),
-                percent=float(r[3]),
-                answers=answers,
-                teacher_email=teacher_email,
-                custom_subject=custom_subject,
-                include_details=include_details,
-                show_admin_feedback=include_feedback,
-            )
-            if ok:
-                sent += 1
-            else:
-                errors.append({'email': r[6], 'error': msg})
-        except Exception as e:
-            errors.append({'email': r[6], 'error': str(e)})
-
-    return jsonify({'sent': sent, 'errors': errors}), 200

@@ -536,6 +536,25 @@ entries, Snapshots, and images are local.
 Email delivery and LLM evaluation still require whatever external services are
 configured in `.env`.
 
+## Results e-mail (Gmail API)
+
+«Invia email» on a published session sends each student the link to their
+results, from the teacher's own address. It uses the Gmail API through the
+Workspace service account (`GOOGLE_SA_KEY_PATH`) impersonating the teacher, so
+the server needs no SMTP and no mail password. One-time setup by a Workspace
+super-admin: Security › API controls › Domain-wide delegation › the service
+account's client ID › add the scope `https://www.googleapis.com/auth/gmail.send`
+(next to the Directory and Classroom scopes already there). Until then the
+button answers 503 `EMAIL_NOT_AUTHORIZED` with that instruction. Check without
+sending anything:
+
+```bash
+$DC exec app python -c "import email_service; email_service.gmail_service('teacher@school.it'); print('ok')"
+```
+
+`PUBLIC_BASE_URL` sets the address in the link; when blank it comes from the
+proxy's `Host` and `X-Forwarded-Proto`.
+
 ## Google Workspace Sync
 
 The sync needs a Google service-account JSON key with domain-wide delegation.

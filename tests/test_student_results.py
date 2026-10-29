@@ -197,3 +197,15 @@ def test_the_session_reports_its_publication(world):
     _publish(world, show_correct=True)
     s = world['client'].get(f"/api/teacher/sessions/{world['session_id']}", headers=world['teacher_auth']).get_json()
     assert s['results_published_at'] and s['results_show_correct'] is True
+
+
+def test_acceptable_answer_only_when_chosen_and_never_as_correct(world):
+    world['client'].post(f"/api/teacher/sessions/{world['session_id']}/results/publish",
+                         json={'show_correct': True, 'show_acceptable': True}, headers=world['teacher_auth'])
+    q = {x['question_id']: x for x in world['client'].get(
+        f"/api/student/results/{world['session_id']}", headers=_student(world)).get_json()['questions']}
+    assert q['q3']['acceptable_answer'] == 'Aggiorna solo i campi inviati.'
+    assert 'correct_answer' not in q['q3']
+    assert q['q3']['motivation']                                        # still there
+    s = world['client'].get(f"/api/teacher/sessions/{world['session_id']}", headers=world['teacher_auth']).get_json()
+    assert s['results_show_acceptable'] is True

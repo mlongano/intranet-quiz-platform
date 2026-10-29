@@ -21,8 +21,14 @@ from utils import ensure_list
 
 # ── publication (teacher) ────────────────────────────────────────────────────
 
-def set_publication(session_id: int, teacher_id: int, *, published: bool, show_correct: bool = False) -> dict:
-    """Publish or withdraw a closed session's results. Owner only, under lock."""
+def set_publication(session_id: int, teacher_id: int, *, published: bool, show_correct: bool = False,
+                    show_acceptable: bool = False) -> dict:
+    """Publish or withdraw a closed session's results. Owner only, under lock.
+
+    show_correct: closed questions' correct answers; show_acceptable: open
+    questions' acceptable answer, as written in the quiz (it may hold notes
+    meant for grading, hence a choice of its own).
+    """
     with db.get_conn() as conn:
         row = conn.execute(Q.LOCK_SESSION_STATUS, (session_id, teacher_id)).fetchone()
         if not row:
@@ -34,10 +40,12 @@ def set_publication(session_id: int, teacher_id: int, *, published: bool, show_c
         conn.execute(Q.SET_RESULTS_PUBLICATION, {
             'id': session_id, 'teacher_id': teacher_id,
             'published_at': published_at, 'show_correct': bool(show_correct) if published else False,
+            'show_acceptable': bool(show_acceptable) if published else False,
         })
         conn.commit()
     return {'results_published_at': published_at.isoformat() if published_at else None,
-            'results_show_correct': bool(show_correct) if published else False}
+            'results_show_correct': bool(show_correct) if published else False,
+            'results_show_acceptable': bool(show_acceptable) if published else False}
 
 
 # ── the student's page ───────────────────────────────────────────────────────
@@ -65,7 +73,7 @@ def detail_for_student(student_id: int, session_id: int) -> dict:
         row = conn.execute(Q.STUDENT_RESULT_DETAIL, (session_id, student_id)).fetchone()
     if not row:
         raise NotFound(description="Risultati non disponibili.")
-    title, teacher, submitted_at, show_correct, raw, maximum, percent, answers = row
+    title, teacher, submitted_at, show_correct, raw, maximum, percent, answers, show_acceptable = row
     return {
         'session_id': session_id,
         'title': title,
@@ -74,7 +82,7 @@ def detail_for_student(student_id: int, session_id: int) -> dict:
         'raw_points': float(raw),
         'max_points': float(maximum),
         'percent': float(percent),
-        'questions': [_question_view(a, show_correct) for a in ensure_list(answers)],
+        'questions': [_question_view(a, show_correct, show_acceptable) for a in ensure_list(answers)],
     }
 
 
@@ -82,7 +90,7 @@ def _option_text(option: Any) -> str:
     return option.get('text', '') if isinstance(option, dict) else str(option)
 
 
-def _question_view(answer: dict, show_correct: bool) -> dict:
+def _question_view(answer: dict, show_correct: bool, show_acceptable: bool = False) -> dict:
     q = answer.get('question_snapshot') or {}
     q_type = answer.get('type') or q.get('type')
     options = q.get('options') or []
@@ -120,9 +128,12 @@ def _question_view(answer: dict, show_correct: bool) -> dict:
         'pending': pending,
         'motivation': motivation,
     }
-    # Only closed questions have a correct answer to show. An open question's
-    # acceptable answer is the grader's rubric (weights, partial-credit notes):
-    # the student reads the motivation instead, never the rubric.
+    # Only closed questions have a correct answer. An open question's acceptable
+    # answer is written for grading (it may hold weights and partial-credit
+    # notes): the student gets the motivation, and the acceptable answer only
+    # when the teacher chose to show it — never labelled "correct".
+    if show_acceptable and q_type == 'open' and q.get('acceptable'):
+        view['acceptable_answer'] = q.get('acceptable')
     if show_correct:
         correct = q.get('correct')
         if q_type == 'single' and isinstance(correct, int) and 0 <= correct < len(options):

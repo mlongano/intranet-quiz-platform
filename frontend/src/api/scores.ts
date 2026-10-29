@@ -5,7 +5,6 @@ import type {
   RegradePreview,
   TeacherLlmSettings,
   LlmJobStatus,
-  ResultEmailOptions,
   ScoreChangeSet,
   ScoreEntry,
   ScoreOverride,
@@ -68,25 +67,6 @@ export async function archiveSessionScores(
   return apiFetch<{ archive_id: number }>(`/teacher/sessions/${sessionId}/archive`, {
     method: 'POST',
     body: JSON.stringify({ title, notes }),
-  });
-}
-
-// ── result emails ────────────────────────────────────────────────────────────
-
-export async function sendResultEmail(scoreId: number, options?: ResultEmailOptions): Promise<{ ok: boolean }> {
-  return apiFetch<{ ok: boolean }>('/teacher/email/send-result', {
-    method: 'POST',
-    body: JSON.stringify({ score_id: scoreId, ...options }),
-  });
-}
-
-export async function sendAllResultEmails(
-  sessionId: number,
-  options: ResultEmailOptions,
-): Promise<{ sent: number; errors: Array<{ email: string; error: string }> }> {
-  return apiFetch<{ sent: number; errors: Array<{ email: string; error: string }> }>(`/teacher/sessions/${sessionId}/email/send-all`, {
-    method: 'POST',
-    body: JSON.stringify(options),
   });
 }
 
