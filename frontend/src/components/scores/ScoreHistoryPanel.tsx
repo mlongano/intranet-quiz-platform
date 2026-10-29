@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { type ScoreChangeSet, type SessionEvent } from '../../api';
 
 const REASON_LABELS: Record<string, string> = {
@@ -37,18 +38,23 @@ interface Props {
   revertError: string | null;
 }
 
+/** Entries shown before «Mostra tutte»: the latest are the ones acted upon. */
+const COLLAPSED_COUNT = 5;
+
 /** List of score change sets with one-click revert (Cronologia modifiche). */
 function ScoreHistoryPanel({ history, events = [], onRevert, reverting, revertSuccess, revertError }: Props) {
+  const [expanded, setExpanded] = useState(false);
   if (history.length === 0 && events.length === 0) return null;
   const timeline = [
     ...history.map(cs => ({ at: cs.created_at, cs, ev: null as SessionEvent | null })),
     ...events.map(ev => ({ at: ev.created_at, cs: null as ScoreChangeSet | null, ev })),
   ].sort((a, b) => b.at.localeCompare(a.at));
+  const hidden = expanded ? 0 : Math.max(0, timeline.length - COLLAPSED_COUNT);
   return (
-    <div className="mb-6 bg-surface-container border border-outline-variant/30 rounded-xl p-4">
+    <div className="mt-6 bg-surface-container border border-outline-variant/30 rounded-xl p-4">
       <h3 className="text-sm font-semibold text-on-surface mb-3">Cronologia modifiche</h3>
       <div className="space-y-2">
-        {timeline.map(({ cs, ev }) => {
+        {timeline.slice(0, timeline.length - hidden).map(({ cs, ev }) => {
           if (ev) {
             const { title, detail } = eventText(ev);
             return (
@@ -99,6 +105,14 @@ function ScoreHistoryPanel({ history, events = [], onRevert, reverting, revertSu
           );
         })}
       </div>
+      {timeline.length > COLLAPSED_COUNT && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-3 text-xs font-medium text-on-surface-variant hover:text-secondary transition-colors"
+        >
+          {expanded ? 'Mostra solo le più recenti' : `Mostra tutte (altre ${hidden})`}
+        </button>
+      )}
       {revertSuccess && (
         <p className="mt-2 text-xs text-tertiary">Ripristino completato.</p>
       )}

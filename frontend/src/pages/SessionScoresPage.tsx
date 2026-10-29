@@ -429,15 +429,6 @@ function SessionScoresPage() {
 
       {latestLlmJob && <LlmJobBanner job={latestLlmJob} />}
 
-      <ScoreHistoryPanel
-        history={scoreHistory ?? []}
-        events={sessionEvents ?? []}
-        onRevert={changeSetId => revertMutation.mutate(changeSetId)}
-        reverting={revertMutation.isPending}
-        revertSuccess={revertMutation.isSuccess}
-        revertError={revertMutation.isError ? String((revertMutation.error as Error).message) : null}
-      />
-
       {isLoading && <p className="text-on-surface-variant">Caricamento...</p>}
 
       {viewBy === 'student' ? (
@@ -466,6 +457,15 @@ function SessionScoresPage() {
           )}
         </>
       )}
+
+      <ScoreHistoryPanel
+        history={scoreHistory ?? []}
+        events={sessionEvents ?? []}
+        onRevert={changeSetId => revertMutation.mutate(changeSetId)}
+        reverting={revertMutation.isPending}
+        revertSuccess={revertMutation.isSuccess}
+        revertError={revertMutation.isError ? String((revertMutation.error as Error).message) : null}
+      />
       {confirmModal}
     </TeacherLayout>
 
