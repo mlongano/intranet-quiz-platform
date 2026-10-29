@@ -34,6 +34,7 @@ Sessions:
     PATCH  /api/teacher/sessions/<id>           (title, quiz, classes, schedule)
     POST   /api/teacher/sessions/<id>/results/publish   (and /unpublish)
     POST   /api/teacher/sessions/<id>/results/email     (the link, from the teacher's Gmail)
+    GET    /api/teacher/sessions/<id>/events            (publication, withdrawal, e-mails)
     POST   /api/teacher/sessions/<id>/activate
     POST   /api/teacher/sessions/<id>/close
     POST   /api/teacher/sessions/<id>/regen-code
@@ -492,10 +493,14 @@ def email_results_link(session_id: int):
         except Exception as exc:   # one bad address must not stop the class
             errors.append({'email': student_email, 'error': str(exc)[:300]})
 
-    if sent:
-        with db.get_conn() as conn:
+    from services.student_results import record_event
+    with db.get_conn() as conn:
+        if sent:
             conn.execute(Q.MARK_RESULTS_EMAILED, (sent, session_id))
-            conn.commit()
+        # Who did not get it is worth keeping; who did is the class list.
+        record_event(conn, session_id, _teacher_id(), 'results_emailed',
+                     {'sent': sent, 'failed': [e['email'] for e in errors]})
+        conn.commit()
     return jsonify({'sent': sent, 'errors': errors, 'link': link}), 200
 
 
@@ -728,6 +733,18 @@ def get_score_history(session_id: int):
         'changed_answers': r[7],
         'actor_name': r[8],
     } for r in rows]), 200
+
+
+@teacher_bp.get('/sessions/<int:session_id>/events')
+@require_teacher
+def get_session_events(session_id: int):
+    """Publication, withdrawal and link e-mails: the history beyond scores."""
+    teacher_id = _teacher_id()
+    with db.get_conn() as conn:
+        _assert_session_owner(conn, session_id, teacher_id)
+        rows = conn.execute(Q.LIST_SESSION_EVENTS, (session_id,)).fetchall()
+    return jsonify([{'id': r[0], 'kind': r[1], 'details': r[2], 'created_at': r[3].isoformat(),
+                     'actor_name': r[4]} for r in rows]), 200
 
 
 @teacher_bp.post('/sessions/<int:session_id>/score-history/<change_set_id>/revert')

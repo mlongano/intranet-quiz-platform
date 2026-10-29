@@ -1,4 +1,4 @@
-import { type ScoreChangeSet } from '../../api';
+import { type ScoreChangeSet, type SessionEvent } from '../../api';
 
 const REASON_LABELS: Record<string, string> = {
   submission: 'Consegna',
@@ -9,8 +9,28 @@ const REASON_LABELS: Record<string, string> = {
   revert: 'Ripristino',
 };
 
+function eventText(e: SessionEvent): { title: string; detail: string } {
+  if (e.kind === 'results_emailed') {
+    const sent = e.details.sent ?? 0;
+    const failed = e.details.failed ?? [];
+    return {
+      title: 'Link ai risultati inviato via email',
+      detail: `a ${sent} ${sent === 1 ? 'studente' : 'studenti'}`
+        + (failed.length ? ` · non inviato a ${failed.join(', ')}` : ''),
+    };
+  }
+  if (e.kind === 'results_published') {
+    const extras = [e.details.show_correct && 'risposte corrette delle chiuse',
+      e.details.show_acceptable && 'risposta accettabile delle aperte'].filter(Boolean);
+    return { title: 'Risultati pubblicati', detail: extras.length ? `con ${extras.join(' e ')}` : 'senza risposte corrette' };
+  }
+  return { title: 'Pubblicazione ritirata', detail: e.details.because === 'reopened' ? 'per la riapertura della sessione' : '' };
+}
+
 interface Props {
   history: ScoreChangeSet[];
+  /** Not score changes: shown in the same timeline, never revertible. */
+  events?: SessionEvent[];
   onRevert: (changeSetId: string) => void;
   reverting: boolean;
   revertSuccess: boolean;
@@ -18,13 +38,32 @@ interface Props {
 }
 
 /** List of score change sets with one-click revert (Cronologia modifiche). */
-function ScoreHistoryPanel({ history, onRevert, reverting, revertSuccess, revertError }: Props) {
-  if (history.length === 0) return null;
+function ScoreHistoryPanel({ history, events = [], onRevert, reverting, revertSuccess, revertError }: Props) {
+  if (history.length === 0 && events.length === 0) return null;
+  const timeline = [
+    ...history.map(cs => ({ at: cs.created_at, cs, ev: null as SessionEvent | null })),
+    ...events.map(ev => ({ at: ev.created_at, cs: null as ScoreChangeSet | null, ev })),
+  ].sort((a, b) => b.at.localeCompare(a.at));
   return (
     <div className="mb-6 bg-surface-container border border-outline-variant/30 rounded-xl p-4">
       <h3 className="text-sm font-semibold text-on-surface mb-3">Cronologia modifiche</h3>
       <div className="space-y-2">
-        {history.map(cs => {
+        {timeline.map(({ cs, ev }) => {
+          if (ev) {
+            const { title, detail } = eventText(ev);
+            return (
+              <div key={`ev-${ev.id}`} className="rounded-lg border border-outline-variant/20 bg-surface px-3 py-2">
+                <p className="text-sm text-on-surface truncate">
+                  <span className="font-medium">{title}</span>
+                  {ev.actor_name && <span className="text-on-surface-variant"> da {ev.actor_name}</span>}
+                </p>
+                <p className="text-xs text-on-surface-variant">
+                  {detail}{detail ? ' · ' : ''}{new Date(ev.created_at).toLocaleString('it-IT')}
+                </p>
+              </div>
+            );
+          }
+          if (!cs) return null;
           const isReverted = !!cs.reverted_change_id;
           // System change sets carry no teacher name; the submission entry is
           // the baseline of the audit chain and cannot be undone.

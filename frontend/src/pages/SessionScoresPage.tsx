@@ -14,7 +14,7 @@ import {
   getSessionScores, recalculateScores, archiveSessionScores, emailResultsLink,
   getSession, publishResults, unpublishResults, type SessionMeta, type ScoreEntry, type ScoreOverride, reviewScores,
   getLlmInfo, getLatestSessionLlmJob,
-  getScoreHistory, revertChangeSet, type LlmJobStatus,
+  getScoreHistory, getSessionEvents, revertChangeSet, type LlmJobStatus,
 } from '../api';
 import { useConfirmModal } from '../lib/useConfirmModal';
 import { computeStats } from '../lib/scoreStats';
@@ -69,7 +69,11 @@ function PublishPanel({ session, pendingAnswers }: { session: SessionMeta; pendi
   const [showAcceptable, setShowAcceptable] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const published = !!session.results_published_at;
-  const done = () => { setError(null); queryClient.invalidateQueries({ queryKey: ['session', session.id] }); };
+  const done = () => {
+    setError(null);
+    queryClient.invalidateQueries({ queryKey: ['session', session.id] });
+    queryClient.invalidateQueries({ queryKey: ['session-events', session.id] });
+  };
   const publish = useMutation({ mutationFn: () => publishResults(session.id, showCorrect, showAcceptable), onSuccess: done, onError: (e: Error) => setError(e.message) });
   const withdraw = useMutation({ mutationFn: () => unpublishResults(session.id), onSuccess: done, onError: (e: Error) => setError(e.message) });
   const busy = publish.isPending || withdraw.isPending;
@@ -177,6 +181,10 @@ function SessionScoresPage() {
     queryFn: () => getScoreHistory(id),
     enabled: !!id,
   });
+  const { data: sessionEvents } = useQuery({
+    queryKey: ['session-events', id],
+    queryFn: () => getSessionEvents(id),
+  });
 
   const recalcMutation = useMutation({
     mutationFn: () => recalculateScores(id),
@@ -190,7 +198,10 @@ function SessionScoresPage() {
 
   const emailMutation = useMutation({
     mutationFn: () => emailResultsLink(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session', id] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['session', id] });
+      queryClient.invalidateQueries({ queryKey: ['session-events', id] });
+    },
   });
   const published = !!session?.results_published_at;
 
@@ -420,6 +431,7 @@ function SessionScoresPage() {
 
       <ScoreHistoryPanel
         history={scoreHistory ?? []}
+        events={sessionEvents ?? []}
         onRevert={changeSetId => revertMutation.mutate(changeSetId)}
         reverting={revertMutation.isPending}
         revertSuccess={revertMutation.isSuccess}

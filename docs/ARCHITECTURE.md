@@ -468,7 +468,10 @@ POST/:id/score-history/:change_set_id/revert (400 on the submission baseline,
 teacher's Gmail through the Gmail API (service account, domain-wide delegation for
 `gmail.send`; 503 `EMAIL_NOT_AUTHORIZED` until a Workspace admin grants it).
 Publishing takes `show_correct` (closed questions) and `show_acceptable` (open
-questions' acceptable answer, labelled as such, never as correct).
+questions' acceptable answer, labelled as such, never as correct). Publication,
+withdrawal (also by reopening) and each link e-mail (sent count, addresses that
+failed) are recorded in `session_events`: GET /sessions/:id/events, shown with the
+score change sets in «Cronologia modifiche», never revertible.
 
 ### Super-admin (`/api/super-admin/`)
 

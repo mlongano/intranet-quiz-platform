@@ -1,5 +1,5 @@
 import { apiFetch } from './client';
-import type {
+import type { SessionEvent,
   LlmInfoResponse,
   RegradeOptions,
   RegradePreview,
@@ -43,6 +43,10 @@ export async function regradeOpenScores(
 
 export async function getRegradePreview(sessionId: number): Promise<RegradePreview> {
   return apiFetch<RegradePreview>(`/teacher/sessions/${sessionId}/regrade-preview`);
+}
+
+export async function getSessionEvents(sessionId: number): Promise<SessionEvent[]> {
+  return apiFetch<SessionEvent[]>(`/teacher/sessions/${sessionId}/events`);
 }
 
 export async function getScoreHistory(sessionId: number): Promise<ScoreChangeSet[]> {

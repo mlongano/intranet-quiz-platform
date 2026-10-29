@@ -1198,3 +1198,21 @@ RESULTS_EMAIL_RECIPIENTS = """
 MARK_RESULTS_EMAILED = """
     UPDATE quiz_sessions SET results_emailed_at = now(), results_emailed_count = %s WHERE id = %s
 """
+
+# ── session events (Cronologia modifiche, besides score changes) ──────────────
+
+INSERT_SESSION_EVENT = """
+    INSERT INTO session_events (session_id, teacher_id, kind, details)
+    VALUES (%(session_id)s, %(teacher_id)s, %(kind)s, %(details)s)
+"""
+
+LIST_SESSION_EVENTS = """
+    SELECT e.id, e.kind, e.details, e.created_at, t.display_name
+    FROM session_events e LEFT JOIN teachers t ON t.id = e.teacher_id
+    WHERE e.session_id = %s
+    ORDER BY e.created_at DESC
+"""
+
+SESSION_RESULTS_PUBLISHED = """
+    SELECT results_published_at FROM quiz_sessions WHERE id = %s AND teacher_id = %s FOR UPDATE
+"""

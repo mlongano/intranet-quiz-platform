@@ -8,6 +8,7 @@ the student's own entry.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -37,6 +38,12 @@ def set_publication(session_id: int, teacher_id: int, *, published: bool, show_c
             raise EditRefused('SESSION_NOT_CLOSED',
                               "Si pubblicano i risultati di una sessione chiusa: chiudila prima.")
         published_at = datetime.now(timezone.utc) if published else None
+        was_published = conn.execute(Q.SESSION_RESULTS_PUBLISHED, (session_id, teacher_id)).fetchone()[0]
+        if published or was_published:
+            record_event(conn, session_id, teacher_id,
+                         'results_published' if published else 'results_withdrawn',
+                         {'show_correct': bool(show_correct), 'show_acceptable': bool(show_acceptable)}
+                         if published else {})
         conn.execute(Q.SET_RESULTS_PUBLICATION, {
             'id': session_id, 'teacher_id': teacher_id,
             'published_at': published_at, 'show_correct': bool(show_correct) if published else False,
@@ -46,6 +53,12 @@ def set_publication(session_id: int, teacher_id: int, *, published: bool, show_c
     return {'results_published_at': published_at.isoformat() if published_at else None,
             'results_show_correct': bool(show_correct) if published else False,
             'results_show_acceptable': bool(show_acceptable) if published else False}
+
+
+def record_event(conn, session_id: int, teacher_id: int | None, kind: str, details: dict) -> None:
+    """One line in the session's Cronologia modifiche (publication, e-mail)."""
+    conn.execute(Q.INSERT_SESSION_EVENT, {'session_id': session_id, 'teacher_id': teacher_id,
+                                          'kind': kind, 'details': json.dumps(details)})
 
 
 # ── the student's page ───────────────────────────────────────────────────────

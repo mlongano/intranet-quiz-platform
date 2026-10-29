@@ -118,3 +118,29 @@ def test_another_teacher_cannot_send(w, db_conn):
     r = w['client'].post(f"/api/teacher/sessions/{w['session']}/results/email",
                          headers={'Authorization': f"Bearer {teacher_token(other, email='mail-other@test.it')}"})
     assert r.status_code == 404 and w['gmail'].sent == []
+
+
+def test_the_history_records_publication_and_emails(w):
+    _publish(w)
+    w['gmail'].fail_for = {'mail1@test.it'}
+    _send(w)
+    w['client'].post(f"/api/teacher/sessions/{w['session']}/results/unpublish", headers=w['auth'])
+    events = w['client'].get(f"/api/teacher/sessions/{w['session']}/events", headers=w['auth']).get_json()
+    assert [e['kind'] for e in events] == ['results_withdrawn', 'results_emailed', 'results_published']
+    assert events[1]['details'] == {'sent': 1, 'failed': ['mail1@test.it']}
+    assert events[1]['actor_name'] == 'Laura Bianchi'
+
+
+def test_a_failed_sending_is_recorded_too(w):
+    _publish(w)
+    w['gmail'].fail_for = {'mail0@test.it', 'mail1@test.it'}
+    _send(w)
+    events = w['client'].get(f"/api/teacher/sessions/{w['session']}/events", headers=w['auth']).get_json()
+    assert events[0]['details'] == {'sent': 0, 'failed': ['mail0@test.it', 'mail1@test.it']}
+
+
+def test_reopening_is_recorded_as_withdrawal(w):
+    _publish(w)
+    w['client'].post(f"/api/teacher/sessions/{w['session']}/reopen", headers=w['auth'])
+    events = w['client'].get(f"/api/teacher/sessions/{w['session']}/events", headers=w['auth']).get_json()
+    assert events[0]['kind'] == 'results_withdrawn' and events[0]['details'] == {'because': 'reopened'}

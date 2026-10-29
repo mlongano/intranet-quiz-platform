@@ -272,10 +272,15 @@ def close_session(session_id: int, teacher_id: int) -> None:
 
 def reopen_session(session_id: int, teacher_id: int) -> str:
     code = generate_join_code()
+    from services.student_results import record_event
     with db.get_conn() as conn:
+        published = conn.execute(Q.SESSION_RESULTS_PUBLISHED, (session_id, teacher_id)).fetchone()
         row = conn.execute(Q.REOPEN_SESSION, (code, session_id, teacher_id)).fetchone()
         if not row:
             raise NotFound(description="Session not found or not in closed state.")
+        if published and published[0]:
+            # Reopening withdraws published results: say so in the history.
+            record_event(conn, session_id, teacher_id, 'results_withdrawn', {'because': 'reopened'})
         conn.commit()
     return code
 

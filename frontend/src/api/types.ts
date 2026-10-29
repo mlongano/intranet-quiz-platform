@@ -91,6 +91,15 @@ export interface ScoreChangeSet {
   actor_name: string | null;
 }
 
+/** Publication, withdrawal, link e-mail: history entries that are not score changes. */
+export interface SessionEvent {
+  id: number;
+  kind: 'results_published' | 'results_withdrawn' | 'results_emailed';
+  details: { show_correct?: boolean; show_acceptable?: boolean; because?: string; sent?: number; failed?: string[] };
+  created_at: string;
+  actor_name: string | null;
+}
+
 export interface ScoreOverride {
   score_id: number;
   per_question?: Record<string, number>;
